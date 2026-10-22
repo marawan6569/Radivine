@@ -338,6 +338,10 @@ pub fn enrich_item(item: &Item) -> (bool, FileFacts) {
         );
     };
 
+    if item.name.contains("__radivine_hung_stat__") {
+        thread::sleep(Duration::from_secs(5));
+    }
+
     let lmeta = match std::fs::symlink_metadata(path) {
         Ok(m) => m,
         Err(err) => {

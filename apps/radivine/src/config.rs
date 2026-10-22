@@ -271,6 +271,22 @@ impl AppConfig {
         PathBuf::from("config.toml")
     }
 
+    /// Returns the `actions.toml` path corresponding to `config_path` (sibling `actions.toml` when
+    /// `--config` is passed, or `$XDG_CONFIG_HOME/radivine/actions.toml` by default).
+    #[must_use]
+    pub fn actions_path_for(config_path: Option<&Path>) -> PathBuf {
+        if let Some(cp) = config_path
+            && let Some(parent) = cp.parent()
+        {
+            let sibling = parent.join("actions.toml");
+            if sibling.exists() {
+                return sibling;
+            }
+            return sibling;
+        }
+        Self::default_path().with_file_name("actions.toml")
+    }
+
     /// Loads and validates `AppConfig` from `path` (or returns defaults if the file does not exist
     /// or fails to parse, logging a warning per `ARCHITECTURE.md` §7.4).
     #[must_use]

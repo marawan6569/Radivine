@@ -13,6 +13,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use calloop::generic::Generic;
+use calloop::ping::make_ping;
 use calloop::{EventLoop, Interest, Mode, PostAction};
 use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
@@ -210,10 +211,27 @@ fn run_daemon(config_path: Option<PathBuf>, sock_path: &Path) -> anyhow::Result<
     let registry = Arc::new(builtin_registry());
 
     let x11_fd = platform.poll_fd();
-    let controller = SessionController::new(platform, renderer, registry, config);
+    let mut controller = SessionController::new(platform, renderer, registry, config);
+    let actions_path = AppConfig::actions_path_for(config_path.as_deref());
+    controller.load_actions_from_path(&actions_path);
 
     let mut event_loop: EventLoop<'static, DaemonLoopState> = EventLoop::try_new()?;
     let handle = event_loop.handle();
+
+    // Register background wakeup ping for Enricher and Dispatcher events
+    let (ping, ping_source) =
+        make_ping().map_err(|e| anyhow::anyhow!("failed to create calloop ping: {e}"))?;
+    controller.set_wakeup_callback(Box::new(move || {
+        ping.ping();
+    }));
+    handle
+        .insert_source(
+            ping_source,
+            |_event, _metadata, state: &mut DaemonLoopState| {
+                state.controller.drain_async_events(Instant::now());
+            },
+        )
+        .map_err(|e| anyhow::anyhow!("failed to register ping source with calloop: {e}"))?;
 
     // Register X11 socket FD
     handle
@@ -273,6 +291,8 @@ fn run_daemon(config_path: Option<PathBuf>, sock_path: &Path) -> anyhow::Result<
     };
 
     while !state.should_quit {
+        state.controller.drain_async_events(Instant::now());
+
         // Drain any X11 events already buffered in userspace by x11rb before sleeping
         let mut buffered = Vec::new();
         if state
@@ -351,7 +371,8 @@ fn handle_ipc_client(stream: &mut std::os::unix::net::UnixStream, state: &mut Da
         }
         IpcRequest::Reload => {
             let new_cfg = AppConfig::load_or_default(state.config_path.as_deref());
-            state.controller.reload_config(new_cfg);
+            let actions_path = AppConfig::actions_path_for(state.config_path.as_deref());
+            state.controller.reload_all(new_cfg, &actions_path);
             write_client_response(
                 stream,
                 &IpcResponse::Ok {

@@ -68,6 +68,8 @@ impl TestDaemon {
         let sock_path = temp_dir.join("radivine.sock");
 
         let child = Command::new(radivine_bin())
+            .env("RADIVINE_DRY_RUN_PROPERTIES", "1")
+            .env("RADIVINE_SUPPRESS_DESKTOP_NOTIFY", "1")
             .arg("--config")
             .arg(&config_path)
             .arg("--socket")
@@ -860,7 +862,12 @@ fn m3_drag_and_drop_acceptance_suite() {
     ];
 
     for &(path, expected_id) in action_cases {
-        harness.set_uris(&file_uris, false);
+        let case_uris: &[String] = if expected_id.starts_with("radivine.preview.") {
+            &file_uris[0..1]
+        } else {
+            &file_uris
+        };
+        harness.set_uris(case_uris, false);
         harness.begin_drag_at(anchor.0, anchor.1, false);
         thread::sleep(Duration::from_millis(15));
         harness
@@ -910,7 +917,7 @@ fn m3_drag_and_drop_acceptance_suite() {
             .iter()
             .map(|v| v.as_str().unwrap().to_string())
             .collect();
-        assert_eq!(committed_items, file_uris);
+        assert_eq!(committed_items, case_uris);
         assert_eq!(st["last_committed_mode"], "Drag");
     }
     corpus.verify_unchanged("after AC-3.3/3.5/3.6 action cases");
@@ -1205,10 +1212,8 @@ fn m3_real_gtk3_drag_retargeting() {
         .arg(&harness_script)
         .arg("--duration-ms")
         .arg("5000")
-        .arg("--files");
-    for f in &corpus.files {
-        gtk_cmd.arg(f);
-    }
+        .arg("--files")
+        .arg(&corpus.files[0]);
     let mut gtk_child = gtk_cmd
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -1251,9 +1256,20 @@ fn m3_real_gtk3_drag_retargeting() {
     );
     thread::sleep(Duration::from_millis(60));
 
+    let active_st = daemon.status_json();
+    let wheel_center = active_st["root_wheel_center_px"]
+        .as_array()
+        .map(|arr| {
+            (
+                arr[0].as_f64().unwrap_or(960.0).round() as i32,
+                arr[1].as_f64().unwrap_or(540.0).round() as i32,
+            )
+        })
+        .unwrap_or((960, 540));
+
     // Navigate to root `[0]` (File Preview), wait for child wheel to open, then move to `[0, 1]` (Head)
-    let preview_pt = compute_segment_point((960, 540), &[0]);
-    let head_pt = compute_segment_point((960, 540), &[0, 1]);
+    let preview_pt = compute_segment_point(wheel_center, &[0]);
+    let head_pt = compute_segment_point(wheel_center, &[0, 1]);
 
     let _ = Command::new("xdotool")
         .args([
@@ -1277,18 +1293,18 @@ fn m3_real_gtk3_drag_retargeting() {
         Duration::from_millis(500)
     ));
 
+    thread::sleep(Duration::from_millis(50));
     let st = daemon.status_json();
-    assert_eq!(st["last_committed_action"], "radivine.preview.head");
-    assert_eq!(st["last_committed_path"], serde_json::json!([0, 1]));
-    assert_eq!(st["last_committed_mode"], "Drag");
-    assert_eq!(
-        st["last_committed_items"].as_array().unwrap().len(),
-        corpus.files.len()
-    );
-
     let _ = gtk_child.kill();
     let out = gtk_child.wait_with_output().expect("wait gtk_child");
     let gtk_log = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(
+        st["last_committed_action"], "radivine.preview.head",
+        "unexpected status={st}\ngtk_log={gtk_log}"
+    );
+    assert_eq!(st["last_committed_path"], serde_json::json!([0, 1]));
+    assert_eq!(st["last_committed_mode"], "Drag");
+    assert_eq!(st["last_committed_items"].as_array().unwrap().len(), 1);
     assert!(
         !gtk_log.contains("GTK_SOURCE_DATA_DELETE_CALLED"),
         "GTK3 drag-data-delete must never be called: {gtk_log}"

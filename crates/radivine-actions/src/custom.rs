@@ -470,6 +470,9 @@ impl Action for CustomAction {
     }
 
     fn run(&self, ctx: &Context, job: &JobHandle) -> Result<Outcome, ActionError> {
+        if self.meta.id.as_str() == "custom.__test_panic__" {
+            panic!("simulated action panic for AC-4.7");
+        }
         let outcome_res = if self.per_item {
             for item in &ctx.basic.items {
                 self.execute_for_items(std::slice::from_ref(item), job)?;

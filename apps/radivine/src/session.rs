@@ -1,18 +1,23 @@
 //! Desktop session state machine (`Idle`, `Armed`, `Summoning`, `Active`, `LeftGrace`,
 //! `Committing`, `Dismissing`) (`ARCHITECTURE.md` §3.3, §5, `PLATFORM_INTEGRATION.md` §3.4–§3.12).
 
+use std::path::Path;
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use smallvec::SmallVec;
 
+use radivine_actions::{call_desktop_notify, load_actions_file, registry_from_actions_config};
 use radivine_core::{
-    ActionId, ActionIndex, ActionRegistry, BasicContext, Context, Dispatcher, InvocationMode,
-    JobEvent, MenuLimits, SourceInfo as CoreSourceInfo,
+    ActionId, ActionIndex, ActionRegistry, BasicContext, ClipOp, ClipboardRequest, Context,
+    Dispatcher, Effect, Enablement, EnrichEvent, Enricher, FileFacts, FileKind, InvocationMode,
+    JobEvent, MenuLimits, Outcome, SourceInfo as CoreSourceInfo, TextEncoding, TextVerdict,
 };
 use radivine_platform::{
-    FrameRef as PlatFrameRef, Key as PlatKey, OverlayInfo, PhysPoint, Platform, PlatformEvent,
-    RectPx as PlatRectPx, ShapePx,
+    ClipOp as PlatClipOp, ClipboardContent, FrameRef as PlatFrameRef, Key as PlatKey, OverlayInfo,
+    PhysPoint, Platform, PlatformEvent, RectPx as PlatRectPx, ShapePx,
 };
 use radivine_render::{RectPx as RenderRectPx, Renderer, SizePx};
 use radivine_wheel::{
@@ -21,7 +26,7 @@ use radivine_wheel::{
 };
 
 use crate::config::AppConfig;
-use crate::ipc::DaemonStatus;
+use crate::ipc::{DaemonStatus, ItemStateSnapshot};
 
 /// Maximum duration an active Invoke session may remain open without interaction (`60 s`).
 const ACTIVE_WATCHDOG_TIMEOUT: Duration = Duration::from_secs(60);
@@ -31,6 +36,20 @@ const MAX_SESSION_DURATION: Duration = Duration::from_secs(120);
 
 /// Idle delay before releasing shared-memory pixel buffers (`30 s`).
 const IDLE_BUFFER_RELEASE_DELAY: Duration = Duration::from_secs(30);
+
+/// Brief non-blocking window to collect fast local enrichment results on summon (`3 ms`).
+const FAST_LOCAL_ENRICH_WINDOW: Duration = Duration::from_millis(3);
+
+/// Brief non-blocking window to collect fast synchronous job effects (e.g. `SetClipboard`) on commit (`20 ms`).
+const FAST_COMMIT_EFFECT_WINDOW: Duration = Duration::from_millis(20);
+
+/// Asynchronous event delivered from background [`Enricher`] or [`Dispatcher`] threads.
+enum AsyncControllerEvent {
+    Enrich(EnrichEvent),
+    Job(JobEvent),
+}
+
+type WakeupCallback = Arc<Mutex<Option<Box<dyn Fn() + Send + Sync>>>>;
 
 /// Session lifecycle state (`ARCHITECTURE.md` §3.3, §5).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -82,7 +101,7 @@ pub struct LastCommitRecord {
     pub mode: Option<String>,
 }
 
-/// Orchestrates the platform backend, radial wheel engine, software renderer, and action dispatcher.
+/// Orchestrates the platform backend, radial wheel engine, software renderer, context enricher, and action dispatcher.
 pub struct SessionController {
     platform: Box<dyn Platform>,
     renderer: Renderer,
@@ -90,7 +109,13 @@ pub struct SessionController {
     wheel_session: Option<WheelSession>,
     action_index: ActionIndex,
     registry: Arc<ActionRegistry>,
+    enricher: Enricher,
+    enrich_session_seq: u64,
+    active_enrich_session_id: u64,
     dispatcher: Dispatcher,
+    async_rx: Receiver<AsyncControllerEvent>,
+    wakeup: WakeupCallback,
+    notify_tx: Sender<(String, String)>,
     config: AppConfig,
     state: SessionState,
     active_mode: Option<InvocationMode>,
@@ -101,6 +126,12 @@ pub struct SessionController {
     invoke_count: u64,
     drag_session_count: u64,
     last_commit: Arc<Mutex<LastCommitRecord>>,
+    last_job_action: Option<String>,
+    last_job_error: Option<String>,
+    last_notification: Option<String>,
+    notifications: Vec<String>,
+    config_warnings: Vec<String>,
+    active_item_states: Vec<ItemStateSnapshot>,
     session_epoch: Instant,
     last_interaction: Instant,
     next_frame_deadline: Option<Instant>,
@@ -133,34 +164,74 @@ impl SessionController {
         let wheel_cfg = config.to_wheel_config(reduced_motion);
         let effective_scale = config.effective_scale(platform.scale());
 
+        let (async_tx, async_rx) = mpsc::channel::<AsyncControllerEvent>();
+        let wakeup: WakeupCallback = Arc::new(Mutex::new(None));
+
+        let enrich_tx = async_tx.clone();
+        let enrich_wakeup = Arc::clone(&wakeup);
+        let enricher = Enricher::new(Box::new(move |ev: EnrichEvent| {
+            let _ = enrich_tx.send(AsyncControllerEvent::Enrich(ev));
+            if let Ok(guard) = enrich_wakeup.lock()
+                && let Some(ref cb) = *guard
+            {
+                cb();
+            }
+        }));
+
+        let job_tx = async_tx;
+        let job_wakeup = Arc::clone(&wakeup);
         let dispatcher = Dispatcher::new(
-            Box::new(|ev: JobEvent| match ev {
-                JobEvent::Finished {
-                    job,
-                    action,
-                    result: Ok(_),
-                } => {
-                    tracing::info!(
-                        job_id = job.0,
-                        action_id = %action,
-                        "dispatched action completed"
-                    );
+            Box::new(move |ev: JobEvent| {
+                match &ev {
+                    JobEvent::Finished {
+                        job,
+                        action,
+                        result: Ok(_),
+                    } => {
+                        tracing::info!(
+                            job_id = job.0,
+                            action_id = %action,
+                            "dispatched action completed"
+                        );
+                    }
+                    JobEvent::Finished {
+                        job,
+                        action,
+                        result: Err(err),
+                    } => {
+                        tracing::warn!(
+                            job_id = job.0,
+                            action_id = %action,
+                            error = %err,
+                            "dispatched action failed"
+                        );
+                    }
                 }
-                JobEvent::Finished {
-                    job,
-                    action,
-                    result: Err(err),
-                } => {
-                    tracing::warn!(
-                        job_id = job.0,
-                        action_id = %action,
-                        error = %err,
-                        "dispatched action failed"
-                    );
+                let _ = job_tx.send(AsyncControllerEvent::Job(ev));
+                if let Ok(guard) = job_wakeup.lock()
+                    && let Some(ref cb) = *guard
+                {
+                    cb();
                 }
             }),
             4,
         );
+
+        let (notify_tx, notify_rx) = mpsc::channel::<(String, String)>();
+        let _ = thread::Builder::new()
+            .name("radivine-notify".to_string())
+            .spawn(move || {
+                while let Ok((summary, body)) = notify_rx.recv() {
+                    let suppress = std::env::var("RADIVINE_SUPPRESS_DESKTOP_NOTIFY")
+                        .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+                    if !suppress
+                        && let Err(err) =
+                            call_desktop_notify(None, "Radivine", "radivine", &summary, &body, 4000)
+                    {
+                        tracing::debug!(error = %err, "desktop notification call skipped/failed");
+                    }
+                }
+            });
 
         let now = Instant::now();
         Self {
@@ -170,7 +241,13 @@ impl SessionController {
             wheel_session: None,
             action_index: ActionIndex::default(),
             registry,
+            enricher,
+            enrich_session_seq: 0,
+            active_enrich_session_id: 0,
             dispatcher,
+            async_rx,
+            wakeup,
+            notify_tx,
             config,
             state: SessionState::Idle,
             active_mode: None,
@@ -181,6 +258,12 @@ impl SessionController {
             invoke_count: 0,
             drag_session_count: 0,
             last_commit: Arc::new(Mutex::new(LastCommitRecord::default())),
+            last_job_action: None,
+            last_job_error: None,
+            last_notification: None,
+            notifications: Vec::new(),
+            config_warnings: Vec::new(),
+            active_item_states: Vec::new(),
             session_epoch: now,
             last_interaction: now,
             next_frame_deadline: None,
@@ -196,6 +279,13 @@ impl SessionController {
             last_dnd_accept: None,
             pending_drop_commit: None,
             debug_overlay,
+        }
+    }
+
+    /// Registers a thread-safe wakeup callback invoked whenever background enrichment or job events arrive.
+    pub fn set_wakeup_callback(&mut self, callback: Box<dyn Fn() + Send + Sync>) {
+        if let Ok(mut guard) = self.wakeup.lock() {
+            *guard = Some(callback);
         }
     }
 
@@ -226,9 +316,52 @@ impl SessionController {
         );
     }
 
+    /// Loads or reloads `actions.toml` from `actions_path`.
+    ///
+    /// If `actions_path` is invalid or fails validation, logs and notifies the error with line
+    /// information while preserving the previously active [`ActionRegistry`] (`AC-4.6`).
+    pub fn load_actions_from_path(&mut self, actions_path: &Path) {
+        match load_actions_file(actions_path) {
+            Ok(actions_cfg) => match registry_from_actions_config(&actions_cfg) {
+                Ok(new_reg) => {
+                    self.registry = Arc::new(new_reg);
+                    self.config_warnings.clone_from(&actions_cfg.warnings);
+                    for warning in &actions_cfg.warnings {
+                        tracing::warn!("{warning}");
+                        self.emit_notification("Actions configuration warning", warning);
+                    }
+                    tracing::info!(
+                        path = %actions_path.display(),
+                        custom_actions = actions_cfg.actions.len(),
+                        warnings = actions_cfg.warnings.len(),
+                        "loaded actions.toml"
+                    );
+                }
+                Err(err) => {
+                    let msg = format!("{}: {err}", actions_path.display());
+                    tracing::warn!("{msg}");
+                    self.config_warnings = vec![msg.clone()];
+                    self.emit_notification("Invalid actions.toml", &msg);
+                }
+            },
+            Err(err) => {
+                let msg = err.to_string();
+                tracing::warn!("{msg}");
+                self.config_warnings = vec![msg.clone()];
+                self.emit_notification("Invalid actions.toml", &msg);
+            }
+        }
+    }
+
+    /// Reloads both `config.toml` and `actions.toml` (`AC-4.6`).
+    pub fn reload_all(&mut self, config: AppConfig, actions_path: &Path) {
+        self.reload_config(config);
+        self.load_actions_from_path(actions_path);
+    }
+
     /// Builds a [`DaemonStatus`] snapshot for `radivine status`.
-    #[must_use]
-    pub fn status(&self) -> DaemonStatus {
+    pub fn status(&mut self) -> DaemonStatus {
+        self.drain_async_events(Instant::now());
         let monitor_rect = self
             .overlay_info
             .as_ref()
@@ -283,6 +416,12 @@ impl SessionController {
             last_committed_items: commit.items,
             last_committed_source_app: commit.source_app,
             last_committed_mode: commit.mode,
+            last_job_action: self.last_job_action.clone(),
+            last_job_error: self.last_job_error.clone(),
+            last_notification: self.last_notification.clone(),
+            notifications: self.notifications.clone(),
+            config_warnings: self.config_warnings.clone(),
+            active_item_states: self.active_item_states.clone(),
         }
     }
 
@@ -293,6 +432,7 @@ impl SessionController {
         explicit_pos: Option<PhysPoint>,
     ) -> anyhow::Result<()> {
         let t0 = Instant::now();
+        self.drain_async_events(t0);
         if !matches!(self.state, SessionState::Idle | SessionState::Armed) {
             self.dismiss_immediate();
         }
@@ -327,7 +467,20 @@ impl SessionController {
         let basic =
             BasicContext::from_uris(&uris, InvocationMode::Invoke, CoreSourceInfo::default());
         let item_count = basic.items.len() as u32;
-        let ctx = Arc::new(Context::from_basic(basic));
+        let initial_ctx = Arc::new(Context::from_basic(basic.clone()));
+
+        self.enrich_session_seq = self.enrich_session_seq.wrapping_add(1);
+        let enrich_sid = self.enrich_session_seq;
+        self.active_enrich_session_id = enrich_sid;
+        self.enricher.start(enrich_sid, basic);
+
+        // Collect fast local enrichment results (< 3 ms) before building the menu so normal local
+        // files start with their final enablement while slow/hung files map immediately with "Checking…".
+        let ctx = self.wait_for_initial_enrichment_context(
+            enrich_sid,
+            initial_ctx,
+            FAST_LOCAL_ENRICH_WINDOW,
+        );
 
         let (menu_tree, action_index) = self
             .registry
@@ -352,6 +505,7 @@ impl SessionController {
         self.active_context = Some(ctx);
         self.action_index = action_index;
         self.wheel_session = Some(ws);
+        self.refresh_active_item_states();
 
         self.sync_input_region()?;
         self.render_and_present(true)?;
@@ -498,6 +652,7 @@ impl SessionController {
     /// Handles a batch of [`PlatformEvent`]s emitted by the display server.
     pub fn handle_platform_events(&mut self, events: Vec<PlatformEvent>) {
         let now = Instant::now();
+        self.drain_async_events(now);
         for ev in events {
             match ev {
                 PlatformEvent::DragArmed { source } => {
@@ -759,6 +914,7 @@ impl SessionController {
     }
 
     fn handle_dnd_drop(&mut self, now: Instant) {
+        self.drain_async_events(now);
         if self.state != SessionState::Active {
             // `ARCHITECTURE.md` §5: A DndDrop arriving in any state other than Active is answered with dnd_finish(false).
             self.platform.dnd_finish(false);
@@ -815,7 +971,19 @@ impl SessionController {
                 }
 
                 let item_count = basic.items.len() as u32;
-                let ctx = Arc::new(Context::from_basic(basic));
+                let initial_ctx = Arc::new(Context::from_basic(basic.clone()));
+
+                self.enrich_session_seq = self.enrich_session_seq.wrapping_add(1);
+                let enrich_sid = self.enrich_session_seq;
+                self.active_enrich_session_id = enrich_sid;
+                self.enricher.start(enrich_sid, basic);
+
+                let ctx = self.wait_for_initial_enrichment_context(
+                    enrich_sid,
+                    initial_ctx,
+                    FAST_LOCAL_ENRICH_WINDOW,
+                );
+
                 let Some((menu_tree, action_index)) =
                     self.registry.build_menu(&ctx, MenuLimits::default())
                 else {
@@ -830,6 +998,7 @@ impl SessionController {
                 self.active_context = Some(ctx);
                 self.context_is_provisional = false;
                 self.action_index = action_index;
+                self.refresh_active_item_states();
 
                 if self.state == SessionState::Committing {
                     if let Some(path) = self.pending_drop_commit.take() {
@@ -904,11 +1073,20 @@ impl SessionController {
 
     fn activate_provisional_file_menu(&mut self, now: Instant) {
         let provisional_basic = BasicContext::from_uris(
-            ["file:///provisional"],
+            ["file:///provisional.txt"],
             InvocationMode::Drag,
             self.drag_source.clone(),
         );
-        let ctx = Arc::new(Context::from_basic(provisional_basic));
+        let mut provisional_ctx = Context::from_basic(provisional_basic);
+        provisional_ctx.facts = Some(vec![FileFacts {
+            kind: FileKind::Regular,
+            size: Some(0),
+            readable: true,
+            text: TextVerdict::Text(TextEncoding::Utf8),
+            sniffed_mime: Some("text/plain"),
+            error: None,
+        }]);
+        let ctx = Arc::new(provisional_ctx);
         let Some((menu_tree, action_index)) = self.registry.build_menu(&ctx, MenuLimits::default())
         else {
             self.dismiss_drag_session(DismissReason::Error, now);
@@ -918,6 +1096,7 @@ impl SessionController {
         self.active_context = Some(ctx);
         self.context_is_provisional = true;
         self.action_index = action_index;
+        self.refresh_active_item_states();
 
         let ms = self.elapsed_millis(now);
         let initial_pos = self.last_dnd_pos.map(|at| self.root_phys_to_logical(at));
@@ -996,6 +1175,7 @@ impl SessionController {
 
     /// Advances timers/animations due at `now`.
     pub fn on_timer(&mut self, now: Instant) {
+        self.drain_async_events(now);
         let mut plat_events = Vec::new();
         self.platform.on_deadline(now, &mut plat_events);
         if !plat_events.is_empty() {
@@ -1120,6 +1300,7 @@ impl SessionController {
     }
 
     fn commit_path(&mut self, path: &ItemPath, now: Instant) {
+        self.drain_async_events(now);
         let was_invoke = self.active_mode == Some(InvocationMode::Invoke);
         self.state = SessionState::Committing;
         if was_invoke {
@@ -1179,7 +1360,34 @@ impl SessionController {
         if let Some(action) = self.registry.get(&action_id)
             && let Some(ref ctx) = self.active_context
         {
-            self.dispatcher.dispatch(action, Arc::clone(ctx));
+            // Pre-dispatch enablement re-check (`ACTION_SYSTEM.md` §7)
+            match action.enablement(ctx) {
+                Enablement::Enabled => {
+                    self.dispatcher.dispatch(action, Arc::clone(ctx));
+                    self.wait_for_fast_job(FAST_COMMIT_EFFECT_WINDOW, now);
+                }
+                Enablement::Disabled { reason } => {
+                    let msg = reason.to_string();
+                    tracing::warn!(
+                        action_id = %action_id,
+                        reason = %msg,
+                        "action became disabled before dispatch; skipping"
+                    );
+                    self.last_job_action = Some(action_id.as_str().to_string());
+                    self.last_job_error = Some(msg.clone());
+                    self.emit_notification("Action unavailable", &msg);
+                }
+                Enablement::Pending => {
+                    let msg = "Still inspecting file…".to_string();
+                    tracing::warn!(
+                        action_id = %action_id,
+                        "action still pending enrichment at commit time; skipping"
+                    );
+                    self.last_job_action = Some(action_id.as_str().to_string());
+                    self.last_job_error = Some(msg.clone());
+                    self.emit_notification("Action unavailable", &msg);
+                }
+            }
         }
 
         self.active_mode = None;
@@ -1191,6 +1399,215 @@ impl SessionController {
         if self.state == SessionState::Idle {
             self.idle_release_deadline = Some(now + IDLE_BUFFER_RELEASE_DELAY);
         }
+    }
+
+    /// Drains all pending [`EnrichEvent`] and [`JobEvent`] messages from background workers.
+    pub fn drain_async_events(&mut self, now: Instant) {
+        while let Ok(ev) = self.async_rx.try_recv() {
+            self.process_async_event(ev, now);
+        }
+    }
+
+    fn wait_for_initial_enrichment_context(
+        &mut self,
+        target_session_id: u64,
+        mut latest_ctx: Arc<Context>,
+        timeout: Duration,
+    ) -> Arc<Context> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let now = Instant::now();
+            if now >= deadline {
+                break;
+            }
+            let remaining = deadline.saturating_duration_since(now);
+            match self.async_rx.recv_timeout(remaining) {
+                Ok(AsyncControllerEvent::Enrich(EnrichEvent::Updated {
+                    session_id,
+                    context,
+                    complete,
+                })) => {
+                    if session_id == target_session_id {
+                        latest_ctx = context;
+                        if complete {
+                            break;
+                        }
+                    }
+                }
+                Ok(ev) => {
+                    self.process_async_event(ev, Instant::now());
+                }
+                Err(_) => break,
+            }
+        }
+        latest_ctx
+    }
+
+    fn wait_for_fast_job(&mut self, timeout: Duration, now: Instant) {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let cur = Instant::now();
+            if cur >= deadline {
+                break;
+            }
+            let remaining = deadline.saturating_duration_since(cur);
+            match self.async_rx.recv_timeout(remaining) {
+                Ok(AsyncControllerEvent::Job(job_ev)) => {
+                    self.handle_job_event(job_ev);
+                    break;
+                }
+                Ok(ev) => {
+                    self.process_async_event(ev, now);
+                }
+                Err(_) => break,
+            }
+        }
+        self.drain_async_events(now);
+    }
+
+    fn process_async_event(&mut self, ev: AsyncControllerEvent, _now: Instant) {
+        match ev {
+            AsyncControllerEvent::Enrich(EnrichEvent::Updated {
+                session_id,
+                context,
+                ..
+            }) => {
+                if session_id == self.active_enrich_session_id {
+                    self.apply_enrichment_context(context);
+                }
+            }
+            AsyncControllerEvent::Job(job_ev) => {
+                self.handle_job_event(job_ev);
+            }
+        }
+    }
+
+    fn apply_enrichment_context(&mut self, new_ctx: Arc<Context>) {
+        self.active_context = Some(Arc::clone(&new_ctx));
+
+        let updates = self
+            .registry
+            .enablement_updates(&new_ctx, &self.action_index);
+        let new_states: Vec<ItemStateSnapshot> = updates
+            .iter()
+            .filter_map(|u| {
+                let id = self.action_index.get(&u.path)?;
+                Some(ItemStateSnapshot {
+                    id: id.as_str().to_string(),
+                    path: u.path.as_slice().to_vec(),
+                    enabled: u.enabled,
+                    disabled_reason: u.disabled_reason.as_ref().map(ToString::to_string),
+                })
+            })
+            .collect();
+
+        let mut any_changed = false;
+        if let Some(ref mut ws) = self.wheel_session {
+            for u in updates {
+                let reason_str = u.disabled_reason.as_ref().map(ToString::to_string);
+                let unchanged = self.active_item_states.iter().any(|prev| {
+                    prev.path.as_slice() == u.path.as_slice()
+                        && prev.enabled == u.enabled
+                        && prev.disabled_reason == reason_str
+                });
+                if !unchanged {
+                    ws.set_enabled(&u.path, u.enabled, u.disabled_reason);
+                    any_changed = true;
+                }
+            }
+        }
+        self.active_item_states = new_states;
+
+        if any_changed {
+            self.sync_dnd_status_if_changed();
+            if matches!(self.state, SessionState::Active | SessionState::LeftGrace)
+                && self.overlay_info.is_some()
+            {
+                let _ = self.render_and_present(false);
+                let _ = self.platform.flush();
+            }
+        }
+    }
+
+    fn refresh_active_item_states(&mut self) {
+        let Some(ref ctx) = self.active_context else {
+            self.active_item_states.clear();
+            return;
+        };
+        let updates = self.registry.enablement_updates(ctx, &self.action_index);
+        self.active_item_states = updates
+            .iter()
+            .filter_map(|u| {
+                let id = self.action_index.get(&u.path)?;
+                Some(ItemStateSnapshot {
+                    id: id.as_str().to_string(),
+                    path: u.path.as_slice().to_vec(),
+                    enabled: u.enabled,
+                    disabled_reason: u.disabled_reason.as_ref().map(ToString::to_string),
+                })
+            })
+            .collect();
+    }
+
+    fn handle_job_event(&mut self, ev: JobEvent) {
+        let JobEvent::Finished { action, result, .. } = ev;
+        self.last_job_action = Some(action.as_str().to_string());
+        match result {
+            Ok(Outcome::Done) => {
+                self.last_job_error = None;
+            }
+            Ok(Outcome::Message(msg)) => {
+                self.last_job_error = None;
+                self.emit_notification(action.as_str(), &msg);
+            }
+            Ok(Outcome::Effects(effects)) => {
+                self.last_job_error = None;
+                for effect in effects {
+                    match effect {
+                        Effect::SetClipboard(ClipboardRequest {
+                            uris,
+                            local_paths,
+                            op: ClipOp::Copy,
+                        }) => {
+                            if let Err(err) = self.platform.set_clipboard(ClipboardContent {
+                                uris,
+                                local_paths,
+                                operation: PlatClipOp::Copy,
+                            }) {
+                                let err_msg = err.to_string();
+                                tracing::warn!(error = %err_msg, "failed to set X11 clipboard");
+                                self.last_job_error = Some(err_msg.clone());
+                                self.emit_notification("Clipboard error", &err_msg);
+                            } else {
+                                let _ = self.platform.flush();
+                            }
+                        }
+                        Effect::Notify { summary, body } => {
+                            self.emit_notification(&summary, body.as_deref().unwrap_or(""));
+                        }
+                    }
+                }
+            }
+            Err(err) => {
+                let err_msg = err.to_string();
+                self.last_job_error = Some(err_msg.clone());
+                self.emit_notification(&format!("Action failed ({action})"), &err_msg);
+            }
+        }
+    }
+
+    fn emit_notification(&mut self, summary: &str, body: &str) {
+        let formatted = if body.is_empty() {
+            summary.to_string()
+        } else {
+            format!("{summary}: {body}")
+        };
+        self.last_notification = Some(formatted.clone());
+        if self.notifications.len() >= 32 {
+            self.notifications.remove(0);
+        }
+        self.notifications.push(formatted);
+        let _ = self.notify_tx.send((summary.to_string(), body.to_string()));
     }
 
     fn elapsed_millis(&self, now: Instant) -> Millis {

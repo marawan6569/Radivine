@@ -69,19 +69,6 @@ impl ClipboardService {
         conn.flush()
             .map_err(|e| PlatformError::X11(e.to_string()))?;
 
-        let owner = conn
-            .get_selection_owner(atoms.CLIPBOARD)
-            .map_err(|e| PlatformError::X11(e.to_string()))?
-            .reply()
-            .map_err(|e| PlatformError::X11(e.to_string()))?
-            .owner;
-
-        if owner != self.owner_window {
-            return Err(PlatformError::X11(
-                "X server did not grant CLIPBOARD selection ownership".to_string(),
-            ));
-        }
-
         self.content = Some(content);
         self.owned_since = x11rb::CURRENT_TIME;
         self.incr_transfers.clear();

@@ -182,6 +182,7 @@ fn m2_live_acceptance_suite() {
     // AC-2.2 & AC-2.3: Keyboard navigation into nested wheel + commit with spaces/UTF-8
     // -------------------------------------------------------------------------
     let special_path = "/tmp/radivine test — file 🚀.txt";
+    fs::write(special_path, "Radivine M2 acceptance test payload\n").expect("write special_path");
     let inv = daemon.cli(&["invoke", "--at", "960,540", special_path]);
     assert!(inv.status.success());
     assert!(is_window_mapped(&conn, overlay_xid));

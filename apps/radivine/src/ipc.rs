@@ -35,6 +35,19 @@ pub enum IpcRequest {
     Quit,
 }
 
+/// Snapshot of a single leaf action's live enablement state in the active session.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ItemStateSnapshot {
+    /// Action identifier (`"radivine.preview.head"`, etc.).
+    pub id: String,
+    /// Item path in the wheel hierarchy (e.g. `[0, 1]`).
+    pub path: Vec<u8>,
+    /// Whether the item is currently enabled.
+    pub enabled: bool,
+    /// Disabled reason shown in the caption (`Some("Checking…")`, `Some("Not a text file")`, etc.).
+    pub disabled_reason: Option<String>,
+}
+
 /// Live status snapshot returned by `radivine status`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DaemonStatus {
@@ -70,6 +83,24 @@ pub struct DaemonStatus {
     /// Invocation mode of the last committed action (`"Drag"` or `"Invoke"`).
     #[serde(default)]
     pub last_committed_mode: Option<String>,
+    /// ActionId of the most recently finished background job, if any.
+    #[serde(default)]
+    pub last_job_action: Option<String>,
+    /// Error message of the most recently finished background job (`None` if it succeeded).
+    #[serde(default)]
+    pub last_job_error: Option<String>,
+    /// Most recent desktop notification formatted as `"summary: body"` (or `"summary"`), if any.
+    #[serde(default)]
+    pub last_notification: Option<String>,
+    /// Recent desktop notifications emitted by the daemon (capped at 32).
+    #[serde(default)]
+    pub notifications: Vec<String>,
+    /// Configuration or `actions.toml` warnings from the most recent load/reload.
+    #[serde(default)]
+    pub config_warnings: Vec<String>,
+    /// Live enablement state of leaf actions in the current or most recent session.
+    #[serde(default)]
+    pub active_item_states: Vec<ItemStateSnapshot>,
 }
 
 /// IPC response returned by the daemon.
