@@ -232,7 +232,7 @@ Relative sizes (rough, for sequencing only — not estimates of calendar time): 
 
 **Testing requirements:** unit tests for enrichment (temp dirs with files of each kind, permission bits, symlinks, FIFOs), text verdict corpus, `build_menu` table tests, custom-action parsing/expansion tests, clipboard integration test under Xvfb (own CLIPBOARD, read back with `xclip`), D-Bus mock for Properties.
 
-**Completion definition:** ACs pass; ACTION_SYSTEM.md updated to match final code.
+**Completion definition:** ACs pass; ACTION_SYSTEM.md updated to match final code (**COMPLETED 2026-10-22** — see [`docs/test-reports/M4.md`](file:///home/marwanmohamed/Documents/work/rust/radivine/docs/test-reports/M4.md)).
 
 ---
 

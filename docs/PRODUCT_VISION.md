@@ -71,6 +71,7 @@ The wheel engine is validated with **logging dummy actions first** (M1–M3); re
 - Live-follow `tail -f` in the viewer.
 - Wayland backends (layer-shell overlay, portal-based triggers, drop shelf), Windows and macOS backends.
 - GUI settings, theming, user-defined wheel layouts.
+- **Optional Concentric Radial Layout mode**: while the default **Branching / Vine Layout** spawns adjacent offset child wheels connected by a vine stem, an optional future **Concentric Radial Layout** mode is approved for the roadmap in which child options expand as outer concentric rings around the same root center.
 - Third-party action crates; later possibly an out-of-process plugin protocol.
 
 ## 7. Experience principles

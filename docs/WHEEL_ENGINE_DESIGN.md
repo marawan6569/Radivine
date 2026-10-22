@@ -605,3 +605,9 @@ Icons: bundled **Lucide** subset — `eye`, `file-text`, `arrow-up-to-line`, `ar
 - `WheelSession` exposes `#[cfg(any(test, feature = "test-api"))] fn debug_state(&self) -> DebugState` (chain, hovered zone, timers).
 - A tiny script DSL in tests: `at(0).summon((500,400)).at(10).move_to((560,400)).at(200).expect_open([0])…` (see [TESTING_STRATEGY.md](TESTING_STRATEGY.md)).
 - `RADIVINE_DEBUG_OVERLAY=1` in the app draws zones, corridors, intent triangles and the input region.
+
+## 17. Future Layout Option — Concentric Radial Layout (Backlog)
+
+- **Default Layout (`Branching / Vine`):** The current production layout spawns each child submenu as an offset adjacent wheel (`d = R_p + g + R_c`) connected by a curved vine stem, with all ancestor wheels remaining visible.
+- **Optional Future Layout (`Concentric Radial`):** Approved by the project owner as a future selectable layout mode (post-v0.1 backlog). In Concentric Radial mode, hovering or selecting a parent segment with children opens its child segments in an outer concentric ring (`R_in_child = R_out_parent + g_ring`) centered on the same root origin rather than spawning an offset child wheel.
+- **Scope Note:** Concentric Radial layout is documented here as a future design direction and is intentionally not implemented in M0–M4.
