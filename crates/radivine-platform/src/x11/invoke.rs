@@ -100,17 +100,21 @@ pub fn grab_input(
             return Ok(());
         }
 
-        // Release any half-acquired grab before retrying or failing
-        let _ = conn.ungrab_pointer(x11rb::CURRENT_TIME);
-        let _ = conn.ungrab_keyboard(x11rb::CURRENT_TIME);
-        let _ = conn.flush();
-
         let can_retry = (ptr_reply.status == GrabStatus::ALREADY_GRABBED
             || kbd_reply.status == GrabStatus::ALREADY_GRABBED)
             && Instant::now() < deadline;
 
         if can_retry {
+            // Release any half-acquired grab before retrying
+            let _ = conn.ungrab_pointer(x11rb::CURRENT_TIME);
+            let _ = conn.ungrab_keyboard(x11rb::CURRENT_TIME);
+            let _ = conn.flush();
             thread::sleep(Duration::from_millis(10));
+        } else if ptr_reply.status == GrabStatus::SUCCESS || kbd_reply.status == GrabStatus::SUCCESS
+        {
+            // Keep whichever grab succeeded (`PLATFORM_INTEGRATION.md` §3.9)
+            let _ = conn.flush();
+            return Ok(());
         } else {
             return Err(PlatformError::X11(format!(
                 "input grab failed: pointer={:?}, keyboard={:?}",

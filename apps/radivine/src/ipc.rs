@@ -54,10 +54,19 @@ pub struct DaemonStatus {
     pub root_wheel_outer_radius_px: Option<f32>,
     /// Total number of Invoke sessions started since daemon boot.
     pub invoke_count: u64,
+    /// Total number of Drag sessions started since daemon boot.
+    #[serde(default)]
+    pub drag_session_count: u64,
     /// Last committed `ActionId` string, if any.
     pub last_committed_action: Option<String>,
     /// Last committed context item descriptions, if any.
     pub last_committed_items: Vec<String>,
+    /// Source application of the last committed action (e.g. `Some("nemo")`).
+    #[serde(default)]
+    pub last_committed_source_app: Option<String>,
+    /// Invocation mode of the last committed action (`"Drag"` or `"Invoke"`).
+    #[serde(default)]
+    pub last_committed_mode: Option<String>,
 }
 
 /// IPC response returned by the daemon.

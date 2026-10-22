@@ -124,8 +124,12 @@ impl Default for AppConfig {
 #[serde(default)]
 pub struct TriggerSection {
     /// `"shift"` | `"ctrl"` | `"alt"` | `"super"` | `"disabled"`.
+    #[serde(alias = "key")]
     pub drag_modifier: String,
+    /// Whether pressing the trigger modifier a second time hides the wheel while keeping the drag alive.
+    pub toggle_off_on_repress: bool,
     /// Whether releasing the trigger modifier dismisses the wheel.
+    #[serde(alias = "dismiss_on_release")]
     pub hold_to_keep_open: bool,
     /// Minimum drag distance in pixels before arming.
     pub min_drag_distance_px: u32,
@@ -135,6 +139,7 @@ impl Default for TriggerSection {
     fn default() -> Self {
         Self {
             drag_modifier: "shift".to_string(),
+            toggle_off_on_repress: true,
             hold_to_keep_open: false,
             min_drag_distance_px: 6,
         }
@@ -159,6 +164,8 @@ pub struct WheelSection {
     pub hover_dwell_ms: u64,
     /// Grace period in milliseconds before closing a submenu.
     pub submenu_grace_ms: u64,
+    /// Grace period in milliseconds after pointer leaves the shaped input region in drag mode (`350 ms` default).
+    pub leave_grace_ms: u64,
     /// Angular hysteresis in degrees.
     pub angular_hysteresis_deg: f32,
 }
@@ -173,6 +180,7 @@ impl Default for WheelSection {
             child_offset_gap: 20.0,
             hover_dwell_ms: 110,
             submenu_grace_ms: 180,
+            leave_grace_ms: 350,
             angular_hysteresis_deg: 3.5,
         }
     }
