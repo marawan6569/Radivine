@@ -1,0 +1,5 @@
+/target/
+/spikes/*/target/
+Untitled Document
+*.swp
+.DS_Store

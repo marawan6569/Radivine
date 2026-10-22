@@ -1,0 +1,20 @@
+[package]
+name = "xdnd-overlay-spike"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+x11rb = { version = "0.13", features = [
+    "composite",
+    "shm",
+    "shape",
+    "xfixes",
+    "xinput",
+    "randr",
+    "res",
+    "render",
+] }
+rustix = { version = "1.0", features = ["fs", "mm", "shm"] }
