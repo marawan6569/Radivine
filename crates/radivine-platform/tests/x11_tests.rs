@@ -1,16 +1,24 @@
 //! Unit and X11 integration tests for `radivine-platform` (`TESTING_STRATEGY.md` §4).
 
+use std::time::{Duration, Instant};
+
 use smallvec::smallvec;
 use x11rb::protocol::xproto::{ConnectionExt as _, ImageFormat, ImageOrder, MapState};
 
 use radivine_platform::x11::X11Platform;
+use radivine_platform::x11::arming::{
+    ArmingTracker, ArmingTransition, BUTTON_RELEASE_DISARM_DELAY, MAX_ARMED_DURATION,
+    SESSION_BUTTON_RELEASE_WATCHDOG, TriggerEdge, query_modifier_keycodes,
+};
 use radivine_platform::x11::doctor::probe_x11_doctor;
 use radivine_platform::x11::invoke::translate_keysym;
 use radivine_platform::x11::monitors::{parse_xft_dpi, pick_monitor_for_point};
 use radivine_platform::x11::shape::rasterize_shapes_to_rectangles;
 use radivine_platform::x11::shm::{ChannelShuffle, clip_damage_rect, swizzle_damage_rect};
+use radivine_platform::x11::source::{identify_window_source, parse_proc_comm, read_proc_comm};
 use radivine_platform::{
-    FrameRef, Key, Monitor, PhysPoint, Platform, RectPx, ShapePx, Support, X11Config,
+    FrameRef, Key, Monitor, PhysPoint, Platform, RectPx, ShapePx, SourceInfo, Support,
+    TriggerModifier, X11Config,
 };
 
 #[test]
@@ -210,4 +218,204 @@ fn live_x11_doctor_and_overlay_shm_lifecycle() {
         .expect("get_window_attributes reply");
     assert_eq!(attrs.map_state, MapState::UNMAPPED);
     plat.release_buffers();
+}
+
+#[test]
+fn arming_tracker_fresh_press_autorepeat_and_second_press() {
+    let t0 = Instant::now();
+    // Standard X11 Shift_L = 50, Shift_R = 62
+    let mut tracker = ArmingTracker::new(&[50, 62]);
+    assert!(!tracker.is_armed());
+
+    // Selection change without a mouse button held must not arm
+    assert_eq!(
+        tracker.on_selection_owner_changed(
+            0x2000,
+            (0x100, 0x101),
+            false,
+            false,
+            12345,
+            SourceInfo {
+                app: Some("nemo".into()),
+                pid: Some(42),
+            },
+            false,
+            t0,
+        ),
+        None
+    );
+    assert!(!tracker.is_armed());
+
+    // Selection change with button held arms the tracker
+    let transition = tracker.on_selection_owner_changed(
+        0x2000,
+        (0x100, 0x101),
+        true,
+        false,
+        12345,
+        SourceInfo {
+            app: Some("nemo".into()),
+            pid: Some(42),
+        },
+        false,
+        t0,
+    );
+    assert_eq!(
+        transition,
+        Some(ArmingTransition::Armed {
+            source: SourceInfo {
+                app: Some("nemo".into()),
+                pid: Some(42),
+            }
+        })
+    );
+    assert!(tracker.is_armed());
+    assert_eq!(tracker.selection_timestamp(), 12345);
+
+    // Non-Shift keycode is ignored
+    assert_eq!(tracker.on_raw_key_press(36), None);
+
+    // Fresh Shift_L press -> FreshPress
+    assert_eq!(tracker.on_raw_key_press(50), Some(TriggerEdge::FreshPress));
+    // Auto-repeat on Shift_L -> None
+    assert_eq!(tracker.on_raw_key_press(50), None);
+    // Pressing Shift_R while Shift_L is still down -> None
+    assert_eq!(tracker.on_raw_key_press(62), None);
+    // Releasing Shift_L while Shift_R is still down -> None
+    assert_eq!(tracker.on_raw_key_release(50), None);
+    // Releasing Shift_R (now 0 down) -> Released
+    assert_eq!(tracker.on_raw_key_release(62), Some(TriggerEdge::Released));
+
+    // Second fresh Shift press while still armed -> FreshPress (for toggle-off)
+    assert_eq!(tracker.on_raw_key_press(50), Some(TriggerEdge::FreshPress));
+    assert_eq!(tracker.on_raw_key_release(50), Some(TriggerEdge::Released));
+
+    // Selection owner becomes None -> Disarmed
+    assert_eq!(
+        tracker.on_selection_owner_changed(
+            0,
+            (0x100, 0x101),
+            false,
+            false,
+            12350,
+            SourceInfo::default(),
+            false,
+            t0,
+        ),
+        Some(ArmingTransition::Disarmed)
+    );
+    assert!(!tracker.is_armed());
+}
+
+#[test]
+fn arming_tracker_ignores_preheld_shift_until_released() {
+    let t0 = Instant::now();
+    let mut tracker = ArmingTracker::new(&[50, 62]);
+
+    // Armed while Shift is already held (e.g. Shift+drag in Nemo or text editor)
+    tracker.on_selection_owner_changed(
+        0x2000,
+        (0x100, 0x101),
+        true,
+        true,
+        9000,
+        SourceInfo {
+            app: Some("nemo".into()),
+            pid: Some(100),
+        },
+        false,
+        t0,
+    );
+    assert!(tracker.is_armed());
+
+    // Auto-repeat or second Shift key press while held_at_arm -> None
+    assert_eq!(tracker.on_raw_key_press(50), None);
+    assert_eq!(tracker.on_raw_key_press(62), None);
+    assert_eq!(tracker.on_raw_key_release(62), None);
+
+    // Releasing all Shift keys clears held_at_arm without emitting Released
+    assert_eq!(tracker.on_raw_key_release(50), None);
+
+    // Subsequent fresh press now triggers!
+    assert_eq!(tracker.on_raw_key_press(50), Some(TriggerEdge::FreshPress));
+}
+
+#[test]
+fn arming_tracker_poll_mode_and_watchdogs() {
+    let t0 = Instant::now();
+    let mut tracker = ArmingTracker::new(&[50]);
+
+    // Arm in poll mode with Shift pre-held
+    tracker.on_selection_owner_changed(
+        0x2000,
+        (0x100, 0x101),
+        true,
+        true,
+        100,
+        SourceInfo::default(),
+        true,
+        t0,
+    );
+    assert!(tracker.on_poll_sample(true, true, t0).is_empty());
+    // Release pre-held Shift in poll mode
+    assert!(tracker.on_poll_sample(true, false, t0).is_empty());
+    // Fresh press in poll mode
+    assert_eq!(
+        tracker.on_poll_sample(true, true, t0).as_slice(),
+        &[TriggerEdge::FreshPress]
+    );
+    assert_eq!(
+        tracker.on_poll_sample(true, false, t0).as_slice(),
+        &[TriggerEdge::Released]
+    );
+
+    // Raw button release when no session is open sets 200 ms disarm deadline
+    tracker.on_raw_button_release(1, t0);
+    let check_early = tracker.check_deadlines(t0 + Duration::from_millis(100));
+    assert!(!check_early.verify_button_release);
+    let check_due = tracker.check_deadlines(t0 + BUTTON_RELEASE_DISARM_DELAY);
+    assert!(check_due.verify_button_release);
+
+    // When a session IS open, button release watchdog is 1 s
+    tracker.set_session_open(true);
+    tracker.on_raw_button_release(1, t0);
+    assert!(
+        !tracker
+            .check_deadlines(t0 + Duration::from_millis(500))
+            .verify_button_release
+    );
+    assert!(
+        tracker
+            .check_deadlines(t0 + SESSION_BUTTON_RELEASE_WATCHDOG)
+            .verify_button_release
+    );
+
+    // 120 s max duration timeout disarms immediately
+    let check_max = tracker.check_deadlines(t0 + MAX_ARMED_DURATION);
+    assert!(check_max.max_duration_expired);
+    assert!(!tracker.is_armed());
+}
+
+#[test]
+fn source_identification_parses_comm_and_resolves_live_window_pid() {
+    assert_eq!(parse_proc_comm("nemo\n"), Some("nemo".to_string()));
+    assert_eq!(parse_proc_comm("   \n"), None);
+    assert!(read_proc_comm(std::process::id()).is_some());
+
+    if std::env::var("DISPLAY").is_err() {
+        return;
+    }
+    let Ok(plat) = X11Platform::connect(X11Config::default()) else {
+        return;
+    };
+    let atoms = radivine_platform::x11::atoms::Atoms::new(plat.connection())
+        .expect("atoms cookie")
+        .reply()
+        .expect("atoms reply");
+    let info = identify_window_source(plat.connection(), &atoms, plat.overlay_window_id(), true);
+    assert_eq!(info.pid, Some(std::process::id()));
+    assert!(info.app.is_some());
+
+    let shift_kcs = query_modifier_keycodes(plat.connection(), TriggerModifier::Shift);
+    assert!(!shift_kcs.is_empty());
 }

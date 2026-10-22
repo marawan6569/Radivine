@@ -341,11 +341,29 @@ pub enum TriggerDetectionMode {
     Poll,
 }
 
+/// Modifier key used to summon the radial wheel during an active drag (`ARCHITECTURE.md` §7.4).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TriggerModifier {
+    /// `Shift` (`Shift_L` / `Shift_R`, default).
+    #[default]
+    Shift,
+    /// `Ctrl` (`Control_L` / `Control_R`).
+    Ctrl,
+    /// `Alt` (`Mod1`).
+    Alt,
+    /// `Super` (`Mod4`).
+    Super,
+    /// Drag-mode trigger disabled.
+    Disabled,
+}
+
 /// Configuration for the X11 platform backend (`ARCHITECTURE.md` §7.4).
 #[derive(Clone, Debug)]
 pub struct X11Config {
     /// Trigger detection mode (`Raw` or `Poll`).
     pub trigger_detection: TriggerDetectionMode,
+    /// Modifier key that triggers the wheel while a drag is armed (`Shift` default).
+    pub trigger_modifier: TriggerModifier,
     /// EWMH window type for the overlay (`Dnd` default).
     pub window_type: OverlayWindowType,
     /// Whether to issue a 0-px relative `WarpPointer` nudge on map/unmap (`true` default).
@@ -356,6 +374,7 @@ impl Default for X11Config {
     fn default() -> Self {
         Self {
             trigger_detection: TriggerDetectionMode::Raw,
+            trigger_modifier: TriggerModifier::Shift,
             window_type: OverlayWindowType::Dnd,
             pointer_nudge: true,
         }

@@ -1,5 +1,6 @@
 //! X11 platform backend (`PLATFORM_INTEGRATION.md` §3).
 
+pub mod arming;
 pub mod atoms;
 pub mod doctor;
 pub mod invoke;
@@ -7,6 +8,7 @@ pub mod monitors;
 pub mod overlay;
 pub mod shape;
 pub mod shm;
+pub mod source;
 
 use std::os::fd::{AsRawFd, RawFd};
 use std::time::Instant;

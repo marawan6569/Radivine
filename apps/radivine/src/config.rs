@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Deserializer};
 
-use radivine_platform::{OverlayWindowType, TriggerDetectionMode, X11Config};
+use radivine_platform::{OverlayWindowType, TriggerDetectionMode, TriggerModifier, X11Config};
 use radivine_render::Theme;
 use radivine_wheel::WheelConfig;
 
@@ -399,6 +399,19 @@ impl AppConfig {
             "poll" => TriggerDetectionMode::Poll,
             _ => TriggerDetectionMode::Raw,
         };
+        let trigger_modifier = match self
+            .trigger
+            .drag_modifier
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "ctrl" | "control" => TriggerModifier::Ctrl,
+            "alt" | "mod1" => TriggerModifier::Alt,
+            "super" | "meta" | "mod4" => TriggerModifier::Super,
+            "disabled" | "none" | "off" => TriggerModifier::Disabled,
+            _ => TriggerModifier::Shift,
+        };
         let window_type = match self.x11.window_type.trim().to_ascii_lowercase().as_str() {
             "popup_menu" => OverlayWindowType::PopupMenu,
             "notification" => OverlayWindowType::Notification,
@@ -407,6 +420,7 @@ impl AppConfig {
         };
         X11Config {
             trigger_detection,
+            trigger_modifier,
             window_type,
             pointer_nudge: self.x11.pointer_nudge,
         }
