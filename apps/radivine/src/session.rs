@@ -72,6 +72,8 @@ impl SessionState {
 pub struct LastCommitRecord {
     /// Committed `ActionId` string.
     pub action_id: Option<String>,
+    /// Committed `ItemPath` indices.
+    pub path: Option<Vec<u8>>,
     /// Context item URIs at commit time.
     pub items: Vec<String>,
     /// Drag source application name (`Some("nemo")`), if any.
@@ -277,6 +279,7 @@ impl SessionController {
             invoke_count: self.invoke_count,
             drag_session_count: self.drag_session_count,
             last_committed_action: commit.action_id,
+            last_committed_path: commit.path,
             last_committed_items: commit.items,
             last_committed_source_app: commit.source_app,
             last_committed_mode: commit.mode,
@@ -1167,6 +1170,7 @@ impl SessionController {
 
         if let Ok(mut guard) = self.last_commit.lock() {
             guard.action_id = Some(action_id.as_str().to_string());
+            guard.path = Some(path.as_slice().to_vec());
             guard.items = uris;
             guard.source_app = source_app;
             guard.mode = Some(mode_str.to_string());

@@ -59,6 +59,9 @@ pub struct DaemonStatus {
     pub drag_session_count: u64,
     /// Last committed `ActionId` string, if any.
     pub last_committed_action: Option<String>,
+    /// Last committed `ItemPath` indices (e.g. `Some([0, 1])`), if any.
+    #[serde(default)]
+    pub last_committed_path: Option<Vec<u8>>,
     /// Last committed context item descriptions, if any.
     pub last_committed_items: Vec<String>,
     /// Source application of the last committed action (e.g. `Some("nemo")`).
@@ -70,6 +73,7 @@ pub struct DaemonStatus {
 }
 
 /// IPC response returned by the daemon.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum IpcResponse {
