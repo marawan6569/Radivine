@@ -9,6 +9,7 @@ pub mod overlay;
 pub mod shape;
 pub mod shm;
 pub mod source;
+pub mod xdnd;
 
 use std::os::fd::{AsRawFd, RawFd};
 use std::time::Instant;

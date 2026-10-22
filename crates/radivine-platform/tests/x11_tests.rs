@@ -16,6 +16,7 @@ use radivine_platform::x11::monitors::{parse_xft_dpi, pick_monitor_for_point};
 use radivine_platform::x11::shape::rasterize_shapes_to_rectangles;
 use radivine_platform::x11::shm::{ChannelShuffle, clip_damage_rect, swizzle_damage_rect};
 use radivine_platform::x11::source::{identify_window_source, parse_proc_comm, read_proc_comm};
+use radivine_platform::x11::xdnd::{DndMessageEvent, OutgoingClientMessage, XdndAtoms, XdndTarget};
 use radivine_platform::{
     FrameRef, Key, Monitor, PhysPoint, Platform, RectPx, ShapePx, SourceInfo, Support,
     TriggerModifier, X11Config,
@@ -418,4 +419,144 @@ fn source_identification_parses_comm_and_resolves_live_window_pid() {
 
     let shift_kcs = query_modifier_keycodes(plat.connection(), TriggerModifier::Shift);
     assert!(!shift_kcs.is_empty());
+}
+
+fn sample_xdnd_atoms() -> XdndAtoms {
+    XdndAtoms {
+        enter: 10,
+        position: 11,
+        status: 12,
+        leave: 13,
+        drop: 14,
+        finished: 15,
+        action_private: 99,
+    }
+}
+
+#[test]
+fn xdnd_target_enter_position_status_and_drop_lifecycle() {
+    let atoms = sample_xdnd_atoms();
+    let overlay_win = 0x0500_0001;
+    let src_win = 0x0300_0042;
+    let mut target = XdndTarget::new(overlay_win, atoms);
+    assert!(!target.is_entered());
+    assert_eq!(target.effective_selection_timestamp(4000), 4000);
+
+    // XdndEnter: version 5 in bits 24..31, inline types [500, 501, 0], more_types = 0
+    let enter_ev = target.on_message(atoms.enter, [src_win, 5 << 24, 500, 501, 0]);
+    assert_eq!(
+        enter_ev,
+        Some(DndMessageEvent::Enter {
+            source: src_win,
+            version: 5,
+            inline_types: smallvec![500, 501],
+            more_types: false,
+        })
+    );
+    assert!(target.is_entered());
+
+    // Stale XdndPosition from a different window is ignored
+    let packed_pos = ((1920u32 & 0xFFFF) << 16) | (540u32 & 0xFFFF);
+    assert_eq!(
+        target.on_message(atoms.position, [0x9999, 0, packed_pos, 5000, 77]),
+        None
+    );
+
+    // Valid XdndPosition (including signed negative coordinate -120, 300)
+    let neg_x = (-120i16 as u16) as u32;
+    let pos_y = (300i16 as u16) as u32;
+    let packed_neg = (neg_x << 16) | pos_y;
+    let pos_ev = target.on_message(atoms.position, [src_win, 0, packed_neg, 5500, 88]);
+    assert_eq!(
+        pos_ev,
+        Some(DndMessageEvent::Position {
+            source: src_win,
+            at: PhysPoint::new(-120, 300),
+            timestamp: 5500,
+            requested_action: 88,
+        })
+    );
+    assert_eq!(target.effective_selection_timestamp(4000), 5500);
+
+    // Status(accept=true) MUST reply with XdndActionPrivate (99), never requested_action (88)
+    assert_eq!(
+        target.status(true),
+        Some(OutgoingClientMessage {
+            destination: src_win,
+            msg_type: atoms.status,
+            data: [overlay_win, 3, 0, 0, atoms.action_private],
+        })
+    );
+    // Status(accept=false) MUST reply with flags=2 (want positions) and action=NONE (0)
+    assert_eq!(
+        target.status(false),
+        Some(OutgoingClientMessage {
+            destination: src_win,
+            msg_type: atoms.status,
+            data: [overlay_win, 2, 0, 0, 0],
+        })
+    );
+
+    // XdndDrop with timestamp 6600
+    let drop_ev = target.on_message(atoms.drop, [src_win, 0, 6600, 0, 0]);
+    assert_eq!(
+        drop_ev,
+        Some(DndMessageEvent::Drop {
+            source: src_win,
+            timestamp: 6600,
+        })
+    );
+    assert_eq!(target.effective_selection_timestamp(4000), 6600);
+
+    // Finished(success=true) replies with accepted=1 and XdndActionPrivate, then resets
+    assert_eq!(
+        target.finished(true),
+        Some(OutgoingClientMessage {
+            destination: src_win,
+            msg_type: atoms.finished,
+            data: [overlay_win, 1, atoms.action_private, 0, 0],
+        })
+    );
+    assert!(!target.is_entered());
+    assert_eq!(target.status(true), None);
+}
+
+#[test]
+fn xdnd_target_leave_and_rejected_drop() {
+    let atoms = sample_xdnd_atoms();
+    let overlay_win = 0x0500_0001;
+    let src_win = 0x0300_0042;
+    let mut target = XdndTarget::new(overlay_win, atoms);
+
+    // Enter with more_types = true (bit 0 = 1) and version 6 (clamped to 5)
+    let enter_ev = target.on_message(atoms.enter, [src_win, (6 << 24) | 1, 500, 501, 502]);
+    assert_eq!(
+        enter_ev,
+        Some(DndMessageEvent::Enter {
+            source: src_win,
+            version: 5,
+            inline_types: smallvec![500, 501, 502],
+            more_types: true,
+        })
+    );
+
+    // Leave clears source
+    assert_eq!(
+        target.on_message(atoms.leave, [src_win, 0, 0, 0, 0]),
+        Some(DndMessageEvent::Leave { source: src_win })
+    );
+    assert!(!target.is_entered());
+    assert_eq!(target.status(true), None);
+
+    // Re-enter and reject drop
+    target.on_message(atoms.enter, [src_win, 5 << 24, 500, 0, 0]);
+    target.on_message(atoms.drop, [src_win, 0, 7000, 0, 0]);
+    assert_eq!(
+        target.finished(false),
+        Some(OutgoingClientMessage {
+            destination: src_win,
+            msg_type: atoms.finished,
+            data: [overlay_win, 0, 0, 0, 0],
+        })
+    );
 }
