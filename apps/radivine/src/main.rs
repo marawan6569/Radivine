@@ -10,7 +10,7 @@ use std::os::fd::{AsFd, BorrowedFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use calloop::generic::Generic;
 use calloop::{EventLoop, Interest, Mode, PostAction};
@@ -292,11 +292,6 @@ fn run_daemon(config_path: Option<PathBuf>, sock_path: &Path) -> anyhow::Result<
             .controller
             .next_deadline()
             .map(|dl| dl.saturating_duration_since(now));
-
-        if let Some(Duration::ZERO) = timeout {
-            state.controller.on_timer(Instant::now());
-            continue;
-        }
 
         event_loop.dispatch(timeout, &mut state)?;
         state.controller.on_timer(Instant::now());

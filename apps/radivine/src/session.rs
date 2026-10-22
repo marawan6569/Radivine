@@ -563,7 +563,7 @@ impl SessionController {
             .as_millis() as Millis
     }
 
-    fn schedule_next_frame_if_animating(&mut self, now: Instant) {
+    fn schedule_next_frame_if_animating(&mut self, _now: Instant) {
         if self.state != SessionState::Active {
             self.next_frame_deadline = None;
             return;
@@ -578,7 +578,7 @@ impl SessionController {
                 .as_ref()
                 .map_or(60_000, |i| i.monitor.refresh_mhz.max(30_000));
             let frame_ns = 1_000_000_000_000u64 / u64::from(refresh_mhz);
-            self.next_frame_deadline = Some(now + Duration::from_nanos(frame_ns));
+            self.next_frame_deadline = Some(Instant::now() + Duration::from_nanos(frame_ns));
         } else {
             self.next_frame_deadline = None;
         }
