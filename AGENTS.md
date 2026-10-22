@@ -82,3 +82,24 @@ At the end of each milestone:
 2. **Engine Purity (`radivine-wheel`):** `crates/radivine-wheel` must remain `#![forbid(unsafe_code)]`, pure Rust, platform-independent, renderer-independent, and depend only on `smallvec` at runtime.
 3. **Renderer Safety (`radivine-render`):** `crates/radivine-render` must remain `#![forbid(unsafe_code)]` and platform-independent.
 4. **Input Pass-Through Safety Default:** On X11 drag mode, `input.passthrough` defaults to `false` (capture-all overlay during active sessions) to prevent accidental native file drops/moves into underlying file manager windows when releasing outside the wheel (`ADR-0001`, `FEASIBILITY_STUDY.md` §10).
+
+---
+
+## 3. Mandatory Milestone Authorization Policy
+
+### 3.1 Explicit Authorization Required
+- Never begin a new implementation milestone without explicit authorization from the user.
+- Git workflow instructions, documentation updates, and maintenance requests do not constitute authorization to proceed to another milestone.
+- Completion of a milestone does not automatically authorize the next one.
+- Do not infer permission from the existence of an implementation plan or previously prepared prompts.
+- When instructed to stop after a milestone, stop completely after verification, documentation, and commits.
+- Do not begin the next milestone even if all acceptance criteria pass.
+- If authorization is unclear, stop and request it.
+
+### 3.2 Scope Boundaries
+- Treat each explicitly authorized milestone as a hard scope boundary.
+- Do not implement functionality belonging to future milestones unless the user explicitly approves expanding the scope.
+
+### 3.3 Current Project State
+- Milestones M0, M1a, M1b, and M2 are complete.
+- **Do not begin M3** without explicit authorization from the user.
