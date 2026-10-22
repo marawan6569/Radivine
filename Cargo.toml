@@ -1,0 +1,33 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/radivine-wheel",
+    "crates/radivine-render",
+    "tools/wheel-sandbox",
+]
+exclude = [
+    "spikes/xdnd-overlay",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/radivine/radivine"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = "warn"
+
+[workspace.dependencies]
+smallvec = "1.15"
+thiserror = "2.0"
+tiny-skia = { version = "0.11", features = ["png-format"] }
+cosmic-text = "0.12"
+resvg = "0.44"
+winit = "0.30"
+softbuffer = "0.4"
+proptest = "1.6"
+criterion = "0.5"
