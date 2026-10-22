@@ -330,6 +330,7 @@ struct XdndSourceHarness {
     incr_property: Atom,
     incr_offset: usize,
     incr_active: bool,
+    selection_served: bool,
 }
 
 impl XdndSourceHarness {
@@ -379,6 +380,7 @@ impl XdndSourceHarness {
             incr_property: x11rb::NONE,
             incr_offset: 0,
             incr_active: false,
+            selection_served: false,
         }
     }
 
@@ -421,6 +423,7 @@ impl XdndSourceHarness {
             .set_selection_owner(self.src_win, self.atoms.XdndSelection, x11rb::CURRENT_TIME)
             .expect("set_selection_owner XdndSelection");
         self.conn.flush().expect("flush selection owner");
+        self.selection_served = false;
     }
 
     fn end_drag(&mut self) {
@@ -494,6 +497,7 @@ impl XdndSourceHarness {
                             self.conn
                                 .send_event(false, req.requestor, EventMask::NO_EVENT, notify);
                         let _ = self.conn.flush();
+                        self.selection_served = true;
                     } else {
                         // Refuse conversion (`property = NONE`)
                         let notify = SelectionNotifyEvent {
@@ -509,6 +513,7 @@ impl XdndSourceHarness {
                             self.conn
                                 .send_event(false, req.requestor, EventMask::NO_EVENT, notify);
                         let _ = self.conn.flush();
+                        self.selection_served = true;
                     }
                 }
                 Event::PropertyNotify(pn)
@@ -629,7 +634,6 @@ impl XdndSourceHarness {
     }
 
     fn send_xdnd_drop_and_wait_finished(&mut self, overlay_win: Window) -> (bool, Atom) {
-        let _ = Command::new("xdotool").args(["mouseup", "1"]).status();
         let ev = ClientMessageEvent {
             response_type: x11rb::protocol::xproto::CLIENT_MESSAGE_EVENT,
             format: 32,
@@ -679,8 +683,14 @@ impl XdndSourceHarness {
             let _ = self.pump();
             if is_window_mapped(&self.conn, overlay_win) {
                 let lat = t0.elapsed();
-                // Pump for a couple more milliseconds so the prefetched SelectionRequest completes
-                let settle = Instant::now() + Duration::from_millis(15);
+                // Wait until the prefetched SelectionRequest has been served by `pump()`,
+                // then allow a brief settle window for Radivine to process SelectionNotify -> Active.
+                let serve_deadline = Instant::now() + Duration::from_millis(60);
+                while !self.selection_served && Instant::now() < serve_deadline {
+                    let _ = self.pump();
+                    thread::sleep(Duration::from_millis(1));
+                }
+                let settle = Instant::now() + Duration::from_millis(8);
                 while Instant::now() < settle {
                     let _ = self.pump();
                     thread::sleep(Duration::from_millis(1));
@@ -1220,26 +1230,40 @@ fn m3_real_gtk3_drag_retargeting() {
         .spawn()
         .expect("spawn gtk3_drag_harness.py");
 
-    // Wait for GTK3 harness window to map at (100, 100)
+    // Wait for GTK3 harness window to map, then move & raise it to (600, 400) so the entire drag
+    // from src_box (720, 540) to dst_box (960, 540) stays inside the GTK3 harness window and never
+    // touches background desktop applications.
     thread::sleep(Duration::from_millis(500));
+    let _ = Command::new("xdotool")
+        .args([
+            "search",
+            "--name",
+            "Radivine-M0-GTK3-Harness",
+            "windowmove",
+            "600",
+            "400",
+            "windowraise",
+        ])
+        .status();
+    thread::sleep(Duration::from_millis(50));
 
-    // Ensure clean button/modifier state, then start real GTK3 drag from source box (200, 220) to (960, 540)
+    // Ensure clean button/modifier state, then start real GTK3 drag from src_box (720, 540) to dst_box (960, 540)
     let _ = Command::new("xdotool")
         .args(["keyup", "Shift_L", "keyup", "Shift_R", "mouseup", "1"])
         .status();
     thread::sleep(Duration::from_millis(25));
     let _ = Command::new("xdotool")
-        .args(["mousemove", "200", "220", "mousedown", "1"])
+        .args(["mousemove", "720", "540", "mousedown", "1"])
         .status();
     thread::sleep(Duration::from_millis(35));
     let _ = Command::new("xdotool")
-        .args(["mousemove", "240", "240"])
+        .args(["mousemove", "760", "540"])
         .status();
     thread::sleep(Duration::from_millis(35));
     let _ = Command::new("xdotool")
         .args(["mousemove", "960", "540"])
         .status();
-    thread::sleep(Duration::from_millis(80));
+    thread::sleep(Duration::from_millis(60));
 
     // Press Shift mid-drag -> Radivine maps overlay and 0-px WarpPointer causes GTK3 to retarget!
     let _ = Command::new("xdotool")
