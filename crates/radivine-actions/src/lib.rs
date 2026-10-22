@@ -1,15 +1,28 @@
-//! `radivine-actions` — Built-in actions and default menu specification (`ACTION_SYSTEM.md` §6.1, §8).
-//!
-//! In Milestones M2–M3, all built-in actions are registered as [`radivine_core::LogAction`]s with
-//! their production metadata and menu structure (`IMPLEMENTATION_PLAN.md` §M2 Task 3).
+//! `radivine-actions` — Built-in context-aware actions, D-Bus integration, and `actions.toml`
+//! user-defined custom actions (`ACTION_SYSTEM.md` §6.1, §8, §9, §10).
 
 #![forbid(unsafe_code)]
+
+pub mod builtins;
+pub mod custom;
+pub mod dbus;
 
 use std::sync::Arc;
 
 use radivine_core::{
-    ActionId, ActionMeta, ActionRegistry, ContextKind, IconKey, LogAction, MenuOverrides, MenuSpec,
-    RegistryError,
+    ActionId, ActionMeta, ActionRegistry, ContextKind, IconKey, LogAction, MenuSpec, RegistryError,
+};
+
+pub use builtins::{
+    CopyAction, PreviewPlaceholderAction, PropertiesAction, PropertiesBackend,
+    SessionDbusPropertiesBackend, evaluate_text_file_facts, is_known_non_text_mime,
+};
+pub use custom::{
+    ActionsConfig, ActionsLoadError, ArgPlaceholder, ArgToken, CountRange, CustomAction,
+    NotifyPolicy, WhenRule, load_actions_file, mime_glob_matches, parse_actions_toml,
+};
+pub use dbus::{
+    DbusError, call_desktop_notify, call_show_item_properties, resolve_session_bus_path,
 };
 
 /// Returns the default declarative [`MenuSpec`] tree (`ACTION_SYSTEM.md` §6.1).
@@ -54,9 +67,19 @@ pub fn default_menu() -> Vec<MenuSpec> {
     ]
 }
 
-/// Registers all built-in actions (as [`LogAction`]s for M2–M3) and sets [`default_menu`] on `registry`.
+/// Registers all built-in actions and sets [`default_menu`] on `registry`.
 pub fn register_builtins(registry: &mut ActionRegistry) -> Result<(), RegistryError> {
-    let builtins = [
+    register_builtins_with_config(registry, &ActionsConfig::default())
+}
+
+/// Registers all built-in actions together with validated user custom actions and `[menu]` overrides
+/// from [`ActionsConfig`] (`ACTION_SYSTEM.md` §8–§10).
+pub fn register_builtins_with_config(
+    registry: &mut ActionRegistry,
+    config: &ActionsConfig,
+) -> Result<(), RegistryError> {
+    // 1. Preview actions (M4 visibility + FileFacts enablement; M5 viewer placeholder on execution)
+    let preview_builtins = [
         (
             "radivine.preview.full",
             "Full Preview",
@@ -75,18 +98,25 @@ pub fn register_builtins(registry: &mut ActionRegistry) -> Result<(), RegistryEr
             "lucide:arrow-down-to-line",
             "Preview last 50 lines of file",
         ),
-        (
-            "radivine.copy",
-            "Copy",
-            "lucide:copy",
-            "Copy selected file to clipboard",
-        ),
-        (
-            "radivine.properties",
-            "Properties",
-            "lucide:info",
-            "Show file properties",
-        ),
+    ];
+    for (id, label, icon, desc) in preview_builtins {
+        registry.register(Arc::new(PreviewPlaceholderAction::new(
+            id, label, icon, desc,
+        )))?;
+    }
+
+    // 2. Real Copy and Properties actions
+    registry.register(Arc::new(CopyAction::new()))?;
+    registry.register(Arc::new(PropertiesAction::new()))?;
+
+    // 3. User-defined custom actions from `actions.toml` (registered before built-in custom demo items
+    //    so user actions appear first in `Custom`)
+    for custom_act in &config.actions {
+        registry.register(Arc::new(custom_act.clone()))?;
+    }
+
+    // 4. Non-destructive built-in custom demo entries (skipped if overridden by a user custom action with the same id)
+    let demo_customs = [
         (
             "custom.terminal",
             "Open in Terminal",
@@ -106,19 +136,20 @@ pub fn register_builtins(registry: &mut ActionRegistry) -> Result<(), RegistryEr
             "Set +x permission bit",
         ),
     ];
-
-    for (id, label, icon, desc) in builtins {
-        let action = Arc::new(LogAction::new(ActionMeta {
-            id: ActionId::from(id),
-            label: label.to_string(),
-            icon: Some(IconKey::from(icon)),
-            description: Some(desc.to_string()),
-            kinds: &[ContextKind::Files],
-        }));
-        registry.register(action)?;
+    for (id, label, icon, desc) in demo_customs {
+        let act_id = ActionId::from(id);
+        if registry.get(&act_id).is_none() {
+            registry.register(Arc::new(LogAction::new(ActionMeta {
+                id: act_id,
+                label: label.to_string(),
+                icon: Some(IconKey::from(icon)),
+                description: Some(desc.to_string()),
+                kinds: &[ContextKind::Files],
+            })))?;
+        }
     }
 
-    registry.set_menu(default_menu(), MenuOverrides::default());
+    registry.set_menu(default_menu(), config.overrides.clone());
     Ok(())
 }
 
@@ -128,4 +159,13 @@ pub fn builtin_registry() -> ActionRegistry {
     let mut reg = ActionRegistry::new();
     register_builtins(&mut reg).expect("built-in action IDs are unique");
     reg
+}
+
+/// Constructs a new [`ActionRegistry`] populated with built-ins and the given [`ActionsConfig`].
+pub fn registry_from_actions_config(
+    config: &ActionsConfig,
+) -> Result<ActionRegistry, RegistryError> {
+    let mut reg = ActionRegistry::new();
+    register_builtins_with_config(&mut reg, config)?;
+    Ok(reg)
 }

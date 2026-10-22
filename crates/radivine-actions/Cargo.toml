@@ -6,6 +6,10 @@ license.workspace = true
 
 [dependencies]
 radivine-core = { path = "../radivine-core" }
+serde.workspace = true
+thiserror.workspace = true
+toml.workspace = true
+tracing.workspace = true
 
 [lints]
 workspace = true

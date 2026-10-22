@@ -1821,6 +1821,10 @@ name = "radivine-actions"
 version = "0.1.0"
 dependencies = [
  "radivine-core",
+ "serde",
+ "thiserror 2.0.21",
+ "toml",
+ "tracing",
 ]
 
 [[package]]
