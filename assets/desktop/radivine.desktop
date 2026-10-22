@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Radivine
+GenericName=Radial Action Engine
+Comment=Context-aware hierarchical radial action engine
+Exec=radivine daemon
+TryExec=radivine
+Icon=radivine
+Terminal=false
+Categories=Utility;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true

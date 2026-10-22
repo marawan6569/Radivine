@@ -6,6 +6,7 @@ members = [
     "crates/radivine-core",
     "crates/radivine-actions",
     "crates/radivine-platform",
+    "apps/radivine",
     "tools/wheel-sandbox",
 ]
 exclude = [
@@ -39,3 +40,10 @@ mime_guess = "2.0"
 tracing = "0.1"
 x11rb = { version = "0.13", features = ["composite", "shm", "shape", "xfixes", "xinput", "randr", "res", "render", "resource_manager", "cursor"] }
 rustix = { version = "1.0", features = ["fs", "mm", "shm"] }
+calloop = "0.14"
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+anyhow = "1.0"
