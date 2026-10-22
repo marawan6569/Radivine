@@ -75,3 +75,18 @@ Measured on live Linux Mint 22.x (Cinnamon X11, `DISPLAY=:1`, `3840 × 1080 @ 11
 | **Daemon Warm Active RSS (`3840 × 1080` surface)** | **`31.26 MiB`** (`32,008 KiB`) | `< 45 MiB` (`3840 × 1080` ultrawide) | **PASS** |
 | **Daemon Post-Session Idle RSS (`> 30 s` buffer release, `AC-2.8`)** | **`10.00 MiB`** (`10,244 KiB`) | `< 25 MiB` | **PASS (2.5× under budget)** |
 | **Daemon Idle CPU over 60 s (`AC-2.8`)** | **`0.0000%`** (`0` kernel/user ticks over `60.0 s`) | `≈ 0%` (`< 0.1%`) | **PASS** |
+
+---
+
+## 5. Milestone M3 — Real Desktop Drag-and-Drop Integration (`radivine-platform` + `apps/radivine`)
+
+Measured on live Linux Mint 22.3 (Cinnamon X11, `DISPLAY=:1`, `3840 × 1080 @ 119.97 Hz`, Muffin compositor, GTK 3.24.41 / Nemo 6.6.3) using `./target/release/radivine` (`cargo test --release -p radivine --test m3_drag_acceptance -- --test-threads=1 --nocapture`):
+
+| Metric | Measured Value | Target Budget (`ARCHITECTURE.md` §10 / `IMPLEMENTATION_PLAN.md` §M3) | Status |
+|---|---|---|---|
+| **Drag Trigger → Overlay Mapped Latency (`AC-3.1`, 20 runs)** | min **`26.59 ms`**, p50 **`26.80 ms`**, p95 **`27.16 ms`**, max **`27.80 ms`** | p95 `< 50 ms` | **PASS (1.84× under p95 budget)** |
+| **`XdndPosition` → `XdndStatus` Reply Latency** | **`< 0.65 ms`** (`~440–620 µs`, synchronous reply sent *before* software rasterisation) | `< 8 ms` (120 Hz frame budget) | **PASS (12× under budget)** |
+| **`XdndDrop` → `XdndFinished` + `LogAction` Dispatch Latency** | **`2.09 ms`** (`1,674.33 ms` → `1,676.42 ms` in live GTK3 trace) | `< 16 ms` | **PASS (7.6× under budget)** |
+| **50-Session Drag Stress Suite (`AC-3.13`, 25 toggles + 25 commits)** | Completed in **`7.68 s`**; `VmRSS` before = **`40,568 KiB`**, after = **`40,568 KiB`** (delta **`+0 KiB`**) | `< 2,048 KiB` (`< 2 MB`) growth | **PASS (`0 KiB` growth)** |
+| **Multi-Chunk `INCR` Selection Transfer (500 file URIs, ~22.5 KiB)** | 6 `INCR` chunks transferred and parsed into `BasicContext` in **`< 4.5 ms`** | `< 50 ms` | **PASS** |
+

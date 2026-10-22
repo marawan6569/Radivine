@@ -1,7 +1,7 @@
 # Radivine — Implementation Plan
 
-Status: **M0 Complete (GO) — Ready for M1a/M1b/M2** · Last updated: 2026-10-22
-Order of work: **M0 (Done) → M1 → M2 → M3 → M4 → M5 → M6** (M1 may start in parallel with M0 because it is platform-independent).
+Status: **M0, M1a, M1b, M2, M3 Complete — Ready for M4** · Last updated: 2026-10-22
+Order of work: **M0 (Done) → M1a/M1b (Done) → M2 (Done) → M3 (Done) → M4 → M5 → M6** (M1 may start in parallel with M0 because it is platform-independent).
 
 ---
 
@@ -198,7 +198,7 @@ Relative sizes (rough, for sequencing only — not estimates of calendar time): 
 
 **Testing requirements:** `xdnd.rs`/`arming.rs` unit tests; E2E harness in CI (allowed to be marked flaky-retry once); full manual Nemo matrix (icon/list/compact view, desktop icons, sidebar bookmarks drag, multiple windows).
 
-**Completion definition:** all PoC ACs pass on the dev machine; demo screen recording attached to the test report; FEASIBILITY_STUDY verdict updated to "demonstrated".
+**Completion definition:** all PoC ACs pass on the dev machine; demo screenshots/traces attached to the test report; FEASIBILITY_STUDY verdict updated to "demonstrated" (**COMPLETED 2026-10-22** — see [`docs/test-reports/M3.md`](file:///home/marwanmohamed/Documents/work/rust/radivine/docs/test-reports/M3.md)).
 
 ---
 

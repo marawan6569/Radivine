@@ -1218,23 +1218,21 @@ fn m3_real_gtk3_drag_retargeting() {
     // Wait for GTK3 harness window to map at (100, 100)
     thread::sleep(Duration::from_millis(500));
 
-    // Start real GTK3 drag from source box (200, 220) and drag to (960, 540)
+    // Ensure clean button/modifier state, then start real GTK3 drag from source box (200, 220) to (960, 540)
     let _ = Command::new("xdotool")
-        .args([
-            "mousemove",
-            "200",
-            "220",
-            "mousedown",
-            "1",
-            "mousemove",
-            "--sync",
-            "240",
-            "240",
-            "mousemove",
-            "--sync",
-            "960",
-            "540",
-        ])
+        .args(["keyup", "Shift_L", "keyup", "Shift_R", "mouseup", "1"])
+        .status();
+    thread::sleep(Duration::from_millis(25));
+    let _ = Command::new("xdotool")
+        .args(["mousemove", "200", "220", "mousedown", "1"])
+        .status();
+    thread::sleep(Duration::from_millis(35));
+    let _ = Command::new("xdotool")
+        .args(["mousemove", "240", "240"])
+        .status();
+    thread::sleep(Duration::from_millis(35));
+    let _ = Command::new("xdotool")
+        .args(["mousemove", "960", "540"])
         .status();
     thread::sleep(Duration::from_millis(80));
 

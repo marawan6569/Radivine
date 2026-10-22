@@ -1,13 +1,13 @@
 # Radivine — Feasibility Study
 
-Status: **Empirically verified (M0 Spikes S-1..S-6 PASS — GO)** · Last updated: 2026-10-22
+Status: **Demonstrated in Production (M0 Spikes S-1..S-6 PASS + M3 End-to-End Integration Verified)** · Last updated: 2026-10-22
 Highest-priority planning document. Read this before any other technical document.
 
 ---
 
 ## 0. Verdict (summary)
 
-**The target interaction — drag a file in Nemo, press `Shift` mid-drag, a wheel appears at the cursor, drop onto a wheel action, Radivine receives the action *and* the file URIs — is _empirically verified_ on Linux Mint 22.3 Cinnamon (X11) with ordinary, unprivileged X11 APIs and without patching Nemo.**
+**The target interaction — drag a file in Nemo, press `Shift` mid-drag, a wheel appears at the cursor, drop onto a wheel action, Radivine receives the action *and* the file URIs — is _demonstrated in production_ (`Milestone M3`, [`docs/test-reports/M3.md`](file:///home/marwanmohamed/Documents/work/rust/radivine/docs/test-reports/M3.md)) and _empirically verified_ on Linux Mint 22.3 Cinnamon (X11) with ordinary, unprivileged X11 APIs and without patching Nemo.**
 
 Confidence: **empirically verified (`[V]`)** across all six M0 spikes ([`S-1`](file:///home/marwanmohamed/Documents/work/rust/radivine/docs/spikes/S-1.md), [`S-2`](file:///home/marwanmohamed/Documents/work/rust/radivine/docs/spikes/S-2.md), [`S-3`](file:///home/marwanmohamed/Documents/work/rust/radivine/docs/spikes/S-3.md), [`S-4`](file:///home/marwanmohamed/Documents/work/rust/radivine/docs/spikes/S-4.md), [`S-5`](file:///home/marwanmohamed/Documents/work/rust/radivine/docs/spikes/S-5.md), [`S-6`](file:///home/marwanmohamed/Documents/work/rust/radivine/docs/spikes/S-6.md)) against both an instrumented GTK 3.24.41 harness and live Nemo 6.6.3 (Icon View, List View, Compact View, and multi-file selections). Milestone M0 gate decision: **GO**.
 
