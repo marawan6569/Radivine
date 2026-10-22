@@ -2,6 +2,7 @@
 
 pub mod arming;
 pub mod atoms;
+pub mod clipboard;
 pub mod doctor;
 pub mod invoke;
 pub mod monitors;
@@ -25,6 +26,7 @@ use crate::x11::arming::{
     select_xdnd_selection_notify, select_xi2_raw_events,
 };
 use crate::x11::atoms::Atoms;
+use crate::x11::clipboard::ClipboardService;
 use crate::x11::doctor::{DoctorReport, probe_with_connection};
 use crate::x11::invoke::{KeymapTable, create_left_ptr_cursor, grab_input, ungrab_input};
 use crate::x11::monitors::{
@@ -61,6 +63,7 @@ pub struct X11Platform {
     arming: ArmingTracker,
     xdnd: XdndTarget,
     selection: SelectionReader,
+    clipboard: ClipboardService,
     pending_payload_events: Vec<PlatformEvent>,
     shape_supported: bool,
     randr_supported: bool,
@@ -141,6 +144,7 @@ impl X11Platform {
         let arming = ArmingTracker::new(&trigger_kcs);
         let xdnd = XdndTarget::new(overlay.window, XdndAtoms::from_atoms(&atoms));
         let selection = SelectionReader::new(overlay.window, atoms.RADIVINE_DND, atoms.INCR);
+        let clipboard = ClipboardService::new(overlay.helper_window);
 
         conn.flush()
             .map_err(|e| PlatformError::X11(e.to_string()))?;
@@ -158,6 +162,7 @@ impl X11Platform {
             arming,
             xdnd,
             selection,
+            clipboard,
             pending_payload_events: Vec::new(),
             shape_supported,
             randr_supported,
@@ -383,6 +388,13 @@ impl Platform for X11Platform {
                             query_modifier_keycodes(&self.conn, self.cfg.trigger_modifier);
                         self.arming.set_trigger_keycodes(&trigger_kcs);
                     }
+                    Event::SelectionRequest(req) if req.owner == self.overlay.helper_window => {
+                        self.clipboard
+                            .on_selection_request(&self.conn, &self.atoms, req);
+                    }
+                    Event::SelectionClear(ev) if ev.owner == self.overlay.helper_window => {
+                        self.clipboard.on_selection_clear(ev, self.atoms.CLIPBOARD);
+                    }
                     Event::PropertyNotify(ev)
                         if ev.window == root && ev.atom == self.atoms.RESOURCE_MANAGER =>
                     {
@@ -390,6 +402,9 @@ impl Platform for X11Platform {
                         self.doctor.xft_dpi = dpi;
                         self.doctor.scale = scale;
                         out.push(PlatformEvent::SettingsChanged);
+                    }
+                    Event::PropertyNotify(ev) => {
+                        self.clipboard.on_property_notify(&self.conn, ev);
                     }
                     Event::RandrScreenChangeNotify(_) | Event::RandrNotify(_) => {
                         let screen = &self.conn.setup().roots[self.screen_num];
@@ -556,9 +571,9 @@ impl Platform for X11Platform {
         }
     }
 
-    fn set_clipboard(&mut self, _content: ClipboardContent) -> Result<(), PlatformError> {
-        // Implemented in M4 (File Actions & Clipboard Ownership)
-        Ok(())
+    fn set_clipboard(&mut self, content: ClipboardContent) -> Result<(), PlatformError> {
+        self.clipboard
+            .set_clipboard(&self.conn, &self.atoms, content)
     }
 
     fn flush(&mut self) -> Result<(), PlatformError> {

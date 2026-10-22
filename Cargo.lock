@@ -1830,6 +1830,7 @@ dependencies = [
  "mime_guess",
  "percent-encoding",
  "radivine-wheel",
+ "rustix 1.1.5",
  "thiserror 2.0.21",
  "tracing",
 ]

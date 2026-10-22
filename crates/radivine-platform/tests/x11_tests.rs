@@ -650,3 +650,240 @@ fn selection_reader_single_shot_incr_refused_timeout_and_size_cap() {
         );
     }
 }
+
+#[test]
+fn clipboard_formatting_and_live_x11_selection_serving() {
+    use std::path::PathBuf;
+    use x11rb::connection::Connection;
+    use x11rb::protocol::Event;
+    use x11rb::protocol::xproto::{
+        AtomEnum, ConnectionExt as _, CreateWindowAux, PropMode, WindowClass,
+    };
+    use x11rb::rust_connection::RustConnection;
+    use x11rb::wrapper::ConnectionExt as _;
+
+    use radivine_platform::x11::clipboard::{
+        format_gnome_copied_files, format_plain_paths, format_uri_list,
+    };
+    use radivine_platform::{ClipOp, ClipboardContent};
+
+    let sample = ClipboardContent {
+        uris: vec![
+            "file:///tmp/alpha.txt".to_string(),
+            "file:///tmp/dir%20with%20space/beta.rs".to_string(),
+        ],
+        local_paths: vec![
+            PathBuf::from("/tmp/alpha.txt"),
+            PathBuf::from("/tmp/dir with space/beta.rs"),
+        ],
+        operation: ClipOp::Copy,
+    };
+
+    assert_eq!(
+        format_gnome_copied_files(&sample),
+        b"copy\nfile:///tmp/alpha.txt\nfile:///tmp/dir%20with%20space/beta.rs"
+    );
+    assert_eq!(
+        format_uri_list(&sample),
+        b"file:///tmp/alpha.txt\r\nfile:///tmp/dir%20with%20space/beta.rs\r\n"
+    );
+    assert_eq!(
+        format_plain_paths(&sample),
+        b"/tmp/alpha.txt\n/tmp/dir with space/beta.rs"
+    );
+
+    if std::env::var("DISPLAY").is_err() {
+        return;
+    }
+    let Ok(mut plat) = X11Platform::connect(X11Config::default()) else {
+        return;
+    };
+
+    plat.set_clipboard(sample.clone())
+        .expect("set_clipboard should succeed on live X11");
+
+    // Open a second independent X11 client connection to act as Nemo / text editor requesting CLIPBOARD
+    let (client, screen_num) = RustConnection::connect(None).expect("second X11 client");
+    let atoms = radivine_platform::x11::atoms::Atoms::new(&client)
+        .unwrap()
+        .reply()
+        .unwrap();
+    let root = client.setup().roots[screen_num].root;
+    let req_win = client.generate_id().unwrap();
+    client
+        .create_window(
+            0,
+            req_win,
+            root,
+            0,
+            0,
+            1,
+            1,
+            0,
+            WindowClass::INPUT_ONLY,
+            0,
+            &CreateWindowAux::new(),
+        )
+        .unwrap();
+    client.flush().unwrap();
+
+    let request_and_read = |plat: &mut X11Platform, target: u32| -> Vec<u8> {
+        let dest_prop = atoms.RADIVINE_CLIP;
+        let _ = client.delete_property(req_win, dest_prop);
+        client
+            .convert_selection(
+                req_win,
+                atoms.CLIPBOARD,
+                target,
+                dest_prop,
+                x11rb::CURRENT_TIME,
+            )
+            .unwrap();
+        client.flush().unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let mut events = Vec::new();
+        while Instant::now() < deadline {
+            plat.dispatch_pending(&mut events).unwrap();
+            if let Ok(Some(Event::SelectionNotify(sn))) = client.poll_for_event()
+                && sn.requestor == req_win
+            {
+                assert_eq!(sn.property, dest_prop, "conversion should succeed");
+                let reply = client
+                    .get_property(true, req_win, dest_prop, AtomEnum::ANY, 0, 65536)
+                    .unwrap()
+                    .reply()
+                    .unwrap();
+                return reply.value;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        panic!("timed out waiting for SelectionNotify for target {target}");
+    };
+
+    // 1. x-special/gnome-copied-files
+    let gnome_bytes = request_and_read(&mut plat, atoms.GNOME_COPIED_FILES);
+    assert_eq!(
+        gnome_bytes,
+        b"copy\nfile:///tmp/alpha.txt\nfile:///tmp/dir%20with%20space/beta.rs"
+    );
+
+    // 2. text/uri-list
+    let uri_bytes = request_and_read(&mut plat, atoms.URI_LIST);
+    assert_eq!(
+        uri_bytes,
+        b"file:///tmp/alpha.txt\r\nfile:///tmp/dir%20with%20space/beta.rs\r\n"
+    );
+
+    // 3. UTF8_STRING
+    let utf8_bytes = request_and_read(&mut plat, atoms.UTF8_STRING);
+    assert_eq!(utf8_bytes, b"/tmp/alpha.txt\n/tmp/dir with space/beta.rs");
+
+    // 4. TARGETS
+    let _ = client.delete_property(req_win, atoms.RADIVINE_CLIP);
+    client
+        .convert_selection(
+            req_win,
+            atoms.CLIPBOARD,
+            atoms.TARGETS,
+            atoms.RADIVINE_CLIP,
+            x11rb::CURRENT_TIME,
+        )
+        .unwrap();
+    client.flush().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut got_targets = false;
+    let mut events = Vec::new();
+    while Instant::now() < deadline {
+        plat.dispatch_pending(&mut events).unwrap();
+        if let Ok(Some(Event::SelectionNotify(sn))) = client.poll_for_event()
+            && sn.requestor == req_win
+        {
+            let reply = client
+                .get_property(true, req_win, atoms.RADIVINE_CLIP, AtomEnum::ATOM, 0, 64)
+                .unwrap()
+                .reply()
+                .unwrap();
+            let target_list: Vec<u32> = reply.value32().unwrap().collect();
+            assert!(target_list.contains(&atoms.GNOME_COPIED_FILES));
+            assert!(target_list.contains(&atoms.URI_LIST));
+            assert!(target_list.contains(&atoms.UTF8_STRING));
+            assert!(target_list.contains(&atoms.MULTIPLE));
+            got_targets = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(got_targets);
+
+    // 5. MULTIPLE
+    let prop_a = client
+        .intern_atom(false, b"_RADIVINE_TEST_MULT_A")
+        .unwrap()
+        .reply()
+        .unwrap()
+        .atom;
+    let prop_b = client
+        .intern_atom(false, b"_RADIVINE_TEST_MULT_B")
+        .unwrap()
+        .reply()
+        .unwrap()
+        .atom;
+    let pair_prop = atoms.RADIVINE_CLIP;
+    client
+        .change_property32(
+            PropMode::REPLACE,
+            req_win,
+            pair_prop,
+            AtomEnum::ATOM,
+            &[atoms.GNOME_COPIED_FILES, prop_a, atoms.UTF8_STRING, prop_b],
+        )
+        .unwrap();
+    client
+        .convert_selection(
+            req_win,
+            atoms.CLIPBOARD,
+            atoms.MULTIPLE,
+            pair_prop,
+            x11rb::CURRENT_TIME,
+        )
+        .unwrap();
+    client.flush().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut got_multiple = false;
+    while Instant::now() < deadline {
+        plat.dispatch_pending(&mut events).unwrap();
+        if let Ok(Some(Event::SelectionNotify(sn))) = client.poll_for_event()
+            && sn.requestor == req_win
+        {
+            assert_eq!(sn.property, pair_prop);
+            let rep_a = client
+                .get_property(true, req_win, prop_a, AtomEnum::ANY, 0, 4096)
+                .unwrap()
+                .reply()
+                .unwrap();
+            let rep_b = client
+                .get_property(true, req_win, prop_b, AtomEnum::ANY, 0, 4096)
+                .unwrap()
+                .reply()
+                .unwrap();
+            assert_eq!(rep_a.value, format_gnome_copied_files(&sample));
+            assert_eq!(rep_b.value, format_plain_paths(&sample));
+            got_multiple = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(got_multiple);
+
+    // 6. SelectionClear when another client claims CLIPBOARD
+    client
+        .set_selection_owner(req_win, atoms.CLIPBOARD, x11rb::CURRENT_TIME)
+        .unwrap();
+    client.flush().unwrap();
+    std::thread::sleep(Duration::from_millis(15));
+    plat.dispatch_pending(&mut events).unwrap();
+
+    let _ = client.destroy_window(req_win);
+    let _ = client.flush();
+}
