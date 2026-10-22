@@ -7,8 +7,10 @@ use std::time::Duration;
 
 use radivine_core::{
     Action, ActionError, ActionId, ActionMeta, ActionRegistry, BasicContext, Context, ContextKind,
-    Dispatcher, Enablement, InvocationMode, JobEvent, JobHandle, LogAction, MenuLimits,
-    MenuOverrides, MenuSpec, Outcome, RegistryError, SourceInfo, normalize_cli_arg_to_uri,
+    Dispatcher, Enablement, EnrichEvent, Enricher, FileKind, InvocationMode, Item, JobEvent,
+    JobHandle, LogAction, MenuLimits, MenuOverrides, MenuSpec, Outcome, RegistryError,
+    SNIFF_BUFFER_BYTES, SourceInfo, TextEncoding, TextVerdict, enrich_context_sync, enrich_item,
+    local_path_to_file_uri, normalize_cli_arg_to_uri, sniff_bytes,
 };
 use radivine_wheel::{IconKey, ItemPath};
 
@@ -263,4 +265,240 @@ fn test_dispatcher_executes_jobs_and_catches_panics() {
             other => panic!("unexpected JobEvent: {other:?}"),
         }
     }
+}
+
+#[test]
+fn test_sniff_bytes_encodings_magic_and_control_bytes() {
+    // 1. Empty -> Text(Utf8)
+    assert_eq!(
+        sniff_bytes(b""),
+        (TextVerdict::Text(TextEncoding::Utf8), None)
+    );
+
+    // 2. BOMs
+    assert_eq!(
+        sniff_bytes(b"\xEF\xBB\xBFhello world\n"),
+        (TextVerdict::Text(TextEncoding::Utf8Bom), None)
+    );
+    assert_eq!(
+        sniff_bytes(b"\xFF\xFEh\x00i\x00"),
+        (TextVerdict::Text(TextEncoding::Utf16Le), None)
+    );
+    assert_eq!(
+        sniff_bytes(b"\xFE\xFF\x00h\x00i"),
+        (TextVerdict::Text(TextEncoding::Utf16Be), None)
+    );
+
+    // 3. Magic numbers -> Binary + sniffed_mime
+    assert_eq!(
+        sniff_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"),
+        (TextVerdict::Binary, Some("image/png"))
+    );
+    assert_eq!(
+        sniff_bytes(b"\x7FELF\x02\x01\x01\x00"),
+        (TextVerdict::Binary, Some("application/x-executable"))
+    );
+    assert_eq!(
+        sniff_bytes(b"%PDF-1.7\n%\xE2\xE3\xCF\xD3\n"),
+        (TextVerdict::Binary, Some("application/pdf"))
+    );
+    assert_eq!(
+        sniff_bytes(b"PK\x03\x04\x14\x00\x00\x00"),
+        (TextVerdict::Binary, Some("application/zip"))
+    );
+
+    // 4. NUL byte -> Binary
+    assert_eq!(
+        sniff_bytes(b"some text with a \x00 nul byte inside"),
+        (TextVerdict::Binary, None)
+    );
+
+    // 5. Valid UTF-8 with an incomplete 3-byte sequence at the 8 KiB boundary
+    let mut boundary_utf8 = vec![b'a'; SNIFF_BUFFER_BYTES - 2];
+    // '€' is E2 82 AC; put only E2 82 at the end of the 8 KiB buffer
+    boundary_utf8.extend_from_slice(&[0xE2, 0x82]);
+    assert_eq!(
+        sniff_bytes(&boundary_utf8),
+        (TextVerdict::Text(TextEncoding::Utf8), None)
+    );
+
+    // 6. Legacy 8-bit text (ISO-8859-1 "café\n") with 0% disallowed control bytes -> Unknown8Bit
+    assert_eq!(
+        sniff_bytes(b"caf\xE9 au lait\n"),
+        (TextVerdict::Text(TextEncoding::Unknown8Bit), None)
+    );
+
+    // 7. > 10% control bytes -> Binary
+    let ctrl_heavy = b"\x01\x02\x03hello";
+    assert_eq!(sniff_bytes(ctrl_heavy), (TextVerdict::Binary, None));
+}
+
+#[test]
+fn test_enrich_item_regular_binary_directory_permissions_symlinks_and_fifo() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tmp_dir = std::env::temp_dir().join(format!("radivine_core_enrich_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+    std::fs::create_dir_all(&tmp_dir).unwrap();
+
+    // 1. Regular UTF-8 text file
+    let txt_path = tmp_dir.join("notes.txt");
+    std::fs::write(&txt_path, "Hello Radivine M4!\nLine 2\n").unwrap();
+    let txt_item = Item::from_uri(&local_path_to_file_uri(&txt_path));
+    let (is_sym, facts) = enrich_item(&txt_item);
+    assert!(!is_sym);
+    assert_eq!(facts.kind, FileKind::Regular);
+    assert!(facts.readable);
+    assert_eq!(facts.text, TextVerdict::Text(TextEncoding::Utf8));
+    assert_eq!(facts.error, None);
+
+    // 2. PNG renamed to .txt (AC-4.1: guessed_mime is text/plain, sniffed is Binary + image/png)
+    let fake_txt_path = tmp_dir.join("disguised.txt");
+    std::fs::write(&fake_txt_path, b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR").unwrap();
+    let fake_txt_item = Item::from_uri(&local_path_to_file_uri(&fake_txt_path));
+    assert_eq!(fake_txt_item.guessed_mime, Some("text/plain"));
+    let (is_sym, facts) = enrich_item(&fake_txt_item);
+    assert!(!is_sym);
+    assert_eq!(facts.kind, FileKind::Regular);
+    assert!(facts.readable);
+    assert_eq!(facts.text, TextVerdict::Binary);
+    assert_eq!(facts.sniffed_mime, Some("image/png"));
+
+    // 3. Directory
+    let sub_dir = tmp_dir.join("folder");
+    std::fs::create_dir_all(&sub_dir).unwrap();
+    let dir_item = Item::from_uri(&local_path_to_file_uri(&sub_dir));
+    let (_, facts) = enrich_item(&dir_item);
+    assert_eq!(facts.kind, FileKind::Directory);
+    assert!(facts.readable);
+    assert_eq!(facts.text, TextVerdict::Unknown);
+
+    // 4. Unreadable file (0o000)
+    let secret_path = tmp_dir.join("secret.txt");
+    std::fs::write(&secret_path, "classified").unwrap();
+    std::fs::set_permissions(&secret_path, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let secret_item = Item::from_uri(&local_path_to_file_uri(&secret_path));
+    let (_, facts) = enrich_item(&secret_item);
+    assert_eq!(facts.kind, FileKind::Regular);
+    assert!(!facts.readable);
+    assert_eq!(facts.error.as_deref(), Some("No permission to read"));
+    // Restore permissions for cleanup
+    std::fs::set_permissions(&secret_path, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+    // 5. Valid symlink and broken symlink
+    let valid_link = tmp_dir.join("link_ok.txt");
+    std::os::unix::fs::symlink(&txt_path, &valid_link).unwrap();
+    let (is_sym, facts) = enrich_item(&Item::from_uri(&local_path_to_file_uri(&valid_link)));
+    assert!(is_sym);
+    assert_eq!(facts.kind, FileKind::Regular);
+    assert!(facts.readable);
+    assert_eq!(facts.text, TextVerdict::Text(TextEncoding::Utf8));
+
+    let broken_link = tmp_dir.join("link_broken.txt");
+    std::os::unix::fs::symlink(tmp_dir.join("does_not_exist.txt"), &broken_link).unwrap();
+    let (is_sym, facts) = enrich_item(&Item::from_uri(&local_path_to_file_uri(&broken_link)));
+    assert!(is_sym);
+    assert_eq!(facts.kind, FileKind::BrokenSymlink);
+    assert!(!facts.readable);
+    assert_eq!(facts.error.as_deref(), Some("Broken link"));
+
+    // 6. Missing file
+    let missing_path = tmp_dir.join("missing.txt");
+    let (is_sym, facts) = enrich_item(&Item::from_uri(&local_path_to_file_uri(&missing_path)));
+    assert!(!is_sym);
+    assert_eq!(facts.kind, FileKind::Missing);
+    assert!(!facts.readable);
+    assert_eq!(facts.error.as_deref(), Some("File not found"));
+
+    // 7. Real named pipe (FIFO) — must NEVER block even with no writer attached!
+    let fifo_path = tmp_dir.join("test_pipe.fifo");
+    rustix::fs::mknodat(
+        rustix::fs::CWD,
+        &fifo_path,
+        rustix::fs::FileType::Fifo,
+        rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR,
+        0,
+    )
+    .unwrap();
+    let start = std::time::Instant::now();
+    let (_, facts) = enrich_item(&Item::from_uri(&local_path_to_file_uri(&fifo_path)));
+    assert!(
+        start.elapsed() < Duration::from_millis(100),
+        "FIFO enrichment must not block"
+    );
+    assert_eq!(facts.kind, FileKind::Fifo);
+    assert!(!facts.readable);
+    assert_eq!(facts.error.as_deref(), Some("Special file"));
+
+    // 8. Non-local URI
+    let remote_item = Item::from_uri("sftp://remote.example.com/var/log/syslog");
+    let (_, facts) = enrich_item(&remote_item);
+    assert_eq!(facts.kind, FileKind::Other);
+    assert!(!facts.readable);
+    assert_eq!(facts.error.as_deref(), Some("Remote file"));
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+}
+
+#[test]
+fn test_enricher_hung_stat_times_out_to_couldnt_inspect_file_ac_4_2() {
+    let (tx, rx) = mpsc::channel();
+    let mut enricher = Enricher::new(Box::new(move |ev| {
+        let _ = tx.send(ev);
+    }))
+    .with_timeout(Duration::from_millis(200))
+    .with_inspector(Arc::new(|_item| {
+        // Simulate a hung NFS/GVFS stat that blocks far longer than the session deadline
+        std::thread::sleep(Duration::from_secs(3));
+        unreachable_or_ignored()
+    }));
+
+    let basic = BasicContext::from_uris(
+        ["file:///mnt/hung-nfs/report.txt"],
+        InvocationMode::Drag,
+        SourceInfo::default(),
+    );
+
+    let start = std::time::Instant::now();
+    enricher.start(42, basic);
+
+    let ev = rx
+        .recv_timeout(Duration::from_millis(1000))
+        .expect("watchdog should emit timeout EnrichEvent without waiting for hung worker");
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed >= Duration::from_millis(150) && elapsed < Duration::from_millis(800),
+        "expected ~200ms timeout, got {elapsed:?}"
+    );
+
+    match ev {
+        EnrichEvent::Updated {
+            session_id,
+            context,
+            complete,
+        } => {
+            assert_eq!(session_id, 42);
+            assert!(complete);
+            let facts = context.facts.as_ref().expect("facts should be populated");
+            assert_eq!(facts.len(), 1);
+            assert!(!facts[0].readable);
+            assert_eq!(facts[0].text, TextVerdict::Unknown);
+            assert_eq!(facts[0].error.as_deref(), Some("Couldn't inspect the file"));
+        }
+    }
+
+    // Verify enrich_context_sync works as expected as well
+    let sync_ctx = enrich_context_sync(BasicContext::from_uris(
+        ["sftp://host/file.txt"],
+        InvocationMode::Invoke,
+        SourceInfo::default(),
+    ));
+    assert_eq!(
+        sync_ctx.facts.unwrap()[0].error.as_deref(),
+        Some("Remote file")
+    );
+}
+
+fn unreachable_or_ignored() -> (bool, radivine_core::FileFacts) {
+    (false, radivine_core::FileFacts::timed_out())
 }

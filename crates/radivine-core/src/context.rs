@@ -179,6 +179,45 @@ pub struct FileFacts {
     pub error: Option<String>,
 }
 
+impl FileFacts {
+    /// Sentinel representing an item whose background enrichment has not completed yet.
+    #[must_use]
+    pub fn pending() -> Self {
+        Self {
+            kind: FileKind::Other,
+            size: None,
+            readable: false,
+            text: TextVerdict::Unknown,
+            sniffed_mime: None,
+            error: None,
+        }
+    }
+
+    /// Facts recorded when enrichment exceeds the per-session deadline (`ACTION_SYSTEM.md` §3, §4.2).
+    #[must_use]
+    pub fn timed_out() -> Self {
+        Self {
+            kind: FileKind::Other,
+            size: None,
+            readable: false,
+            text: TextVerdict::Unknown,
+            sniffed_mime: None,
+            error: Some("Couldn't inspect the file".to_string()),
+        }
+    }
+
+    /// Returns `true` if this entry is still awaiting background inspection.
+    #[must_use]
+    pub fn is_pending(&self) -> bool {
+        self.kind == FileKind::Other
+            && self.size.is_none()
+            && !self.readable
+            && self.text == TextVerdict::Unknown
+            && self.sniffed_mime.is_none()
+            && self.error.is_none()
+    }
+}
+
 /// Kind of filesystem entry (`ACTION_SYSTEM.md` §4).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FileKind {
@@ -248,6 +287,26 @@ impl Context {
             basic,
             facts: None,
             symlink: vec![false; len],
+        }
+    }
+
+    /// Converts any still-pending item facts into [`FileFacts::timed_out`] (`"Couldn't inspect the file"`).
+    pub fn apply_enrichment_timeout(&mut self) {
+        let len = self.basic.items.len();
+        match &mut self.facts {
+            None => {
+                self.facts = Some(vec![FileFacts::timed_out(); len]);
+            }
+            Some(facts) => {
+                for f in facts.iter_mut() {
+                    if f.is_pending() {
+                        *f = FileFacts::timed_out();
+                    }
+                }
+                while facts.len() < len {
+                    facts.push(FileFacts::timed_out());
+                }
+            }
         }
     }
 }

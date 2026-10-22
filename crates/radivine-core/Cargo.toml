@@ -9,6 +9,7 @@ radivine-wheel = { path = "../radivine-wheel" }
 thiserror.workspace = true
 percent-encoding.workspace = true
 mime_guess.workspace = true
+rustix.workspace = true
 tracing.workspace = true
 
 [lints]
