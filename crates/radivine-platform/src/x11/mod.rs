@@ -6,6 +6,7 @@ pub mod doctor;
 pub mod invoke;
 pub mod monitors;
 pub mod overlay;
+pub mod selection;
 pub mod shape;
 pub mod shm;
 pub mod source;
@@ -19,6 +20,10 @@ use x11rb::protocol::Event;
 use x11rb::protocol::xproto::{ChangeWindowAttributesAux, ConnectionExt as _, Cursor, EventMask};
 use x11rb::rust_connection::RustConnection;
 
+use crate::x11::arming::{
+    ArmingTracker, ArmingTransition, TriggerEdge, query_modifier_keycodes, query_pointer_state,
+    select_xdnd_selection_notify, select_xi2_raw_events,
+};
 use crate::x11::atoms::Atoms;
 use crate::x11::doctor::{DoctorReport, probe_with_connection};
 use crate::x11::invoke::{KeymapTable, create_left_ptr_cursor, grab_input, ungrab_input};
@@ -26,11 +31,20 @@ use crate::x11::monitors::{
     pick_monitor_for_point, query_monitors, query_xft_scale, select_randr_notifications,
 };
 use crate::x11::overlay::OverlayWindow;
+use crate::x11::selection::{
+    SelectionReader, handle_property_notify_wire, handle_selection_notify_wire,
+    request_selection_wire,
+};
 use crate::x11::shape::apply_input_region;
 use crate::x11::shm::{ChannelShuffle, ShmPresenter};
+use crate::x11::source::identify_window_source;
+use crate::x11::xdnd::{
+    DndMessageEvent, XdndAtoms, XdndTarget, resolve_enter_types, send_client_message,
+};
 use crate::{
-    Capabilities, ClipboardContent, FrameRef, Monitor, OverlayInfo, PhysPoint, Platform,
-    PlatformError, PlatformEvent, RectPx, ShapePx, Support, X11Config,
+    Capabilities, ClipboardContent, FrameRef, Monitor, OverlayInfo, PayloadError, PhysPoint,
+    Platform, PlatformError, PlatformEvent, RectPx, ShapePx, Support, TriggerDetectionMode,
+    X11Config,
 };
 
 /// X11 implementation of [`Platform`] (`PLATFORM_INTEGRATION.md` §3, §7).
@@ -44,8 +58,14 @@ pub struct X11Platform {
     shm: ShmPresenter,
     keymap: KeymapTable,
     cursor: Cursor,
+    arming: ArmingTracker,
+    xdnd: XdndTarget,
+    selection: SelectionReader,
+    pending_payload_events: Vec<PlatformEvent>,
     shape_supported: bool,
     randr_supported: bool,
+    xi2_supported: bool,
+    res_supported: bool,
     grabbed: bool,
 }
 
@@ -89,8 +109,24 @@ impl X11Platform {
             .extensions
             .iter()
             .any(|e| e.name == "MIT-SHM" && e.available);
+        let xfixes_supported = doctor
+            .extensions
+            .iter()
+            .any(|e| e.name == "XFixes" && e.available);
+        let xi2_supported = doctor
+            .extensions
+            .iter()
+            .any(|e| e.name == "XInputExtension" && e.available);
+        let res_supported = doctor
+            .extensions
+            .iter()
+            .any(|e| e.name == "X-Resource" && e.available);
 
         let overlay = OverlayWindow::create(&conn, screen, &atoms, cfg.window_type)?;
+        if xfixes_supported {
+            let _ = select_xdnd_selection_notify(&conn, overlay.helper_window, atoms.XdndSelection);
+        }
+
         let shuffle = ChannelShuffle::from_visual(
             setup.image_byte_order,
             overlay.visual.red_mask,
@@ -100,6 +136,11 @@ impl X11Platform {
         let shm = ShmPresenter::new(shm_supported, overlay.visual.depth, shuffle);
         let keymap = KeymapTable::query(&conn, setup);
         let cursor = create_left_ptr_cursor(&conn);
+
+        let trigger_kcs = query_modifier_keycodes(&conn, cfg.trigger_modifier);
+        let arming = ArmingTracker::new(&trigger_kcs);
+        let xdnd = XdndTarget::new(overlay.window, XdndAtoms::from_atoms(&atoms));
+        let selection = SelectionReader::new(overlay.window, atoms.RADIVINE_DND, atoms.INCR);
 
         conn.flush()
             .map_err(|e| PlatformError::X11(e.to_string()))?;
@@ -114,8 +155,14 @@ impl X11Platform {
             shm,
             keymap,
             cursor,
+            arming,
+            xdnd,
+            selection,
+            pending_payload_events: Vec::new(),
             shape_supported,
             randr_supported,
+            xi2_supported,
+            res_supported,
             grabbed: false,
         })
     }
@@ -130,6 +177,10 @@ impl X11Platform {
     #[must_use]
     pub fn connection(&self) -> &RustConnection {
         &self.conn
+    }
+
+    fn is_poll_trigger_mode(&self) -> bool {
+        self.cfg.trigger_detection == TriggerDetectionMode::Poll || !self.xi2_supported
     }
 }
 
@@ -148,10 +199,152 @@ impl Platform for X11Platform {
     }
 
     fn dispatch_pending(&mut self, out: &mut Vec<PlatformEvent>) -> Result<(), PlatformError> {
+        if !self.pending_payload_events.is_empty() {
+            out.append(&mut self.pending_payload_events);
+        }
         let root = self.conn.setup().roots[self.screen_num].root;
         loop {
             match self.conn.poll_for_event() {
                 Ok(Some(event)) => match event {
+                    Event::XfixesSelectionNotify(se)
+                        if se.selection == self.atoms.XdndSelection =>
+                    {
+                        let (button_held, modifier_held) =
+                            query_pointer_state(&self.conn, root, self.cfg.trigger_modifier)
+                                .map_or((false, false), |(_, b, m)| (b, m));
+                        let source = if se.owner != x11rb::NONE {
+                            identify_window_source(
+                                &self.conn,
+                                &self.atoms,
+                                se.owner,
+                                self.res_supported,
+                            )
+                        } else {
+                            crate::SourceInfo::default()
+                        };
+                        let poll_mode = self.is_poll_trigger_mode();
+                        if let Some(transition) = self.arming.on_selection_owner_changed(
+                            se.owner,
+                            (self.overlay.window, self.overlay.helper_window),
+                            button_held,
+                            modifier_held,
+                            se.selection_timestamp,
+                            source,
+                            poll_mode,
+                            Instant::now(),
+                        ) {
+                            match transition {
+                                ArmingTransition::Armed { source } => {
+                                    if !poll_mode {
+                                        let _ = select_xi2_raw_events(&self.conn, root, true);
+                                    }
+                                    out.push(PlatformEvent::DragArmed { source });
+                                }
+                                ArmingTransition::Disarmed => {
+                                    if !poll_mode {
+                                        let _ = select_xi2_raw_events(&self.conn, root, false);
+                                    }
+                                    self.xdnd.reset();
+                                    self.selection.cancel();
+                                    out.push(PlatformEvent::DragDisarmed);
+                                }
+                            }
+                        }
+                    }
+                    Event::XinputRawKeyPress(rkp) => {
+                        if let Ok(kc) = u8::try_from(rkp.detail)
+                            && self.arming.on_raw_key_press(kc) == Some(TriggerEdge::FreshPress)
+                            && let Ok(at) = self.pointer_position()
+                        {
+                            out.push(PlatformEvent::Trigger { at });
+                        }
+                    }
+                    Event::XinputRawKeyRelease(rkr) => {
+                        if let Ok(kc) = u8::try_from(rkr.detail)
+                            && self.arming.on_raw_key_release(kc) == Some(TriggerEdge::Released)
+                        {
+                            out.push(PlatformEvent::TriggerReleased);
+                        }
+                    }
+                    Event::XinputRawButtonRelease(rbr) => {
+                        if let Ok(btn) = u8::try_from(rbr.detail) {
+                            self.arming.on_raw_button_release(btn, Instant::now());
+                        }
+                    }
+                    Event::ClientMessage(cm)
+                        if cm.window == self.overlay.window && cm.format == 32 =>
+                    {
+                        if let Some(dnd_ev) = self.xdnd.on_message(cm.type_, cm.data.as_data32()) {
+                            match dnd_ev {
+                                DndMessageEvent::Enter {
+                                    source,
+                                    inline_types,
+                                    more_types,
+                                    ..
+                                } => {
+                                    let types = resolve_enter_types(
+                                        &self.conn,
+                                        &self.atoms,
+                                        source,
+                                        &inline_types,
+                                        more_types,
+                                    );
+                                    out.push(PlatformEvent::DndEnter { types });
+                                }
+                                DndMessageEvent::Position { at, .. } => {
+                                    out.push(PlatformEvent::DndPosition { at });
+                                }
+                                DndMessageEvent::Leave { .. } => {
+                                    let button_held = query_pointer_state(
+                                        &self.conn,
+                                        root,
+                                        self.cfg.trigger_modifier,
+                                    )
+                                    .is_ok_and(|(_, b, _)| b);
+                                    let owner = self
+                                        .conn
+                                        .get_selection_owner(self.atoms.XdndSelection)
+                                        .ok()
+                                        .and_then(|c| c.reply().ok())
+                                        .map_or(x11rb::NONE, |r| r.owner);
+                                    let drag_ended = !button_held || owner == x11rb::NONE;
+                                    out.push(PlatformEvent::DndLeave { drag_ended });
+                                }
+                                DndMessageEvent::Drop { .. } => {
+                                    out.push(PlatformEvent::DndDrop);
+                                }
+                            }
+                        }
+                    }
+                    Event::SelectionNotify(sn) if sn.requestor == self.overlay.window => {
+                        if let Some((mime, result)) =
+                            handle_selection_notify_wire(&self.conn, &mut self.selection, sn)
+                        {
+                            out.push(PlatformEvent::Payload { mime, result });
+                        }
+                    }
+                    Event::PropertyNotify(pn)
+                        if pn.window == self.overlay.window
+                            && pn.atom == self.atoms.RADIVINE_DND =>
+                    {
+                        if let Some((mime, result)) =
+                            handle_property_notify_wire(&self.conn, &mut self.selection, pn)
+                        {
+                            out.push(PlatformEvent::Payload { mime, result });
+                        }
+                    }
+                    Event::Expose(ex)
+                        if ex.window == self.overlay.window
+                            && ex.count == 0
+                            && self.overlay.is_mapped =>
+                    {
+                        let _ = self.shm.flush_pending(
+                            &self.conn,
+                            self.overlay.window,
+                            self.overlay.gc,
+                        );
+                        let _ = self.conn.flush();
+                    }
                     Event::MotionNotify(ev) => {
                         out.push(PlatformEvent::PointerMoved {
                             at: PhysPoint::new(i32::from(ev.root_x), i32::from(ev.root_y)),
@@ -186,6 +379,9 @@ impl Platform for X11Platform {
                     }
                     Event::MappingNotify(_) => {
                         self.keymap = KeymapTable::query(&self.conn, self.conn.setup());
+                        let trigger_kcs =
+                            query_modifier_keycodes(&self.conn, self.cfg.trigger_modifier);
+                        self.arming.set_trigger_keycodes(&trigger_kcs);
                     }
                     Event::PropertyNotify(ev)
                         if ev.window == root && ev.atom == self.atoms.RESOURCE_MANAGER =>
@@ -261,6 +457,7 @@ impl Platform for X11Platform {
     }
 
     fn map_overlay(&mut self) -> Result<(), PlatformError> {
+        self.arming.set_session_open(true);
         self.overlay
             .map(&self.conn, &mut self.shm, self.cfg.pointer_nudge)
     }
@@ -286,7 +483,14 @@ impl Platform for X11Platform {
             self.overlay.current_rect.w as u16,
             self.overlay.current_rect.h as u16,
             shapes,
-        )
+        )?;
+        if matches!(shapes, Some([])) && self.arming.is_armed() && self.cfg.pointer_nudge {
+            let _ = self
+                .conn
+                .warp_pointer(x11rb::NONE, x11rb::NONE, 0, 0, 0, 0, 0, 0);
+            let _ = self.conn.flush();
+        }
+        Ok(())
     }
 
     fn hide_overlay(&mut self) {
@@ -294,8 +498,11 @@ impl Platform for X11Platform {
             ungrab_input(&self.conn);
             self.grabbed = false;
         }
-        self.overlay
-            .hide(&self.conn, self.shape_supported, self.cfg.pointer_nudge);
+        self.arming.set_session_open(false);
+        self.xdnd.reset();
+        self.selection.cancel();
+        let nudge = self.arming.is_armed() && self.cfg.pointer_nudge;
+        self.overlay.hide(&self.conn, self.shape_supported, nudge);
     }
 
     fn release_buffers(&mut self) {
@@ -303,16 +510,35 @@ impl Platform for X11Platform {
         let _ = self.conn.flush();
     }
 
-    fn dnd_reply(&mut self, _accept: bool) {
-        // Implemented in M3 (XDND Drag Mode)
+    fn dnd_reply(&mut self, accept: bool) {
+        if let Some(msg) = self.xdnd.status(accept) {
+            let _ = send_client_message(&self.conn, msg);
+        }
     }
 
-    fn request_payload(&mut self, _mime: &str) {
-        // Implemented in M3 (XDND Drag Mode)
+    fn request_payload(&mut self, mime: &str) {
+        let ts = self
+            .xdnd
+            .effective_selection_timestamp(self.arming.selection_timestamp());
+        if let Err(err) = request_selection_wire(
+            &self.conn,
+            &self.atoms,
+            &mut self.selection,
+            mime,
+            ts,
+            Instant::now(),
+        ) {
+            self.pending_payload_events.push(PlatformEvent::Payload {
+                mime: mime.to_string(),
+                result: Err(PayloadError::Protocol(err.to_string())),
+            });
+        }
     }
 
-    fn dnd_finish(&mut self, _success: bool) {
-        // Implemented in M3 (XDND Drag Mode)
+    fn dnd_finish(&mut self, success: bool) {
+        if let Some(msg) = self.xdnd.finished(success) {
+            let _ = send_client_message(&self.conn, msg);
+        }
     }
 
     fn grab_input(&mut self) -> Result<(), PlatformError> {
@@ -342,14 +568,67 @@ impl Platform for X11Platform {
     }
 
     fn next_deadline(&self) -> Option<Instant> {
-        None
+        match (self.arming.next_deadline(), self.selection.next_deadline()) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (Some(a), None) => Some(a),
+            (None, Some(b)) => Some(b),
+            (None, None) => None,
+        }
     }
 
-    fn on_deadline(&mut self, _now: Instant, _out: &mut Vec<PlatformEvent>) {}
+    fn on_deadline(&mut self, now: Instant, out: &mut Vec<PlatformEvent>) {
+        if let Some((mime, result)) = self.selection.check_timeout(now) {
+            out.push(PlatformEvent::Payload { mime, result });
+        }
+
+        let check = self.arming.check_deadlines(now);
+        let root = self.conn.setup().roots[self.screen_num].root;
+        let poll_mode = self.is_poll_trigger_mode();
+
+        if check.max_duration_expired {
+            if !poll_mode {
+                let _ = select_xi2_raw_events(&self.conn, root, false);
+            }
+            self.xdnd.reset();
+            self.selection.cancel();
+            out.push(PlatformEvent::DragDisarmed);
+            return;
+        }
+
+        if check.verify_button_release {
+            let button_held = query_pointer_state(&self.conn, root, self.cfg.trigger_modifier)
+                .is_ok_and(|(_, b, _)| b);
+            if !button_held && self.arming.disarm() {
+                if !poll_mode {
+                    let _ = select_xi2_raw_events(&self.conn, root, false);
+                }
+                self.xdnd.reset();
+                self.selection.cancel();
+                out.push(PlatformEvent::DragDisarmed);
+                return;
+            }
+        }
+
+        if check.poll_due
+            && let Ok((pt, button_held, modifier_held)) =
+                query_pointer_state(&self.conn, root, self.cfg.trigger_modifier)
+        {
+            for edge in self.arming.on_poll_sample(button_held, modifier_held, now) {
+                match edge {
+                    TriggerEdge::FreshPress => out.push(PlatformEvent::Trigger { at: pt }),
+                    TriggerEdge::Released => out.push(PlatformEvent::TriggerReleased),
+                }
+            }
+        }
+    }
 }
 
 impl Drop for X11Platform {
     fn drop(&mut self) {
+        if self.arming.is_armed() && !self.is_poll_trigger_mode() {
+            let root = self.conn.setup().roots[self.screen_num].root;
+            let _ = select_xi2_raw_events(&self.conn, root, false);
+        }
         if self.grabbed {
             ungrab_input(&self.conn);
             self.grabbed = false;

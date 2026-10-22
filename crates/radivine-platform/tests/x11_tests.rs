@@ -13,13 +13,16 @@ use radivine_platform::x11::arming::{
 use radivine_platform::x11::doctor::probe_x11_doctor;
 use radivine_platform::x11::invoke::translate_keysym;
 use radivine_platform::x11::monitors::{parse_xft_dpi, pick_monitor_for_point};
+use radivine_platform::x11::selection::{
+    MAX_PAYLOAD_BYTES, PAYLOAD_TIMEOUT, SelectionReader, resolve_mime_atom,
+};
 use radivine_platform::x11::shape::rasterize_shapes_to_rectangles;
 use radivine_platform::x11::shm::{ChannelShuffle, clip_damage_rect, swizzle_damage_rect};
 use radivine_platform::x11::source::{identify_window_source, parse_proc_comm, read_proc_comm};
 use radivine_platform::x11::xdnd::{DndMessageEvent, OutgoingClientMessage, XdndAtoms, XdndTarget};
 use radivine_platform::{
-    FrameRef, Key, Monitor, PhysPoint, Platform, RectPx, ShapePx, SourceInfo, Support,
-    TriggerModifier, X11Config,
+    FrameRef, Key, Monitor, PayloadError, PhysPoint, Platform, RectPx, ShapePx, SourceInfo,
+    Support, TriggerModifier, X11Config,
 };
 
 #[test]
@@ -559,4 +562,91 @@ fn xdnd_target_leave_and_rejected_drop() {
             data: [overlay_win, 0, 0, 0, 0],
         })
     );
+}
+
+#[test]
+fn selection_reader_single_shot_incr_refused_timeout_and_size_cap() {
+    let t0 = Instant::now();
+    let prop_atom = 700;
+    let incr_atom = 701;
+    let uri_list_atom = 702;
+    let mut reader = SelectionReader::new(0x0500_0001, prop_atom, incr_atom);
+
+    // 1. Single-shot transfer
+    reader.begin("text/uri-list", t0);
+    assert!(reader.is_active());
+    let res = reader.on_selection_notify_property(
+        prop_atom,
+        uri_list_atom,
+        b"file:///tmp/a.txt\r\n".to_vec(),
+        0,
+    );
+    assert_eq!(
+        res,
+        Some((
+            "text/uri-list".to_string(),
+            Ok(b"file:///tmp/a.txt\r\n".to_vec())
+        ))
+    );
+    assert!(!reader.is_active());
+
+    // 2. Refused transfer (property == NONE)
+    reader.begin("text/uri-list", t0);
+    assert_eq!(
+        reader.on_selection_notify_property(0, 0, Vec::new(), 0),
+        Some(("text/uri-list".to_string(), Err(PayloadError::Refused)))
+    );
+
+    // 3. Multi-chunk INCR transfer
+    reader.begin("text/uri-list", t0);
+    assert_eq!(
+        reader.on_selection_notify_property(prop_atom, incr_atom, vec![0, 1, 0, 0], 256),
+        None
+    );
+    assert!(reader.is_incr());
+    assert_eq!(reader.on_incr_chunk(b"file:///tmp/one.txt\r\n"), None);
+    assert_eq!(reader.on_incr_chunk(b"file:///tmp/two.txt\r\n"), None);
+    assert_eq!(
+        reader.on_incr_chunk(b""),
+        Some((
+            "text/uri-list".to_string(),
+            Ok(b"file:///tmp/one.txt\r\nfile:///tmp/two.txt\r\n".to_vec())
+        ))
+    );
+    assert!(!reader.is_active());
+
+    // 4. Timeout after 2 s
+    reader.begin("text/uri-list", t0);
+    assert_eq!(reader.check_timeout(t0 + Duration::from_secs(1)), None);
+    assert_eq!(
+        reader.check_timeout(t0 + PAYLOAD_TIMEOUT),
+        Some(("text/uri-list".to_string(), Err(PayloadError::Timeout)))
+    );
+
+    // 5. 16 MiB cap in INCR lower_bound_hint
+    reader.begin("text/uri-list", t0);
+    assert_eq!(
+        reader.on_selection_notify_property(
+            prop_atom,
+            incr_atom,
+            Vec::new(),
+            MAX_PAYLOAD_BYTES + 1
+        ),
+        Some(("text/uri-list".to_string(), Err(PayloadError::TooLarge)))
+    );
+
+    // 6. Live X11 check: DELETE target is strictly forbidden
+    if std::env::var("DISPLAY").is_ok()
+        && let Ok(plat) = X11Platform::connect(X11Config::default())
+    {
+        let atoms = radivine_platform::x11::atoms::Atoms::new(plat.connection())
+            .expect("atoms cookie")
+            .reply()
+            .expect("atoms reply");
+        assert!(resolve_mime_atom(plat.connection(), &atoms, "DELETE").is_err());
+        assert_eq!(
+            resolve_mime_atom(plat.connection(), &atoms, "text/uri-list").expect("uri-list atom"),
+            atoms.URI_LIST
+        );
+    }
 }
