@@ -1,0 +1,15 @@
+[package]
+name = "radivine-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+radivine-wheel = { path = "../radivine-wheel" }
+thiserror.workspace = true
+percent-encoding.workspace = true
+mime_guess.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

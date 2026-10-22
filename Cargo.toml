@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/radivine-wheel",
     "crates/radivine-render",
+    "crates/radivine-core",
     "tools/wheel-sandbox",
 ]
 exclude = [
@@ -31,3 +32,6 @@ winit = "0.30"
 softbuffer = "0.4"
 proptest = "1.6"
 criterion = "0.5"
+percent-encoding = "2.3"
+mime_guess = "2.0"
+tracing = "0.1"
