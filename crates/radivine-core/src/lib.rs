@@ -18,6 +18,7 @@ pub use context::{
     normalize_cli_arg_to_uri, parse_uri_list,
 };
 pub use dispatch::{Dispatcher, JobEvent, JobSink};
+pub use radivine_wheel::{IconKey, ItemPath, MenuNode, MenuTree, NodeKind};
 pub use registry::{
     ActionIndex, ActionRegistry, EnablementUpdate, MenuLimits, MenuOverrides, MenuSpec,
     RegistryError,

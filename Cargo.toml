@@ -4,6 +4,7 @@ members = [
     "crates/radivine-wheel",
     "crates/radivine-render",
     "crates/radivine-core",
+    "crates/radivine-actions",
     "tools/wheel-sandbox",
 ]
 exclude = [
