@@ -1,0 +1,24 @@
+[package]
+name = "radivine-wheel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Pure, deterministic, time-injected hierarchical radial wheel engine for Radivine"
+
+[features]
+default = []
+test-api = []
+
+[dependencies]
+smallvec.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "wheel_bench"
+harness = false
+
+[lints]
+workspace = true
