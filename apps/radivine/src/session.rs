@@ -437,7 +437,7 @@ impl SessionController {
             {
                 self.idle_release_deadline = None;
                 self.platform.release_buffers();
-                self.renderer.end_session();
+                self.renderer.release_buffers();
                 tracing::debug!("released idle SHM and renderer pixel buffers");
             }
             return;

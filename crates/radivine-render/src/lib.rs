@@ -187,6 +187,14 @@ impl Renderer {
         self.damage.reset();
     }
 
+    /// Frees the backing `Pixmap` and `Mask` framebuffers when the daemon has been idle (`PLATFORM_INTEGRATION.md` §3.4).
+    pub fn release_buffers(&mut self) {
+        self.pixmap = None;
+        self.clip_mask = None;
+        self.size_px = SizePx::new(0, 0);
+        self.damage.reset();
+    }
+
     // --- Internal drawing pipeline ---
 
     fn draw_stem(&mut self, stem: &StemVisual, clips: &[RectPx]) {
