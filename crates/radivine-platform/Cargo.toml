@@ -1,0 +1,15 @@
+[package]
+name = "radivine-platform"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+smallvec.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+x11rb.workspace = true
+rustix.workspace = true
+
+[lints]
+workspace = true

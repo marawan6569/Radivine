@@ -5,6 +5,7 @@ members = [
     "crates/radivine-render",
     "crates/radivine-core",
     "crates/radivine-actions",
+    "crates/radivine-platform",
     "tools/wheel-sandbox",
 ]
 exclude = [
@@ -36,3 +37,5 @@ criterion = "0.5"
 percent-encoding = "2.3"
 mime_guess = "2.0"
 tracing = "0.1"
+x11rb = { version = "0.13", features = ["composite", "shm", "shape", "xfixes", "xinput", "randr", "res", "render", "resource_manager", "cursor"] }
+rustix = { version = "1.0", features = ["fs", "mm", "shm"] }

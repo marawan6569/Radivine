@@ -1,0 +1,53 @@
+//! X11 atom definitions (`PLATFORM_INTEGRATION.md` §3.3).
+
+use x11rb::atom_manager;
+
+atom_manager! {
+    /// Interned X11 atoms used across the `x11` platform backend.
+    pub Atoms: AtomsCookie {
+        XdndAware,
+        XdndEnter,
+        XdndPosition,
+        XdndStatus,
+        XdndLeave,
+        XdndDrop,
+        XdndFinished,
+        XdndSelection,
+        XdndTypeList,
+        XdndActionCopy,
+        XdndActionMove,
+        XdndActionLink,
+        XdndActionAsk,
+        XdndActionPrivate,
+        TARGETS,
+        MULTIPLE,
+        INCR,
+        DELETE,
+        CLIPBOARD,
+        UTF8_STRING,
+        TEXT,
+        URI_LIST: b"text/uri-list",
+        PLAIN_UTF8: b"text/plain;charset=utf-8",
+        GNOME_ICON_LIST: b"x-special/gnome-icon-list",
+        GNOME_COPIED_FILES: b"x-special/gnome-copied-files",
+        RADIVINE_DND: b"_RADIVINE_DND",
+        RADIVINE_CLIP: b"_RADIVINE_CLIP",
+        WM_STATE,
+        WM_CLASS,
+        RESOURCE_MANAGER,
+        _XSETTINGS_SETTINGS,
+        _NET_WM_NAME,
+        _NET_WM_PID,
+        _NET_WM_WINDOW_TYPE,
+        _NET_WM_WINDOW_TYPE_DND,
+        _NET_WM_WINDOW_TYPE_POPUP_MENU,
+        _NET_WM_WINDOW_TYPE_NOTIFICATION,
+        _NET_WM_WINDOW_TYPE_UTILITY,
+        _NET_WM_BYPASS_COMPOSITOR,
+        _NET_SUPPORTING_WM_CHECK,
+        _NET_CLIENT_LIST,
+        _NET_ACTIVE_WINDOW,
+        _NET_WM_CM_S0,
+        _XSETTINGS_S0,
+    }
+}
