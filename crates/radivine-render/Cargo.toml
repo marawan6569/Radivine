@@ -1,0 +1,25 @@
+[package]
+name = "radivine-render"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Software renderer for Radivine radial wheels using tiny-skia, cosmic-text, and resvg"
+
+[lints]
+workspace = true
+
+[dependencies]
+radivine-wheel = { path = "../radivine-wheel" }
+smallvec.workspace = true
+thiserror.workspace = true
+tiny-skia.workspace = true
+cosmic-text.workspace = true
+resvg.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "render_bench"
+harness = false
