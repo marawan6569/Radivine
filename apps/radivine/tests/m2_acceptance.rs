@@ -9,7 +9,8 @@ use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
 use x11rb::protocol::Event;
 use x11rb::protocol::xproto::{
-    AtomEnum, ConnectionExt as _, CreateWindowAux, EventMask, MapState, PropMode, WindowClass,
+    AtomEnum, ConfigureWindowAux, ConnectionExt as _, CreateWindowAux, EventMask, MapState,
+    PropMode, StackMode, WindowClass,
 };
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
@@ -279,13 +280,25 @@ fn m2_live_acceptance_suite() {
     )
     .expect("create test_win");
     conn.map_window(test_win).expect("map test_win");
-    conn.flush().expect("flush test_win");
-    thread::sleep(Duration::from_millis(20));
+    conn.configure_window(
+        test_win,
+        &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE),
+    )
+    .expect("raise test_win");
+    let _ = conn
+        .get_window_attributes(test_win)
+        .expect("sync map")
+        .reply()
+        .expect("sync map reply");
 
     let _ = Command::new("xdotool")
-        .args(["mousemove", "350", "350", "click", "1"])
+        .args(["mousemove", "--sync", "350", "350", "click", "1"])
         .status();
-    thread::sleep(Duration::from_millis(20));
+    let _ = conn
+        .get_window_attributes(test_win)
+        .expect("sync click")
+        .reply()
+        .expect("sync click reply");
     let mut got_button = false;
     while let Ok(Some(ev)) = conn.poll_for_event() {
         if let Event::ButtonPress(bp) = ev
