@@ -10,6 +10,7 @@
 #![forbid(unsafe_code)]
 
 pub mod file_io;
+pub mod full;
 pub mod head_tail;
 
 use clap::ValueEnum;
