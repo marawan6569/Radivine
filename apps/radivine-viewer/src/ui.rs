@@ -734,8 +734,7 @@ impl ViewerApp {
             let max_line_num = visible_lines
                 .last()
                 .map_or(total_rows as u64, |l| l.line_number);
-            let digits = max_line_num.max(1).ilog10() as usize + 1;
-            let gutter_width = ((digits.max(4) as f32) * 8.5) + 18.0;
+            let digits = (max_line_num.max(1).ilog10() as usize + 1).max(4);
 
             for (rel_idx, line) in visible_lines.iter().enumerate() {
                 let abs_row_idx = row_range.start + rel_idx;
@@ -752,27 +751,33 @@ impl ViewerApp {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 0.0;
 
-                        // Line number gutter
+                        // Line number gutter (fixed-width right-padded monospace digits)
                         egui::Frame::NONE
                             .fill(pal.bg_gutter)
-                            .inner_margin(Margin::symmetric(8, 0))
+                            .inner_margin(Margin::symmetric(10, 1))
                             .show(ui, |ui| {
-                                ui.set_min_width(gutter_width);
-                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                    ui.label(
-                                        RichText::new(format!("{}", line.line_number))
-                                            .monospace()
-                                            .size(12.5)
-                                            .color(pal.fg_muted),
-                                    );
-                                });
+                                ui.label(
+                                    RichText::new(format!(
+                                        "{:>width$}",
+                                        line.line_number,
+                                        width = digits
+                                    ))
+                                    .monospace()
+                                    .size(12.5)
+                                    .color(pal.fg_muted),
+                                );
                             });
 
-                        ui.add_space(10.0);
+                        ui.add_space(12.0);
 
                         // Monospace line text (with search highlight spans if a query is active)
+                        let display_line = if line.text.is_empty() {
+                            " "
+                        } else {
+                            line.text.as_str()
+                        };
                         let job = build_line_layout_job(
-                            &line.text,
+                            display_line,
                             &query,
                             case_sensitive,
                             is_active_match_row,
