@@ -61,7 +61,8 @@ radivine/
 │   └── radivine-platform/        # Platform trait + `x11` module (+ future wayland/windows/macos modules)
 ├── apps/
 │   ├── radivine/                 # daemon + CLI binary `radivine`
-│   └── radivine-viewer/          # egui preview window binary (added in M5)
+│   ├── radivine-viewer/          # egui preview window binary (added in M5)
+│   └── radivine-control/         # egui Control Center desktop binary (added in v0.1.1)
 ├── tools/
 │   └── wheel-sandbox/            # dev tool: wheel engine + renderer in an opaque winit/softbuffer window (M1)
 ├── tests/
@@ -128,6 +129,7 @@ flowchart TD
 | `radivine-platform` | X11 connection, atoms, extensions, overlay window lifecycle, SHM buffers, XDND target protocol, XFixes arming, XI2 raw trigger detection, invoke-mode grabs, monitors & scale, clipboard ownership service | Make product decisions (what to show, when to accept) — it reports and executes |
 | `apps/radivine` | Daemon lifecycle, calloop loop, **session state machine** (§5), config loading, IPC server, CLI, wiring, logging setup, single-instance lock | Contain geometry, rendering, or protocol code |
 | `apps/radivine-viewer` | Full/Head/Tail text viewing, search, large-file strategy | Depend on the daemon at runtime |
+| `apps/radivine-control` | Native graphical Control Center (Dashboard, General, Wheel, Actions, Diagnostics, About), background `systemd --user` / fallback service controller, format-preserving `toml_edit` configuration persistence | Block the UI thread on subprocess/IPC operations or stop the daemon on window close |
 
 ## 4. Runtime architecture
 
