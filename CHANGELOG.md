@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.1] - 2026-10-23
+
+### Added
+- **Radivine Control Center (`apps/radivine-control`):**
+  - Standalone `#![forbid(unsafe_code)]` native desktop GUI (`eframe`/`egui` `0.37`) with 6 pages: **Dashboard**, **General**, **Wheel**, **Custom Actions**, **Diagnostics & Logs**, and **About Radivine**.
+  - Single-instance window activation lock (`$XDG_RUNTIME_DIR/radivine/control.sock`) that focuses the existing Control Center window (and switches to `--page <NAME>` if requested) instead of opening duplicate windows.
+  - Non-blocking background worker thread for `systemctl --user`, daemon IPC queries, X11 doctor probes, and log collection so the UI remains responsive at all times.
+- **Terminal-Independent Background Daemon & Autostart Management:**
+  - Installed `/usr/lib/systemd/user/radivine.service` (`WantedBy=default.target`, `SuccessExitStatus=0 143`) for reliable login autostart on Linux Mint Cinnamon and Ubuntu X11 sessions.
+  - Automatic graphical environment propagation (`systemctl --user import-environment DISPLAY XAUTHORITY WAYLAND_DISPLAY XDG_SESSION_TYPE XDG_CURRENT_DESKTOP DBUS_SESSION_BUS_ADDRESS`) prior to interactive service start/restart.
+  - Detached `process_group(0)` background daemon fallback logging to `~/.local/state/radivine/daemon.log` when `systemd --user` is unavailable.
+  - Automatic detection and non-destructive `.bak` conflict resolution for duplicate `systemd` + XDG autostart entries and legacy `graphical-session.target` user unit overrides.
+- **Format-Preserving TOML Persistence & Custom Actions Manager:**
+  - `toml_edit::DocumentMut` persistence for `~/.config/radivine/config.toml` and `~/.config/radivine/actions.toml` preserving user comments, formatting, and unknown keys.
+  - Pre-write strict validation (`AppConfig::validate_strict()`, `EditableAction::validate()`), external modification conflict detection (`mtime` + FNV-1a content digest), `.bak` backups, and same-directory atomic replacement (`.tmp` + `fsync` + `rename`).
+  - Graphical Custom Actions Manager supporting `enabled = true|false`, `timeout_ms`, whole-argument placeholder insertion (`{path}`, `{paths}`, `{uri}`, `{uris}`, `{dir}`, `{name}`), and live hot reload into the running daemon without interrupting active drag sessions.
+- **Privacy-Conscious Diagnostics & CI Hardening:**
+  - Bounded log viewer (`journalctl --user -u radivine.service` or `daemon.log`) with severity and substring filtering plus local diagnostic report export with automatic redaction of personal paths, usernames, UIDs, and `file://` URIs.
+  - GitHub Actions CI workflow (`.github/workflows/ci.yml`) running `cargo fmt`, `cargo clippy -D warnings`, headless workspace tests, screenshot export verification, and `.deb` + `lintian` verification.
+
+### Changed
+- Updated `/usr/share/applications/radivine.desktop` to launch `radivine-control` instead of `radivine daemon`.
+- Extended `DaemonStatus` IPC telemetry with `version`, `uptime_secs`, `desktop_session`, `desktop_environment`, `display`, `custom_action_count`, and `rss_kib`.
+
+---
+
 ## [0.1.0] - 2026-10-23
 
 ### Added

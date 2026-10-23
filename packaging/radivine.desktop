@@ -8,6 +8,6 @@ Exec=radivine-control
 TryExec=radivine-control
 Icon=radivine
 Terminal=false
-Categories=Utility;Settings;FileTools;
+Categories=Utility;FileTools;
 Keywords=radial;wheel;menu;actions;drag;drop;nemo;preview;settings;control;
 StartupNotify=true

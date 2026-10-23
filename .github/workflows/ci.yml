@@ -57,4 +57,4 @@ jobs:
       - name: Build and verify Debian package (radivine_0.1.1_amd64.deb)
         run: |
           ./scripts/build-deb.sh
-          lintian --no-tag-display-limit target/debian/radivine_0.1.1_amd64.deb
+          lintian --tag-display-limit 0 target/debian/radivine_0.1.1_amd64.deb
