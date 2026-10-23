@@ -2528,6 +2528,7 @@ dependencies = [
  "radivine-core",
  "radivine-platform",
  "radivine-render",
+ "radivine-viewer",
  "radivine-wheel",
  "serde",
  "serde_json",

@@ -28,5 +28,8 @@ tracing-subscriber.workspace = true
 anyhow.workspace = true
 smallvec.workspace = true
 
+[dev-dependencies]
+radivine-viewer = { path = "../radivine-viewer" }
+
 [lints]
 workspace = true
