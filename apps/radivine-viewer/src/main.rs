@@ -84,8 +84,17 @@ fn main() -> ExitCode {
         "opened file for preview"
     );
 
-    let headless_env = std::env::var("RADIVINE_VIEWER_HEADLESS")
-        .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+    let no_display = std::env::var("DISPLAY")
+        .unwrap_or_default()
+        .trim()
+        .is_empty()
+        && std::env::var("WAYLAND_DISPLAY")
+            .unwrap_or_default()
+            .trim()
+            .is_empty();
+    let headless_env = no_display
+        || std::env::var("RADIVINE_VIEWER_HEADLESS")
+            .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
 
     if cli.print || headless_env {
         if cli.print {

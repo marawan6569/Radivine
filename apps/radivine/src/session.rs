@@ -230,13 +230,15 @@ impl SessionController {
             4,
         );
 
+        let is_live_platform = platform.name() == "x11";
         let (notify_tx, notify_rx) = mpsc::channel::<(String, String)>();
         let _ = thread::Builder::new()
             .name("radivine-notify".to_string())
             .spawn(move || {
                 while let Ok((summary, body)) = notify_rx.recv() {
-                    let suppress = std::env::var("RADIVINE_SUPPRESS_DESKTOP_NOTIFY")
-                        .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+                    let suppress = !is_live_platform
+                        || std::env::var("RADIVINE_SUPPRESS_DESKTOP_NOTIFY")
+                            .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
                     if !suppress
                         && let Err(err) =
                             call_desktop_notify(None, "Radivine", "radivine", &summary, &body, 4000)
