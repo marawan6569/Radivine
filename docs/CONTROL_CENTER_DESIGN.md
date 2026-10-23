@@ -79,14 +79,23 @@ Empirical inspection of Linux Mint 22.x (Cinnamon `X-Cinnamon` on X11) revealed 
 
 To work reliably across Cinnamon, XFCE, MATE, GNOME, and KDE:
 - The Debian package installs the canonical user service unit at `/usr/lib/systemd/user/radivine.service` (without auto-enabling it during `apt install`).
-- `[Unit]` orders `After=default.target graphical-session-pre.target` with `StartLimitIntervalSec=30` and `StartLimitBurst=5` (and omits `PartOf=graphical-session.target` so inactive targets do not block startup).
-- `[Service]` runs `ExecStart=/usr/bin/radivine daemon`, `ExecReload=/usr/bin/radivine reload`, `ExecStop=/usr/bin/radivine quit`, `Restart=on-failure`, `RestartSec=2`, and `SuccessExitStatus=0 143`.
+- `[Unit]` orders `After=default.target graphical-session-pre.target dbus.socket` with `StartLimitIntervalSec=0` (preventing systemd burst start-limit lockout when LightDM briefly holds `:0` across user logout/login transitions) and omits `PartOf=graphical-session.target` so inactive targets do not block startup.
+- `[Service]` sets `Environment=RADIVINE_SYSTEMD_SERVICE=1`, `ExecStart=/usr/bin/radivine daemon`, `ExecReload=/usr/bin/radivine reload`, `ExecStop=/usr/bin/radivine quit`, `Restart=on-failure`, `RestartSec=2`, and `SuccessExitStatus=0 143`.
 - `[Install]` specifies `WantedBy=default.target` so `systemctl --user enable radivine.service` activates on login in Cinnamon as well as standard systemd user sessions.
 - Before `ServiceController` executes `systemctl --user start` or `restart` from an interactive desktop session, it runs:
   ```text
   systemctl --user import-environment DISPLAY XAUTHORITY WAYLAND_DISPLAY XDG_SESSION_TYPE XDG_CURRENT_DESKTOP DBUS_SESSION_BUS_ADDRESS
   ```
   ensuring the daemon receives the live graphical display environment without hardcoding `DISPLAY` or `XAUTHORITY`.
+
+### 3.1.1 Login Autostart Graphical Readiness & Dynamic Compositor Synchronization (`ADR-026`)
+
+During Linux Mint Cinnamon login, `/etc/X11/Xsession.d/95dbus_update-activation-env` imports `DISPLAY` and `XAUTHORITY` into `systemd --user` ~700 ms before `cinnamon --replace` (Muffin, the window manager and X11 compositor) claims `_NET_WM_CM_S0` and ~140–870 ms before `csd-xsettings` and `csd-xrandr` finish applying DPI/theme/monitor properties. To guarantee identical rendering whether `radivine` starts during early login or via an interactive restart:
+1. **Bounded Initial Compositor Wait & Login Retry:** When launched by `systemd --user` (`RADIVINE_SYSTEMD_SERVICE=1` or parent `comm == "systemd"`), `radivine` retries transient X11 connection errors during display-manager handover and performs a bounded wait (up to `2500 ms` default, `25 ms` poll) for `_NET_WM_CM_S0` ownership before finalizing its initial capability probe.
+2. **Dynamic Runtime `_NET_WM_CM_S0`, `_XSETTINGS_S0`, and `RandR` Tracking:** `X11Platform` subscribes `overlay.helper_window` to `XfixesSelectionNotify` for both `_NET_WM_CM_S0` and `_XSETTINGS_S0` (plus `PROPERTY_CHANGE` on the `_XSETTINGS_S0` owner window) and re-verifies compositor ownership, monitor geometry, `Xft.dpi`, and reduced-motion settings inside `prepare_overlay()` before every wheel summon and in `sync_graphical_state()` on status queries.
+3. **Seamless Transition to 32-Bit ARGB Translucency:** Whenever `_NET_WM_CM_S0` becomes owned, `X11Platform` immediately resets any XShape `ShapeBounding` clip to unclipped (`reset_bounding_region`), re-asserts `_NET_WM_BYPASS_COMPOSITOR = 2`, clears the X11 overlay window to transparent (`0x00000000`) on map, and switches `OverlayInfo::translucent` to `true` (`Renderer::set_opaque_fallback(false)`).
+4. **Visual-Only `ShapeBounding` in True Uncomposited Sessions:** When no compositor is active (`!translucent`), `SessionController::sync_input_region()` clips `ShapeBounding` strictly to visible `scene.wheels` disks and `scene.caption` (never to invisible pointer hit-slop corridors) and updates `ShapeBounding` on `HoverChanged` / `SubmenuOpened` / `SubmenuClosed`.
+5. **Graphical Readiness Telemetry:** `DaemonStatus` exposes `graphical_ready`, `compositor_active`, `translucent_overlay`, and `monitor_count`, which the Control Center surfaces in the Dashboard (`Overlay Rendering Mode`) and Diagnostics pages.
 
 ### 3.2 Differentiating Service State from Daemon IPC Health
 
