@@ -465,10 +465,14 @@ impl SessionController {
         let caps = self.platform.capabilities();
         let graphical_ready = !matches!(caps.invoke_at_pointer, radivine_platform::Support::No(_));
         let compositor_active = matches!(caps.translucency, radivine_platform::Support::Yes);
-        let translucent_overlay = self
-            .overlay_info
-            .as_ref()
-            .map_or(compositor_active, |info| info.translucent);
+        let translucent_overlay = if matches!(self.state, SessionState::Idle | SessionState::Armed)
+        {
+            compositor_active
+        } else {
+            self.overlay_info
+                .as_ref()
+                .map_or(compositor_active, |info| info.translucent)
+        };
         let monitor_count = self.platform.monitors().len();
         let monitor_rect = self
             .overlay_info
@@ -1046,6 +1050,7 @@ impl SessionController {
                     self.feed_wheel_input(WheelInput::Nav(nav), now);
                 }
                 PlatformEvent::SettingsChanged | PlatformEvent::MonitorsChanged => {
+                    self.platform.sync_graphical_state();
                     let reduced_motion = self
                         .config
                         .effective_reduced_motion(self.platform.reduced_motion());
@@ -1895,10 +1900,7 @@ impl SessionController {
             let scene = ws.scene();
             let mut bounding_px: Vec<ShapePx> = Vec::with_capacity(scene.wheels.len() + 2);
             for w in &scene.wheels {
-                if w.opacity <= 0.01 {
-                    continue;
-                }
-                let visual_r = (w.r_out + 4.0) * w.scale.max(0.1) * scale;
+                let visual_r = (w.r_out + 4.0) * scale;
                 bounding_px.push(ShapePx::Circle {
                     cx: w.center.x * scale,
                     cy: w.center.y * scale,
@@ -1908,9 +1910,7 @@ impl SessionController {
             if bounding_px.is_empty() {
                 bounding_px.clone_from(&shapes_px);
             }
-            if let Some(ref cap) = scene.caption
-                && cap.opacity > 0.02
-            {
+            if let Some(ref cap) = scene.caption {
                 let x0 = cap.box_.x * scale;
                 let y0 = cap.box_.y * scale;
                 let x1 = (cap.box_.x + cap.box_.w) * scale;

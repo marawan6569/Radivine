@@ -291,6 +291,8 @@ impl OverlayWindow {
         .map_err(|e| PlatformError::X11(e.to_string()))?;
         conn.map_window(self.window)
             .map_err(|e| PlatformError::X11(e.to_string()))?;
+        conn.clear_area(false, self.window, 0, 0, 0, 0)
+            .map_err(|e| PlatformError::X11(e.to_string()))?;
         shm.flush_pending(conn, self.window, self.gc)?;
         if pointer_nudge {
             let _ = conn.warp_pointer(x11rb::NONE, x11rb::NONE, 0, 0, 0, 0, 0, 0);

@@ -221,6 +221,9 @@ fn ac_03_autostart_management_and_conflict_resolution_preserve_user_files() {
     );
     let updated_unit = fs::read_to_string(&unit_path).expect("read updated unit");
     assert!(updated_unit.contains("WantedBy=default.target"));
+    assert!(updated_unit.contains("After=default.target graphical-session-pre.target dbus.socket"));
+    assert!(updated_unit.contains("StartLimitIntervalSec=0"));
+    assert!(updated_unit.contains("Environment=RADIVINE_SYSTEMD_SERVICE=1"));
     assert!(!updated_unit.contains("PartOf=graphical-session.target"));
 
     // Resolve duplicate XDG + systemd conflict -> backs up XDG file to .bak

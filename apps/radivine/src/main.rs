@@ -191,11 +191,27 @@ fn run_client_request(sock_path: &Path, req: &IpcRequest, json_out: bool) -> Exi
     }
 }
 
+fn is_spawned_by_systemd() -> bool {
+    let Ok(status) = std::fs::read_to_string("/proc/self/status") else {
+        return false;
+    };
+    let Some(ppid) = status
+        .lines()
+        .find_map(|line| line.strip_prefix("PPid:").map(str::trim))
+    else {
+        return false;
+    };
+    std::fs::read_to_string(format!("/proc/{ppid}/comm"))
+        .map(|comm| comm.trim() == "systemd")
+        .unwrap_or(false)
+}
+
 fn connect_platform_with_login_retry(
     config: &AppConfig,
 ) -> Result<Box<dyn radivine_platform::Platform>, radivine_platform::PlatformError> {
     let is_systemd = std::env::var("RADIVINE_SYSTEMD_SERVICE")
-        .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+        .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        || is_spawned_by_systemd();
     let max_attempts = if is_systemd { 6 } else { 1 };
     let mut attempt = 0;
     loop {

@@ -813,6 +813,21 @@ fn subscribe_xsettings_owner_properties(conn: &RustConnection, atoms: &Atoms) {
     }
 }
 
+fn is_spawned_by_systemd() -> bool {
+    let Ok(status) = std::fs::read_to_string("/proc/self/status") else {
+        return false;
+    };
+    let Some(ppid) = status
+        .lines()
+        .find_map(|line| line.strip_prefix("PPid:").map(str::trim))
+    else {
+        return false;
+    };
+    std::fs::read_to_string(format!("/proc/{ppid}/comm"))
+        .map(|comm| comm.trim() == "systemd")
+        .unwrap_or(false)
+}
+
 fn should_wait_for_initial_compositor(doctor: &DoctorReport) -> bool {
     if doctor.compositor_active || doctor.is_wayland_session() {
         return false;
@@ -826,9 +841,9 @@ fn should_wait_for_initial_compositor(doctor: &DoctorReport) -> bool {
             return true;
         }
     }
-    if std::env::var("RADIVINE_SYSTEMD_SERVICE")
-        .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-    {
+    let env_systemd = std::env::var("RADIVINE_SYSTEMD_SERVICE")
+        .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+    if env_systemd || is_spawned_by_systemd() {
         return !crate::is_isolated_test_display();
     }
     false
