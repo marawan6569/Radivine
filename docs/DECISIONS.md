@@ -156,9 +156,9 @@ To change a decision: add a new ADR that supersedes the old one; never silently 
 3. **Stationary-Pointer Status & Submenu Hit-Margin Guard:** GTK 3.24 honors unsolicited `XdndStatus` messages with zero pointer movement (`Reject ↔ Accept`); `WHEEL_ENGINE_DESIGN.md` §6.2 is refined so a child wheel's outer `hit_margin` (`r_out < d ≤ hit_radius`) never preempts a point inside its parent wheel's drawn ring (`d_parent ≤ r_out(parent)`).
 4. **Source File Safety Verified:** All test files in `/tmp/radivine-m0-test/main/` retained 100% identical SHA-256 checksums, sizes, mtimes, inodes, and paths across all GTK3 harness and real Nemo 6.6.3 runs ([`S-6.md`](file:///home/marwanmohamed/Documents/work/rust/radivine/docs/spikes/S-6.md)).
 
-## ADR-022 — Project licence
-**Status:** Proposed — needs owner decision.
-**Proposal:** `MIT OR Apache-2.0` (Rust ecosystem convention, maximises reuse of the wheel engine). Alternative: `GPL-3.0-or-later` if the owner prefers copyleft for the application. All chosen dependencies (MIT/Apache/ISC/OFL/Zlib) are compatible with either.
+## ADR-022 — Open-Source License Selection (`MIT OR Apache-2.0`)
+**Status:** Accepted
+**Decision:** Radivine is dual-licensed under **`MIT OR Apache-2.0`** at the user's or downstream distributor's option, following standard Rust ecosystem convention. Both [`LICENSE-MIT`](file:///home/marwanmohamed/Documents/work/rust/radivine/LICENSE-MIT) and [`LICENSE-APACHE`](file:///home/marwanmohamed/Documents/work/rust/radivine/LICENSE-APACHE) are provided at the repository root, all workspace crates declare `license = "MIT OR Apache-2.0"`, and all third-party Rust dependencies and embedded assets (`Inter` font under `OFL-1.1`, `Lucide` icons under `ISC`) are audited and documented in [`THIRD_PARTY_NOTICES.md`](file:///home/marwanmohamed/Documents/work/rust/radivine/THIRD_PARTY_NOTICES.md).
 
 ## ADR-023 — Invoke mode as M2 vehicle and permanent fallback
 **Status:** Accepted
