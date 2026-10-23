@@ -134,6 +134,8 @@ pub struct SessionController {
     notifications: Vec<String>,
     config_warnings: Vec<String>,
     active_item_states: Vec<ItemStateSnapshot>,
+    daemon_started_at: Instant,
+    custom_action_count: usize,
     session_epoch: Instant,
     last_interaction: Instant,
     next_frame_deadline: Option<Instant>,
@@ -279,6 +281,8 @@ impl SessionController {
             notifications: Vec::new(),
             config_warnings: Vec::new(),
             active_item_states: Vec::new(),
+            daemon_started_at: now,
+            custom_action_count: 0,
             session_epoch: now,
             last_interaction: now,
             next_frame_deadline: None,
@@ -361,14 +365,20 @@ impl SessionController {
     }
 
     /// Reloads [`AppConfig`] and applies updated wheel, theme, and scale parameters.
+    ///
+    /// If a radial wheel session is currently active, `self.config` and `self.wheel_cfg` are
+    /// updated for subsequent sessions while preserving the active session's scale and theme so an
+    /// in-progress drag-and-drop or invoke interaction is never interrupted.
     pub fn reload_config(&mut self, config: AppConfig) {
         self.config = config;
         let reduced_motion = self
             .config
             .effective_reduced_motion(self.platform.reduced_motion());
         self.wheel_cfg = self.config.to_wheel_config(reduced_motion);
-        self.renderer.set_theme(self.config.resolve_theme());
-        self.effective_scale = self.config.effective_scale(self.platform.scale());
+        if matches!(self.state, SessionState::Idle | SessionState::Armed) {
+            self.renderer.set_theme(self.config.resolve_theme());
+            self.effective_scale = self.config.effective_scale(self.platform.scale());
+        }
         tracing::info!(
             scale = self.effective_scale,
             passthrough = self.config.input.passthrough,
@@ -382,15 +392,24 @@ impl SessionController {
     /// information while preserving the previously active [`ActionRegistry`] (`AC-4.6`).
     pub fn load_actions_from_path(&mut self, actions_path: &Path) {
         let preview_settings = self.config.to_preview_settings();
+        let notify_warn = self.config.notifications.notify_on_config_warning;
         match load_actions_file(actions_path) {
             Ok(actions_cfg) => {
                 match registry_from_actions_and_preview_config(&actions_cfg, &preview_settings) {
                     Ok(new_reg) => {
                         self.registry = Arc::new(new_reg);
+                        self.custom_action_count = actions_cfg.actions.len();
                         self.config_warnings.clone_from(&actions_cfg.warnings);
                         for warning in &actions_cfg.warnings {
                             tracing::warn!("{warning}");
-                            self.emit_notification("Actions configuration warning", warning);
+                            if notify_warn {
+                                self.emit_notification("Actions configuration warning", warning);
+                            } else {
+                                self.record_notification_only(
+                                    "Actions configuration warning",
+                                    warning,
+                                );
+                            }
                         }
                         tracing::info!(
                             path = %actions_path.display(),
@@ -403,7 +422,11 @@ impl SessionController {
                         let msg = format!("{}: {err}", actions_path.display());
                         tracing::warn!("{msg}");
                         self.config_warnings = vec![msg.clone()];
-                        self.emit_notification("Invalid actions.toml", &msg);
+                        if notify_warn {
+                            self.emit_notification("Invalid actions.toml", &msg);
+                        } else {
+                            self.record_notification_only("Invalid actions.toml", &msg);
+                        }
                     }
                 }
             }
@@ -411,7 +434,11 @@ impl SessionController {
                 let msg = err.to_string();
                 tracing::warn!("{msg}");
                 self.config_warnings = vec![msg.clone()];
-                self.emit_notification("Invalid actions.toml", &msg);
+                if notify_warn {
+                    self.emit_notification("Invalid actions.toml", &msg);
+                } else {
+                    self.record_notification_only("Invalid actions.toml", &msg);
+                }
             }
         }
     }
@@ -489,6 +516,16 @@ impl SessionController {
             last_dnd_status_us: self.last_dnd_status_us,
             last_drop_dispatch_us: self.last_drop_dispatch_us,
             last_frame_render_us: self.last_frame_render_us,
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            uptime_secs: self.daemon_started_at.elapsed().as_secs(),
+            desktop_session: std::env::var("XDG_SESSION_TYPE")
+                .unwrap_or_else(|_| "unknown".to_string()),
+            desktop_environment: std::env::var("XDG_CURRENT_DESKTOP")
+                .or_else(|_| std::env::var("DESKTOP_SESSION"))
+                .unwrap_or_else(|_| "unknown".to_string()),
+            display: std::env::var("DISPLAY").unwrap_or_else(|_| "(unset)".to_string()),
+            custom_action_count: self.custom_action_count,
+            rss_kib: query_self_rss_kib(),
         }
     }
 
@@ -1680,12 +1717,17 @@ impl SessionController {
             Err(err) => {
                 let err_msg = err.to_string();
                 self.last_job_error = Some(err_msg.clone());
-                self.emit_notification(&format!("Action failed ({action})"), &err_msg);
+                let title = format!("Action failed ({action})");
+                if self.config.notifications.notify_on_action_error {
+                    self.emit_notification(&title, &err_msg);
+                } else {
+                    self.record_notification_only(&title, &err_msg);
+                }
             }
         }
     }
 
-    fn emit_notification(&mut self, summary: &str, body: &str) {
+    fn record_notification_only(&mut self, summary: &str, body: &str) {
         let formatted = if body.is_empty() {
             summary.to_string()
         } else {
@@ -1696,7 +1738,13 @@ impl SessionController {
             self.notifications.remove(0);
         }
         self.notifications.push(formatted);
-        let _ = self.notify_tx.send((summary.to_string(), body.to_string()));
+    }
+
+    fn emit_notification(&mut self, summary: &str, body: &str) {
+        self.record_notification_only(summary, body);
+        if self.config.notifications.enabled {
+            let _ = self.notify_tx.send((summary.to_string(), body.to_string()));
+        }
     }
 
     fn elapsed_millis(&self, now: Instant) -> Millis {
@@ -1843,6 +1891,17 @@ impl SessionController {
         }
         Ok(())
     }
+}
+
+fn query_self_rss_kib() -> Option<u64> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    for line in status.lines() {
+        if let Some(rest) = line.strip_prefix("VmRSS:") {
+            let num_str = rest.split_whitespace().next()?;
+            return num_str.parse::<u64>().ok();
+        }
+    }
+    None
 }
 
 fn draw_debug_damage_boxes(pm: &mut tiny_skia::Pixmap, rects: &[RenderRectPx]) {

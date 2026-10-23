@@ -113,6 +113,27 @@ pub struct DaemonStatus {
     /// Duration in microseconds of the most recent frame render + SHM presentation.
     #[serde(default)]
     pub last_frame_render_us: Option<u64>,
+    /// Daemon binary version (`"0.1.1"`).
+    #[serde(default)]
+    pub version: String,
+    /// Seconds elapsed since the daemon started.
+    #[serde(default)]
+    pub uptime_secs: u64,
+    /// Desktop session type (`"x11"`, `"wayland"`, etc.).
+    #[serde(default)]
+    pub desktop_session: String,
+    /// Active desktop environment (`"X-Cinnamon"`, etc.).
+    #[serde(default)]
+    pub desktop_environment: String,
+    /// Active `DISPLAY` string (`":0"`, `":1"`, etc.).
+    #[serde(default)]
+    pub display: String,
+    /// Number of loaded user-defined custom actions.
+    #[serde(default)]
+    pub custom_action_count: usize,
+    /// Resident memory usage in KiB (`VmRSS` from `/proc/self/status`), if available.
+    #[serde(default)]
+    pub rss_kib: Option<u64>,
 }
 
 /// IPC response returned by the daemon.

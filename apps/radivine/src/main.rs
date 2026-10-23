@@ -95,6 +95,7 @@ struct DaemonLoopState {
     controller: SessionController,
     config_path: Option<PathBuf>,
     should_quit: bool,
+    x11_error: Option<String>,
 }
 
 fn main() -> ExitCode {
@@ -244,6 +245,7 @@ fn run_daemon(config_path: Option<PathBuf>, sock_path: &Path) -> anyhow::Result<
                     .dispatch_pending(&mut events)
                 {
                     tracing::error!("X11 dispatch error: {err}");
+                    state.x11_error = Some(err.to_string());
                     state.should_quit = true;
                 }
                 if !events.is_empty() {
@@ -287,6 +289,7 @@ fn run_daemon(config_path: Option<PathBuf>, sock_path: &Path) -> anyhow::Result<
         controller,
         config_path,
         should_quit: false,
+        x11_error: None,
     };
 
     while !state.should_quit {
@@ -294,12 +297,13 @@ fn run_daemon(config_path: Option<PathBuf>, sock_path: &Path) -> anyhow::Result<
 
         // Drain any X11 events already buffered in userspace by x11rb before sleeping
         let mut buffered = Vec::new();
-        if state
+        if let Err(err) = state
             .controller
             .platform_mut()
             .dispatch_pending(&mut buffered)
-            .is_err()
         {
+            tracing::error!("X11 dispatch error: {err}");
+            state.x11_error = Some(err.to_string());
             break;
         }
         if !buffered.is_empty() {
@@ -319,6 +323,9 @@ fn run_daemon(config_path: Option<PathBuf>, sock_path: &Path) -> anyhow::Result<
     state.controller.dismiss_immediate();
     state.controller.log_timing_summary_if_enabled();
     let _ = fs::remove_file(sock_path);
+    if let Some(err) = state.x11_error {
+        anyhow::bail!("X11 connection closed unexpectedly: {err}");
+    }
     tracing::info!("radivine daemon stopped cleanly");
     Ok(())
 }

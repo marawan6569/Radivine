@@ -90,7 +90,7 @@ impl<'de> Deserialize<'de> for ReducedMotionSetting {
 }
 
 /// Top-level `config.toml` structure (`ARCHITECTURE.md` §7.4).
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct AppConfig {
     /// Schema version (`1`).
@@ -101,6 +101,8 @@ pub struct AppConfig {
     pub wheel: WheelSection,
     /// Theme, scale, and motion settings.
     pub appearance: AppearanceSection,
+    /// Desktop notification preferences (`[notifications]`).
+    pub notifications: NotificationsSection,
     /// File preview line count settings (`[preview] head_lines`, `tail_lines`).
     pub preview: PreviewSection,
     /// Input region and outside-release behavior.
@@ -116,6 +118,7 @@ impl Default for AppConfig {
             trigger: TriggerSection::default(),
             wheel: WheelSection::default(),
             appearance: AppearanceSection::default(),
+            notifications: NotificationsSection::default(),
             preview: PreviewSection::default(),
             input: InputSection::default(),
             x11: X11Section::default(),
@@ -123,8 +126,30 @@ impl Default for AppConfig {
     }
 }
 
+/// `[notifications]` configuration section (`v0.1.1`).
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct NotificationsSection {
+    /// Master switch for desktop notifications (`org.freedesktop.Notifications`).
+    pub enabled: bool,
+    /// Emit a desktop notification when an action job fails (`default: true`).
+    pub notify_on_action_error: bool,
+    /// Emit a desktop notification when `actions.toml` has validation warnings (`default: true`).
+    pub notify_on_config_warning: bool,
+}
+
+impl Default for NotificationsSection {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            notify_on_action_error: true,
+            notify_on_config_warning: true,
+        }
+    }
+}
+
 /// `[trigger]` configuration section.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct TriggerSection {
     /// `"shift"` | `"ctrl"` | `"alt"` | `"super"` | `"disabled"`.
@@ -151,7 +176,7 @@ impl Default for TriggerSection {
 }
 
 /// `[wheel]` configuration section.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct WheelSection {
     /// Root wheel inner dead-zone radius in logical px.
@@ -165,8 +190,10 @@ pub struct WheelSection {
     /// Radial gap between parent outer radius and child inner radius in logical px.
     pub child_offset_gap: f32,
     /// Hover dwell time in milliseconds before opening a submenu.
+    #[serde(alias = "dwell_ms")]
     pub hover_dwell_ms: u64,
     /// Grace period in milliseconds before closing a submenu.
+    #[serde(alias = "corridor_grace_ms")]
     pub submenu_grace_ms: u64,
     /// Grace period in milliseconds after pointer leaves the shaped input region in drag mode (`350 ms` default).
     pub leave_grace_ms: u64,
@@ -191,7 +218,7 @@ impl Default for WheelSection {
 }
 
 /// `[appearance]` configuration section.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct AppearanceSection {
     /// `"dark"` | `"light"` | `"auto"`.
@@ -235,7 +262,7 @@ impl Default for PreviewSection {
 }
 
 /// `[input]` configuration section (`AGENTS.md` §2.4: `passthrough` defaults to `false`).
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct InputSection {
     /// Whether pointer clicks outside the wheel pass through to underlying windows (`false` default).
@@ -254,7 +281,7 @@ impl Default for InputSection {
 }
 
 /// `[x11]` configuration section.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct X11Section {
     /// `"raw"` | `"poll"`.
@@ -395,6 +422,85 @@ impl AppConfig {
             tracing::warn!("preview.tail_lines out of [1, 10000]; resetting to 50");
             self.preview.tail_lines = 50;
         }
+    }
+
+    /// Strictly validates all fields in [`AppConfig`], returning human-readable validation errors
+    /// when any field is outside its supported range (used by `radivine-control` before saving).
+    pub fn validate_strict(&self) -> Result<(), Vec<String>> {
+        let mut errs = Vec::new();
+        if !(16.0..=200.0).contains(&self.wheel.root_inner_radius) {
+            errs.push("wheel.root_inner_radius must be between 16.0 and 200.0 px".to_string());
+        }
+        if !(60.0..=400.0).contains(&self.wheel.root_outer_radius) {
+            errs.push("wheel.root_outer_radius must be between 60.0 and 400.0 px".to_string());
+        } else if self.wheel.root_outer_radius <= self.wheel.root_inner_radius + 20.0 {
+            errs.push(
+                "wheel.root_outer_radius must be at least 20.0 px larger than root_inner_radius"
+                    .to_string(),
+            );
+        }
+        if !(16.0..=200.0).contains(&self.wheel.child_inner_radius) {
+            errs.push("wheel.child_inner_radius must be between 16.0 and 200.0 px".to_string());
+        }
+        if !(50.0..=360.0).contains(&self.wheel.child_outer_radius) {
+            errs.push("wheel.child_outer_radius must be between 50.0 and 360.0 px".to_string());
+        } else if self.wheel.child_outer_radius <= self.wheel.child_inner_radius + 20.0 {
+            errs.push(
+                "wheel.child_outer_radius must be at least 20.0 px larger than child_inner_radius"
+                    .to_string(),
+            );
+        }
+        if !(0.0..=120.0).contains(&self.wheel.child_offset_gap) {
+            errs.push("wheel.child_offset_gap must be between 0.0 and 120.0 px".to_string());
+        }
+        if self.wheel.hover_dwell_ms > 2_000 {
+            errs.push("wheel.hover_dwell_ms must be between 0 and 2000 ms".to_string());
+        }
+        if self.wheel.submenu_grace_ms > 2_000 {
+            errs.push("wheel.submenu_grace_ms must be between 0 and 2000 ms".to_string());
+        }
+        if self.wheel.leave_grace_ms > 5_000 {
+            errs.push("wheel.leave_grace_ms must be between 0 and 5000 ms".to_string());
+        }
+        if !(0.0..=30.0).contains(&self.wheel.angular_hysteresis_deg) {
+            errs.push(
+                "wheel.angular_hysteresis_deg must be between 0.0 and 30.0 degrees".to_string(),
+            );
+        }
+        if !matches!(
+            self.appearance.theme.trim().to_ascii_lowercase().as_str(),
+            "dark" | "light" | "auto"
+        ) {
+            errs.push("appearance.theme must be \"dark\", \"light\", or \"auto\"".to_string());
+        }
+        if let ScaleSetting::Fixed(s) = self.appearance.scale
+            && !(0.5..=4.0).contains(&s)
+        {
+            errs.push("appearance.scale must be \"auto\" or between 0.5 and 4.0".to_string());
+        }
+        if !(0.0..=0.5).contains(&self.appearance.backdrop_dim) {
+            errs.push("appearance.backdrop_dim must be between 0.0 and 0.5".to_string());
+        }
+        if !matches!(
+            self.trigger
+                .drag_modifier
+                .trim()
+                .to_ascii_lowercase()
+                .as_str(),
+            "shift" | "ctrl" | "control" | "alt" | "mod1" | "super" | "meta" | "mod4" | "disabled"
+        ) {
+            errs.push(
+                "trigger.drag_modifier must be \"shift\", \"ctrl\", \"alt\", \"super\", or \"disabled\""
+                    .to_string(),
+            );
+        }
+        if !(1..=10_000).contains(&self.preview.head_lines) {
+            errs.push("preview.head_lines must be between 1 and 10000".to_string());
+        }
+        if !(1..=10_000).contains(&self.preview.tail_lines) {
+            errs.push("preview.tail_lines must be between 1 and 10000".to_string());
+        }
+        if errs.is_empty() { Ok(()) } else { Err(errs) }
     }
 
     /// Builds [`PreviewSettings`] for built-in preview action registration.

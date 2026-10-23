@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use radivine_core::{
     Action, ActionError, ActionId, ActionMeta, BasicContext, Context, ContextKind, Effect,
@@ -36,7 +36,8 @@ pub enum NotifyPolicy {
 }
 
 impl NotifyPolicy {
-    fn parse(s: &str) -> Result<Self, String> {
+    /// Parses a notification policy string (`"never"`, `"on-error"`, `"always"`).
+    pub fn parse(s: &str) -> Result<Self, String> {
         match s.trim() {
             "never" => Ok(Self::Never),
             "on-error" => Ok(Self::OnError),
@@ -44,6 +45,16 @@ impl NotifyPolicy {
             other => Err(format!(
                 "invalid notify policy '{other}' (expected 'never', 'on-error', or 'always')"
             )),
+        }
+    }
+
+    /// Returns the canonical TOML string representation (`"never"`, `"on-error"`, or `"always"`).
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Never => "never",
+            Self::OnError => "on-error",
+            Self::Always => "always",
         }
     }
 }
@@ -143,6 +154,16 @@ impl CountRange {
     pub fn is_single_only(&self) -> bool {
         self.max == Some(1)
     }
+
+    /// Formats this count range as a canonical `actions.toml` count string (`"1"`, `"1.."`, `"2..=5"`).
+    #[must_use]
+    pub fn to_spec_string(&self) -> String {
+        match (self.min, self.max) {
+            (min, Some(max)) if min == max => min.to_string(),
+            (min, Some(max)) => format!("{min}..={max}"),
+            (min, None) => format!("{min}.."),
+        }
+    }
 }
 
 /// Recognized whole-argument placeholders (`ACTION_SYSTEM.md` §9).
@@ -162,6 +183,21 @@ pub enum ArgPlaceholder {
     Name,
 }
 
+impl ArgPlaceholder {
+    /// Returns the canonical whole-argument placeholder token (`"{path}"`, etc.).
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Path => "{path}",
+            Self::Paths => "{paths}",
+            Self::Uri => "{uri}",
+            Self::Uris => "{uris}",
+            Self::Dir => "{dir}",
+            Self::Name => "{name}",
+        }
+    }
+}
+
 /// Validated template element in `exec` or `cwd`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ArgToken {
@@ -172,7 +208,8 @@ pub enum ArgToken {
 }
 
 impl ArgToken {
-    fn parse(raw: &str) -> Result<Self, String> {
+    /// Parses a single `exec` or `cwd` element and validates whole-argument placeholder rules.
+    pub fn parse(raw: &str) -> Result<Self, String> {
         if raw.contains('{') || raw.contains('}') {
             match raw {
                 "{path}" => Ok(Self::Placeholder(ArgPlaceholder::Path)),
@@ -187,6 +224,15 @@ impl ArgToken {
             }
         } else {
             Ok(Self::Literal(raw.to_string()))
+        }
+    }
+
+    /// Returns the raw string representation of this token.
+    #[must_use]
+    pub fn as_raw_str(&self) -> &str {
+        match self {
+            Self::Literal(s) => s.as_str(),
+            Self::Placeholder(ph) => ph.as_str(),
         }
     }
 }
@@ -291,16 +337,97 @@ pub fn mime_glob_matches(pattern: &str, mime: &str) -> bool {
 #[derive(Clone, Debug)]
 pub struct CustomAction {
     meta: ActionMeta,
+    enabled: bool,
     exec: Vec<ArgToken>,
     cwd: Option<ArgToken>,
     per_item: bool,
     wait: bool,
+    timeout_ms: Option<u64>,
     notify: NotifyPolicy,
     when: WhenRule,
     needs_local_paths: bool,
 }
 
 impl CustomAction {
+    /// Returns the full `ActionId` string (e.g. `"custom.open_terminal"`).
+    #[must_use]
+    pub fn id_str(&self) -> &str {
+        self.meta.id.as_str()
+    }
+
+    /// Returns the action ID stripped of any leading `"custom."` prefix.
+    #[must_use]
+    pub fn short_id(&self) -> &str {
+        self.meta
+            .id
+            .as_str()
+            .strip_prefix("custom.")
+            .unwrap_or(self.meta.id.as_str())
+    }
+
+    /// Returns the user-visible segment label.
+    #[must_use]
+    pub fn label(&self) -> &str {
+        &self.meta.label
+    }
+
+    /// Returns the optional icon identifier (e.g. `"lucide:terminal"`).
+    #[must_use]
+    pub fn icon_str(&self) -> Option<&str> {
+        self.meta.icon.as_ref().map(|k| k.0.as_ref())
+    }
+
+    /// Returns the optional caption description.
+    #[must_use]
+    pub fn description(&self) -> Option<&str> {
+        self.meta.description.as_deref()
+    }
+
+    /// Returns whether this action is enabled in `actions.toml` (`true` by default).
+    #[must_use]
+    pub fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    /// Returns the raw `exec` template elements (`[program, arg1, ...]`).
+    #[must_use]
+    pub fn exec_strings(&self) -> Vec<String> {
+        self.exec
+            .iter()
+            .map(|t| t.as_raw_str().to_string())
+            .collect()
+    }
+
+    /// Returns the optional `cwd` template string.
+    #[must_use]
+    pub fn cwd_string(&self) -> Option<String> {
+        self.cwd.as_ref().map(|t| t.as_raw_str().to_string())
+    }
+
+    /// Returns whether the command runs once per item (`true`) or once for the batch (`false`).
+    #[must_use]
+    pub fn per_item(&self) -> bool {
+        self.per_item
+    }
+
+    /// Returns whether Radivine waits for the child process exit status (`true`) or detaches (`false`).
+    #[must_use]
+    pub fn wait(&self) -> bool {
+        self.wait
+    }
+
+    /// Returns the optional timeout in milliseconds when `wait = true`.
+    #[must_use]
+    pub fn timeout_ms(&self) -> Option<u64> {
+        self.timeout_ms
+    }
+
+    /// Returns the `[action.when]` visibility and enablement rule.
+    #[must_use]
+    pub fn when(&self) -> &WhenRule {
+        &self.when
+    }
+
     /// Expands `exec` tokens for the given slice of [`Item`]s into an explicit OS argument vector.
     ///
     /// Never invokes a shell; each item path or URI becomes its own discrete `OsString` element.
@@ -410,11 +537,27 @@ impl CustomAction {
         })?;
 
         if self.wait {
+            let started = Instant::now();
+            let timeout = self
+                .timeout_ms
+                .filter(|&ms| ms > 0)
+                .map(Duration::from_millis);
             loop {
                 if job.is_cancelled() {
                     let _ = child.kill();
                     let _ = child.wait();
                     return Err(ActionError::Cancelled);
+                }
+                if let Some(limit) = timeout
+                    && started.elapsed() >= limit
+                {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(ActionError::Other(format!(
+                        "{} timed out after {} ms",
+                        self.meta.label,
+                        limit.as_millis()
+                    )));
                 }
                 match child.try_wait()? {
                     Some(status) => {
@@ -447,7 +590,7 @@ impl Action for CustomAction {
     }
 
     fn is_visible(&self, ctx: &BasicContext) -> bool {
-        self.when.matches_basic(ctx, self.needs_local_paths)
+        self.enabled && self.when.matches_basic(ctx, self.needs_local_paths)
     }
 
     fn enablement(&self, ctx: &Context) -> Enablement {
@@ -535,6 +678,8 @@ struct RawWhenSection {
 struct RawActionEntry {
     id: String,
     label: String,
+    #[serde(default = "default_true")]
+    enabled: bool,
     icon: Option<String>,
     description: Option<String>,
     exec: Vec<String>,
@@ -543,9 +688,14 @@ struct RawActionEntry {
     per_item: bool,
     #[serde(default)]
     wait: bool,
+    timeout_ms: Option<u64>,
     notify: Option<String>,
     #[serde(default)]
     when: RawWhenSection,
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 #[derive(Deserialize, Default)]
@@ -772,6 +922,14 @@ fn validate_raw_action(
         require_text: raw.when.require_text,
     };
 
+    if let Some(ms) = raw.timeout_ms
+        && (ms == 0 || ms > 3_600_000)
+    {
+        return Err(format!(
+            "action '{full_id}' timeout_ms={ms} must be in 1..=3600000"
+        ));
+    }
+
     Ok(CustomAction {
         meta: ActionMeta {
             id: ActionId::from(full_id),
@@ -780,10 +938,12 @@ fn validate_raw_action(
             description: raw.description,
             kinds: &[ContextKind::Files],
         },
+        enabled: raw.enabled,
         exec: exec_tokens,
         cwd: cwd_token,
         per_item: raw.per_item,
         wait: raw.wait,
+        timeout_ms: raw.timeout_ms,
         notify,
         when,
         needs_local_paths,
