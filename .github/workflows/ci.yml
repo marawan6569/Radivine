@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - "feat/**"
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  DISPLAY: ""
+
+jobs:
+  verify-and-package:
+    name: Format, Clippy, Tests & Debian Package
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo registry and target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install packaging & desktop validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            desktop-file-utils \
+            dpkg-dev \
+            lintian \
+            python3-pil
+
+      - name: Check formatting (cargo fmt)
+        run: cargo fmt --all --check
+
+      - name: Run Clippy lints (cargo clippy -D warnings)
+        run: DISPLAY="" cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Build workspace binaries before integration tests
+        run: DISPLAY="" cargo build --workspace
+
+      - name: Run workspace unit & integration tests (headless DISPLAY="")
+        run: DISPLAY="" cargo test --workspace -- --test-threads=1
+
+      - name: Verify headless screenshot export
+        run: DISPLAY="" cargo run -p radivine-control -- --export-screenshots /tmp/radivine-ci-screenshots
+
+      - name: Build and verify Debian package (radivine_0.1.1_amd64.deb)
+        run: |
+          ./scripts/build-deb.sh
+          lintian --no-tag-display-limit target/debian/radivine_0.1.1_amd64.deb
