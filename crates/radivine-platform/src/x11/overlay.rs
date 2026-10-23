@@ -10,7 +10,7 @@ use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
 
 use crate::x11::atoms::Atoms;
-use crate::x11::shape::clear_input_region_empty;
+use crate::x11::shape::{clear_input_region_empty, reset_bounding_region};
 use crate::{OverlayWindowType, PlatformError, RectPx};
 
 /// Selected X11 visual specification (`PLATFORM_INTEGRATION.md` §3.4.1).
@@ -301,10 +301,11 @@ impl OverlayWindow {
         Ok(())
     }
 
-    /// Clears the input shape region, unmaps the overlay window, and flushes immediately.
+    /// Clears the input shape region, resets any bounding shape, unmaps the overlay window, and flushes immediately.
     pub fn hide(&mut self, conn: &RustConnection, shape_supported: bool, pointer_nudge: bool) {
         if shape_supported {
             let _ = clear_input_region_empty(conn, self.window);
+            let _ = reset_bounding_region(conn, self.window);
         }
         let _ = conn.unmap_window(self.window);
         if pointer_nudge {

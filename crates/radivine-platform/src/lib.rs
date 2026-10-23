@@ -423,6 +423,12 @@ pub trait Platform {
     /// Sets the overlay's input region (`None` = whole overlay captures input; `Some(&[])` = pass-through all).
     fn set_input_region(&mut self, shapes: Option<&[ShapePx]>) -> Result<(), PlatformError>;
 
+    /// Sets the overlay's bounding region (`None` = whole overlay; `Some(shapes)` = 1-bit `ShapeBounding`
+    /// clipping mask for the no-compositor fallback per `PLATFORM_INTEGRATION.md` §3.11).
+    fn set_bounding_region(&mut self, _shapes: Option<&[ShapePx]>) -> Result<(), PlatformError> {
+        Ok(())
+    }
+
     /// Clears the input region and unmaps the overlay window.
     fn hide_overlay(&mut self);
 
@@ -466,4 +472,40 @@ pub fn connect_default() -> Result<Box<dyn Platform>, PlatformError> {
 pub fn connect_with_config(cfg: X11Config) -> Result<Box<dyn Platform>, PlatformError> {
     let plat = x11::X11Platform::connect(cfg)?;
     Ok(Box::new(plat))
+}
+
+/// Verifies whether the current `DISPLAY` is a dedicated isolated virtual X11 display (`Xvfb`)
+/// rather than the user's host desktop (`:0`, `:1`).
+///
+/// Automated X11 tests MUST call this before connecting or running `xdotool` so they never
+/// interfere with the user's active desktop session (`TESTING_STRATEGY.md` §4).
+#[must_use]
+pub fn is_isolated_test_display() -> bool {
+    let Ok(display) = std::env::var("DISPLAY") else {
+        return false;
+    };
+    let trimmed = display.trim();
+    let Some(after_colon) = trimmed.strip_prefix(':') else {
+        return false;
+    };
+    let num_str = after_colon.split('.').next().unwrap_or("");
+    let Ok(display_num) = num_str.parse::<u32>() else {
+        return false;
+    };
+    // Never touch host physical displays (:0, :1)
+    if display_num <= 1 {
+        return false;
+    }
+
+    // Verify via /tmp/.X<N>-lock -> /proc/<pid>/comm that the server is Xvfb
+    let lock_path = format!("/tmp/.X{display_num}-lock");
+    if let Ok(lock_contents) = std::fs::read_to_string(&lock_path)
+        && let Ok(pid) = lock_contents.trim().parse::<u32>()
+        && let Ok(comm) = std::fs::read_to_string(format!("/proc/{pid}/comm"))
+        && comm.trim().eq_ignore_ascii_case("Xvfb")
+    {
+        return true;
+    }
+
+    false
 }

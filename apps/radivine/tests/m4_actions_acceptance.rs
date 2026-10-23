@@ -343,7 +343,7 @@ fn request_clipboard_target(conn: &RustConnection, atoms: &Atoms, target: Atom) 
 
 #[test]
 fn m4_actions_acceptance_suite() {
-    if std::env::var("DISPLAY").is_err() {
+    if !radivine_platform::is_isolated_test_display() {
         return;
     }
     let Ok((conn, _)) = RustConnection::connect(None) else {

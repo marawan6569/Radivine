@@ -39,8 +39,8 @@ const MAX_SESSION_DURATION: Duration = Duration::from_secs(120);
 /// Idle delay before releasing shared-memory pixel buffers (`30 s`).
 const IDLE_BUFFER_RELEASE_DELAY: Duration = Duration::from_secs(30);
 
-/// Brief non-blocking window to collect fast local enrichment results on summon (`3 ms`).
-const FAST_LOCAL_ENRICH_WINDOW: Duration = Duration::from_millis(3);
+/// Brief non-blocking window to collect fast local enrichment results on summon (`8 ms` max; returns immediately on completion in ~0.2 ms).
+const FAST_LOCAL_ENRICH_WINDOW: Duration = Duration::from_millis(8);
 
 /// Brief non-blocking window to collect fast synchronous job effects (e.g. `SetClipboard`) on commit (`20 ms`).
 const FAST_COMMIT_EFFECT_WINDOW: Duration = Duration::from_millis(20);
@@ -149,6 +149,15 @@ pub struct SessionController {
     last_dnd_accept: Option<bool>,
     pending_drop_commit: Option<ItemPath>,
     debug_overlay: bool,
+    trace_timings: bool,
+    last_summon_us: Option<u64>,
+    last_dnd_status_us: Option<u64>,
+    last_drop_dispatch_us: Option<u64>,
+    last_frame_render_us: Option<u64>,
+    summon_samples_us: Vec<u64>,
+    dnd_status_samples_us: Vec<u64>,
+    drop_dispatch_samples_us: Vec<u64>,
+    frame_render_samples_us: Vec<u64>,
 }
 
 impl SessionController {
@@ -160,6 +169,8 @@ impl SessionController {
         config: AppConfig,
     ) -> Self {
         let debug_overlay = std::env::var("RADIVINE_DEBUG_OVERLAY")
+            .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+        let trace_timings = std::env::var("RADIVINE_TRACE_TIMINGS")
             .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
 
         let reduced_motion = config.effective_reduced_motion(platform.reduced_motion());
@@ -281,7 +292,52 @@ impl SessionController {
             last_dnd_accept: None,
             pending_drop_commit: None,
             debug_overlay,
+            trace_timings,
+            last_summon_us: None,
+            last_dnd_status_us: None,
+            last_drop_dispatch_us: None,
+            last_frame_render_us: None,
+            summon_samples_us: Vec::new(),
+            dnd_status_samples_us: Vec::new(),
+            drop_dispatch_samples_us: Vec::new(),
+            frame_render_samples_us: Vec::new(),
         }
+    }
+
+    /// Emits a startup or diagnostic notification through the daemon notification channel.
+    pub fn notify_startup(&mut self, summary: &str, body: &str) {
+        self.emit_notification(summary, body);
+    }
+
+    /// Logs p50/p95/max latency summaries if `RADIVINE_TRACE_TIMINGS=1` was set (`TESTING_STRATEGY.md` §7).
+    pub fn log_timing_summary_if_enabled(&self) {
+        if !self.trace_timings {
+            return;
+        }
+        let summarize = |name: &str, samples: &[u64]| {
+            if samples.is_empty() {
+                tracing::info!(metric = name, samples = 0, "timing summary (no samples)");
+                return;
+            }
+            let mut sorted = samples.to_vec();
+            sorted.sort_unstable();
+            let n = sorted.len();
+            let p50 = sorted[n / 2];
+            let p95 = sorted[((n * 95) / 100).min(n - 1)];
+            let max = sorted[n - 1];
+            tracing::info!(
+                metric = name,
+                samples = n,
+                p50_us = p50,
+                p95_us = p95,
+                max_us = max,
+                "RADIVINE_TRACE_TIMINGS summary"
+            );
+        };
+        summarize("trigger_to_present_us", &self.summon_samples_us);
+        summarize("dnd_position_to_status_us", &self.dnd_status_samples_us);
+        summarize("drop_to_dispatch_us", &self.drop_dispatch_samples_us);
+        summarize("frame_render_present_us", &self.frame_render_samples_us);
     }
 
     /// Registers a thread-safe wakeup callback invoked whenever background enrichment or job events arrive.
@@ -427,6 +483,10 @@ impl SessionController {
             notifications: self.notifications.clone(),
             config_warnings: self.config_warnings.clone(),
             active_item_states: self.active_item_states.clone(),
+            last_summon_us: self.last_summon_us,
+            last_dnd_status_us: self.last_dnd_status_us,
+            last_drop_dispatch_us: self.last_drop_dispatch_us,
+            last_frame_render_us: self.last_frame_render_us,
         }
     }
 
@@ -504,6 +564,7 @@ impl SessionController {
             ws.set_root_badge(Some(item_count), 0);
         }
 
+        self.renderer.set_opaque_fallback(!info.translucent);
         self.renderer
             .begin_session(SizePx::new(info.size.0, info.size.1), scale);
         self.overlay_info = Some(info.clone());
@@ -526,7 +587,11 @@ impl SessionController {
         self.invoke_count += 1;
         self.schedule_next_frame_if_animating(Instant::now());
 
-        let elapsed_us = t0.elapsed().as_micros();
+        let elapsed_us = t0.elapsed().as_micros() as u64;
+        self.last_summon_us = Some(elapsed_us);
+        if self.trace_timings && self.summon_samples_us.len() < 16_384 {
+            self.summon_samples_us.push(elapsed_us);
+        }
         tracing::info!(
             pointer_x = pointer_phys.x,
             pointer_y = pointer_phys.y,
@@ -583,6 +648,7 @@ impl SessionController {
             0,
         );
 
+        self.renderer.set_opaque_fallback(!info.translucent);
         self.renderer
             .begin_session(SizePx::new(info.size.0, info.size.1), scale);
         self.overlay_info = Some(info.clone());
@@ -600,7 +666,11 @@ impl SessionController {
         self.drag_session_count += 1;
         self.schedule_next_frame_if_animating(Instant::now());
 
-        let elapsed_us = t0.elapsed().as_micros();
+        let elapsed_us = t0.elapsed().as_micros() as u64;
+        self.last_summon_us = Some(elapsed_us);
+        if self.trace_timings && self.summon_samples_us.len() < 16_384 {
+            self.summon_samples_us.push(elapsed_us);
+        }
         tracing::info!(
             target: "radivine::summon",
             pointer_x = pointer_phys.x,
@@ -764,6 +834,7 @@ impl SessionController {
                 PlatformEvent::DndPosition { at }
                     if self.active_mode == Some(InvocationMode::Drag) =>
                 {
+                    let pos_t0 = Instant::now();
                     self.last_interaction = now;
                     self.dnd_entered = true;
                     self.last_dnd_pos = Some(at);
@@ -783,6 +854,11 @@ impl SessionController {
                             // Ordering rule (`ARCHITECTURE.md` §4, §5): reply XdndStatus BEFORE rendering!
                             self.last_dnd_accept = Some(accept);
                             self.platform.dnd_reply(accept);
+                            let status_us = pos_t0.elapsed().as_micros() as u64;
+                            self.last_dnd_status_us = Some(status_us);
+                            if self.trace_timings && self.dnd_status_samples_us.len() < 16_384 {
+                                self.dnd_status_samples_us.push(status_us);
+                            }
 
                             self.process_wheel_events(wheel_events, now);
                             if self.state == SessionState::Active {
@@ -919,6 +995,7 @@ impl SessionController {
     }
 
     fn handle_dnd_drop(&mut self, now: Instant) {
+        let drop_t0 = Instant::now();
         self.drain_async_events(now);
         if self.state != SessionState::Active {
             // `ARCHITECTURE.md` §5: A DndDrop arriving in any state other than Active is answered with dnd_finish(false).
@@ -943,6 +1020,11 @@ impl SessionController {
         if self.active_context.is_some() && !self.context_is_provisional {
             self.platform.dnd_finish(true);
             self.commit_path(&path, now);
+            let drop_us = drop_t0.elapsed().as_micros() as u64;
+            self.last_drop_dispatch_us = Some(drop_us);
+            if self.trace_timings && self.drop_dispatch_samples_us.len() < 16_384 {
+                self.drop_dispatch_samples_us.push(drop_us);
+            }
         } else {
             // Fetch the real `text/uri-list` payload at drop time before dispatching
             self.state = SessionState::Committing;
@@ -1657,18 +1739,23 @@ impl SessionController {
     }
 
     fn sync_input_region(&mut self) -> anyhow::Result<()> {
-        // In Invoke mode, or when `input.passthrough == false` (safe default per ADR-016 / AGENTS.md §2.4),
-        // the entire overlay captures input (`None`).
-        if self.active_mode == Some(InvocationMode::Invoke) || !self.config.input.passthrough {
+        let translucent = self.overlay_info.as_ref().is_none_or(|i| i.translucent);
+        // Fast path: with a compositor (`translucent == true`) in Invoke mode or capture-all Drag mode
+        // (`input.passthrough == false`, safe default per ADR-016 / AGENTS.md §2.4), `ShapeBounding`
+        // is already unclipped and `ShapeInput` is full-window (`None`).
+        if translucent
+            && (self.active_mode == Some(InvocationMode::Invoke) || !self.config.input.passthrough)
+        {
             self.platform.set_input_region(None)?;
             return Ok(());
         }
+
         let Some(ref ws) = self.wheel_session else {
             return Ok(());
         };
         let scale = self.effective_scale;
         let shapes = ws.input_region();
-        let mut shapes_px: Vec<ShapePx> = Vec::with_capacity(shapes.len());
+        let mut shapes_px: Vec<ShapePx> = Vec::with_capacity(shapes.len() + 1);
         for s in shapes {
             match s {
                 Shape::Circle { c, r } => {
@@ -1687,11 +1774,36 @@ impl SessionController {
                 }
             }
         }
+
+        // No-compositor fallback (`PLATFORM_INTEGRATION.md` §3.11): clip `ShapeBounding` to the wheel
+        // cluster + caption box when per-pixel alpha translucency is unavailable.
+        if !translucent {
+            let mut bounding_px = shapes_px.clone();
+            if let Some(ref cap) = ws.scene().caption {
+                let x0 = cap.box_.x * scale;
+                let y0 = cap.box_.y * scale;
+                let x1 = (cap.box_.x + cap.box_.w) * scale;
+                let y1 = (cap.box_.y + cap.box_.h) * scale;
+                let mut rect_poly: SmallVec<[(f32, f32); 6]> = SmallVec::new();
+                rect_poly.push((x0, y0));
+                rect_poly.push((x1, y0));
+                rect_poly.push((x1, y1));
+                rect_poly.push((x0, y1));
+                bounding_px.push(ShapePx::Polygon(rect_poly));
+            }
+            self.platform.set_bounding_region(Some(&bounding_px))?;
+        }
+
+        if self.active_mode == Some(InvocationMode::Invoke) || !self.config.input.passthrough {
+            self.platform.set_input_region(None)?;
+            return Ok(());
+        }
         self.platform.set_input_region(Some(&shapes_px))?;
         Ok(())
     }
 
     fn render_and_present(&mut self, force_full: bool) -> anyhow::Result<()> {
+        let frame_t0 = Instant::now();
         let Some(ref ws) = self.wheel_session else {
             return Ok(());
         };
@@ -1721,6 +1833,11 @@ impl SessionController {
                 stride: frame.stride,
             };
             self.platform.present(plat_frame, &damage)?;
+        }
+        let frame_us = frame_t0.elapsed().as_micros() as u64;
+        self.last_frame_render_us = Some(frame_us);
+        if self.trace_timings && self.frame_render_samples_us.len() < 16_384 {
+            self.frame_render_samples_us.push(frame_us);
         }
         Ok(())
     }

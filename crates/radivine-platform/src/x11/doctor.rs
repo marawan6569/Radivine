@@ -14,7 +14,9 @@ use x11rb::protocol::xproto::{AtomEnum, ConnectionExt as _, Window};
 use x11rb::rust_connection::RustConnection;
 
 use crate::x11::atoms::Atoms;
-use crate::x11::monitors::{is_compositor_active, query_monitors, query_xft_scale};
+use crate::x11::monitors::{
+    is_compositor_active, query_monitors, query_reduced_motion, query_xft_scale,
+};
 use crate::x11::overlay::{VisualSpec, find_argb_visual};
 use crate::{Capabilities, Monitor, PlatformError, Support};
 
@@ -38,6 +40,8 @@ pub struct DoctorReport {
     pub session_type: String,
     /// `DISPLAY` environment variable.
     pub display: String,
+    /// `WAYLAND_DISPLAY` environment variable if set.
+    pub wayland_display: Option<String>,
     /// X11 server vendor string.
     pub server_vendor: String,
     /// Root window XID.
@@ -62,6 +66,8 @@ pub struct DoctorReport {
     pub xft_dpi: Option<f32>,
     /// Effective scale factor (`Xft.dpi / 96.0`).
     pub scale: f32,
+    /// Probed desktop reduced-motion preference (`Some(true)` if animations are disabled).
+    pub reduced_motion: Option<bool>,
     /// Computed platform [`Capabilities`].
     pub capabilities: Capabilities,
 }
@@ -72,12 +78,21 @@ impl DoctorReport {
     pub fn is_healthy(&self) -> bool {
         !matches!(self.capabilities.invoke_at_pointer, Support::No(_))
     }
+
+    /// Returns `true` if the session is running under Wayland (`XDG_SESSION_TYPE=wayland` or `WAYLAND_DISPLAY` set).
+    #[must_use]
+    pub fn is_wayland_session(&self) -> bool {
+        self.session_type.eq_ignore_ascii_case("wayland") || self.wayland_display.is_some()
+    }
 }
 
 impl fmt::Display for DoctorReport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Session type       : {}", self.session_type)?;
         writeln!(f, "DISPLAY            : {}", self.display)?;
+        if let Some(ref wd) = self.wayland_display {
+            writeln!(f, "WAYLAND_DISPLAY    : {wd}")?;
+        }
         writeln!(f, "Server vendor      : {}", self.server_vendor)?;
         writeln!(
             f,
@@ -85,17 +100,27 @@ impl fmt::Display for DoctorReport {
             self.root_window, self.root_size.0, self.root_size.1
         )?;
         if self.compositor_active {
-            let pid_str = self
-                .compositor_pid
-                .map_or_else(|| "unknown".to_string(), |p| p.to_string());
-            let comm_str = self.compositor_comm.as_deref().unwrap_or("unknown");
+            if self.compositor_owner == 0 {
+                writeln!(
+                    f,
+                    "Compositor         : active (forced via RADIVINE_FORCE_ARGB=1)"
+                )?;
+            } else {
+                let pid_str = self
+                    .compositor_pid
+                    .map_or_else(|| "unknown".to_string(), |p| p.to_string());
+                let comm_str = self.compositor_comm.as_deref().unwrap_or("unknown");
+                writeln!(
+                    f,
+                    "Compositor         : active (_NET_WM_CM_S0 = 0x{:08x}, pid {}, comm \"{}\")",
+                    self.compositor_owner, pid_str, comm_str
+                )?;
+            }
+        } else {
             writeln!(
                 f,
-                "Compositor         : active (_NET_WM_CM_S0 = 0x{:08x}, pid {}, comm \"{}\")",
-                self.compositor_owner, pid_str, comm_str
+                "Compositor         : inactive (_NET_WM_CM_S0 unowned -> ShapeBounding opaque fallback)"
             )?;
-        } else {
-            writeln!(f, "Compositor         : inactive (_NET_WM_CM_S0 unowned)")?;
         }
         writeln!(
             f,
@@ -144,6 +169,12 @@ impl fmt::Display for DoctorReport {
                 self.scale
             )?,
         }
+        let motion_str = match self.reduced_motion {
+            Some(true) => "yes (animations disabled)",
+            Some(false) => "no (animations enabled)",
+            None => "auto (unset -> animations enabled)",
+        };
+        writeln!(f, "Reduced motion     : {motion_str}")?;
         writeln!(f, "Capabilities:")?;
         writeln!(
             f,
@@ -175,6 +206,16 @@ impl fmt::Display for DoctorReport {
             "  clipboard_files   = {}",
             self.capabilities.clipboard_files
         )?;
+        if self.is_wayland_session() {
+            writeln!(
+                f,
+                "Wayland note       : Drag-and-Shift is unavailable on Wayland by protocol design."
+            )?;
+            writeln!(
+                f,
+                "                     Use right-click -> \"Radivine...\" in Nemo or `radivine invoke <FILES>`."
+            )?;
+        }
         Ok(())
     }
 }
@@ -209,11 +250,17 @@ pub fn probe_with_connection(
     session_type: String,
     display: String,
 ) -> DoctorReport {
+    let wayland_display = std::env::var("WAYLAND_DISPLAY")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let is_wayland = session_type.eq_ignore_ascii_case("wayland") || wayland_display.is_some();
+
     let setup = conn.setup();
     let screen = &setup.roots[screen_num];
     let server_vendor = String::from_utf8_lossy(&setup.vendor).into_owned();
     let (compositor_active, compositor_owner) = is_compositor_active(conn, atoms);
-    let (compositor_pid, compositor_comm) = if compositor_active {
+    let (compositor_pid, compositor_comm) = if compositor_active && compositor_owner != 0 {
         query_window_pid_and_comm(conn, atoms, compositor_owner)
     } else {
         (None, None)
@@ -230,8 +277,9 @@ pub fn probe_with_connection(
 
     let monitors = query_monitors(conn, screen, randr.available);
     let (xft_dpi, scale) = query_xft_scale(conn, screen.root, atoms);
+    let reduced_motion = query_reduced_motion(conn, atoms);
 
-    let drag_session = if session_type.eq_ignore_ascii_case("wayland") {
+    let drag_session = if is_wayland {
         Support::No("Wayland session does not expose global DND interception")
     } else if xfixes.available && xinput.available {
         Support::Yes
@@ -241,7 +289,7 @@ pub fn probe_with_connection(
         Support::No("XFixes 5.0+ required for XdndSelection observation")
     };
 
-    let invoke_at_pointer = if session_type.eq_ignore_ascii_case("wayland") {
+    let invoke_at_pointer = if is_wayland {
         Support::Degraded("XWayland pointer coordinates may be restricted outside X11 windows")
     } else {
         Support::Yes
@@ -275,6 +323,7 @@ pub fn probe_with_connection(
     DoctorReport {
         session_type,
         display,
+        wayland_display,
         server_vendor,
         root_window: screen.root,
         root_size: (screen.width_in_pixels, screen.height_in_pixels),
@@ -287,6 +336,7 @@ pub fn probe_with_connection(
         monitors,
         xft_dpi,
         scale,
+        reduced_motion,
         capabilities,
     }
 }

@@ -120,21 +120,46 @@ pub fn apply_input_region(
     height: u16,
     shapes: Option<&[ShapePx]>,
 ) -> Result<(), PlatformError> {
+    apply_shape_region(conn, win, width, height, shapes, SK::INPUT)
+}
+
+/// Applies `shapes` to `win`'s `ShapeBounding` region (`PLATFORM_INTEGRATION.md` §3.11 no-compositor fallback):
+/// - `None`: resets `ShapeBounding` to the full window (`x11rb::NONE`).
+/// - `Some(&[])`: sets an empty `ShapeBounding` rectangle list.
+/// - `Some(non_empty)`: rasterises `non_empty` into a 1-bit `Pixmap` and applies `shape_mask(SO::SET, SK::BOUNDING)`.
+pub fn apply_bounding_region(
+    conn: &RustConnection,
+    win: Window,
+    width: u16,
+    height: u16,
+    shapes: Option<&[ShapePx]>,
+) -> Result<(), PlatformError> {
+    apply_shape_region(conn, win, width, height, shapes, SK::BOUNDING)
+}
+
+fn apply_shape_region(
+    conn: &RustConnection,
+    win: Window,
+    width: u16,
+    height: u16,
+    shapes: Option<&[ShapePx]>,
+    kind: SK,
+) -> Result<(), PlatformError> {
     let Some(shape_slice) = shapes else {
-        conn.shape_mask(SO::SET, SK::INPUT, win, 0, 0, x11rb::NONE)
+        conn.shape_mask(SO::SET, kind, win, 0, 0, x11rb::NONE)
             .map_err(|e| PlatformError::X11(e.to_string()))?;
         return Ok(());
     };
 
     if shape_slice.is_empty() {
-        return clear_input_region_empty(conn, win);
+        return clear_shape_region_empty(conn, win, kind);
     }
 
     let w = width.max(1);
     let h = height.max(1);
     let rects = rasterize_shapes_to_rectangles(shape_slice, w, h);
     if rects.is_empty() {
-        return clear_input_region_empty(conn, win);
+        return clear_shape_region_empty(conn, win, kind);
     }
 
     let pixmap: Pixmap = conn
@@ -172,7 +197,7 @@ pub fn apply_input_region(
             .map_err(|e| PlatformError::X11(e.to_string()))?;
     }
 
-    conn.shape_mask(SO::SET, SK::INPUT, win, 0, 0, pixmap)
+    conn.shape_mask(SO::SET, kind, win, 0, 0, pixmap)
         .map_err(|e| PlatformError::X11(e.to_string()))?;
     let _ = conn.free_gc(gc_clear);
     let _ = conn.free_gc(gc_set);
@@ -182,7 +207,22 @@ pub fn apply_input_region(
 
 /// Sets `win`'s `ShapeInput` region to an empty rectangle list so all events pass through.
 pub fn clear_input_region_empty(conn: &RustConnection, win: Window) -> Result<(), PlatformError> {
-    conn.shape_rectangles(SO::SET, SK::INPUT, ClipOrdering::UNSORTED, win, 0, 0, &[])
+    clear_shape_region_empty(conn, win, SK::INPUT)
+}
+
+/// Resets `win`'s `ShapeBounding` region to the full window (`x11rb::NONE`).
+pub fn reset_bounding_region(conn: &RustConnection, win: Window) -> Result<(), PlatformError> {
+    conn.shape_mask(SO::SET, SK::BOUNDING, win, 0, 0, x11rb::NONE)
+        .map_err(|e| PlatformError::X11(e.to_string()))?;
+    Ok(())
+}
+
+fn clear_shape_region_empty(
+    conn: &RustConnection,
+    win: Window,
+    kind: SK,
+) -> Result<(), PlatformError> {
+    conn.shape_rectangles(SO::SET, kind, ClipOrdering::UNSORTED, win, 0, 0, &[])
         .map_err(|e| PlatformError::X11(e.to_string()))?;
     Ok(())
 }

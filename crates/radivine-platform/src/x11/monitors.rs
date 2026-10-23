@@ -150,7 +150,8 @@ pub fn parse_xft_dpi(resource_manager_str: &str) -> Option<f32> {
     None
 }
 
-/// Returns `true` if a compositing manager owns `_NET_WM_CM_S0` (`PLATFORM_INTEGRATION.md` §3.2).
+/// Returns `true` if a compositing manager owns `_NET_WM_CM_S0` (`PLATFORM_INTEGRATION.md` §3.2)
+/// or if `RADIVINE_FORCE_ARGB=1` is set (`TESTING_STRATEGY.md` §4).
 #[must_use]
 pub fn is_compositor_active(conn: &RustConnection, atoms: &Atoms) -> (bool, u32) {
     if let Ok(cookie) = conn.get_selection_owner(atoms._NET_WM_CM_S0)
@@ -159,5 +160,140 @@ pub fn is_compositor_active(conn: &RustConnection, atoms: &Atoms) -> (bool, u32)
     {
         return (true, reply.owner);
     }
+    if std::env::var("RADIVINE_FORCE_ARGB")
+        .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+    {
+        return (true, 0);
+    }
     (false, 0)
+}
+
+/// Queries the desktop reduced-motion preference (`PLATFORM_INTEGRATION.md` §3.10).
+///
+/// Checks `RADIVINE_REDUCED_MOTION` first, then the XSETTINGS `_XSETTINGS_S0` owner's
+/// `_XSETTINGS_SETTINGS` property (`Net/EnableAnimations`).
+#[must_use]
+pub fn query_reduced_motion(conn: &RustConnection, atoms: &Atoms) -> Option<bool> {
+    if let Ok(val) = std::env::var("RADIVINE_REDUCED_MOTION") {
+        let trimmed = val.trim();
+        if trimmed == "1" || trimmed.eq_ignore_ascii_case("true") {
+            return Some(true);
+        }
+        if trimmed == "0" || trimmed.eq_ignore_ascii_case("false") {
+            return Some(false);
+        }
+    }
+
+    let owner = conn
+        .get_selection_owner(atoms._XSETTINGS_S0)
+        .ok()
+        .and_then(|c| c.reply().ok())
+        .map_or(x11rb::NONE, |r| r.owner);
+    if owner == x11rb::NONE {
+        return None;
+    }
+
+    let reply = conn
+        .get_property(
+            false,
+            owner,
+            atoms._XSETTINGS_SETTINGS,
+            AtomEnum::ANY,
+            0,
+            16_384,
+        )
+        .ok()?
+        .reply()
+        .ok()?;
+    parse_xsettings_enable_animations(&reply.value).map(|enable_anim| !enable_anim)
+}
+
+/// Parses the XSETTINGS binary blob (`_XSETTINGS_SETTINGS`) and extracts `Net/EnableAnimations` (`bool`).
+#[must_use]
+pub fn parse_xsettings_enable_animations(data: &[u8]) -> Option<bool> {
+    if data.len() < 12 {
+        return None;
+    }
+    let little_endian = data[0] == 0;
+    let read_u16 = |off: usize| -> Option<u16> {
+        let b: [u8; 2] = data.get(off..off + 2)?.try_into().ok()?;
+        Some(if little_endian {
+            u16::from_le_bytes(b)
+        } else {
+            u16::from_be_bytes(b)
+        })
+    };
+    let read_u32 = |off: usize| -> Option<u32> {
+        let b: [u8; 4] = data.get(off..off + 4)?.try_into().ok()?;
+        Some(if little_endian {
+            u32::from_le_bytes(b)
+        } else {
+            u32::from_be_bytes(b)
+        })
+    };
+
+    let count = read_u32(8)? as usize;
+    let mut pos = 12usize;
+    for _ in 0..count.min(512) {
+        let setting_type = *data.get(pos)?;
+        let name_len = read_u16(pos + 2)? as usize;
+        pos = pos.checked_add(4)?;
+        let name_bytes = data.get(pos..pos.checked_add(name_len)?)?;
+        let padded_name = (name_len + 3) & !3;
+        pos = pos.checked_add(padded_name)?;
+        // Skip last-change-serial (4 bytes)
+        pos = pos.checked_add(4)?;
+
+        match setting_type {
+            0 => {
+                // XSETTINGS_TYPE_INT (4 bytes)
+                let val = read_u32(pos)?;
+                pos = pos.checked_add(4)?;
+                if name_bytes == b"Net/EnableAnimations" {
+                    return Some(val != 0);
+                }
+            }
+            1 => {
+                // XSETTINGS_TYPE_STRING (4-byte len + padded string)
+                let slen = read_u32(pos)? as usize;
+                let padded_s = (slen + 3) & !3;
+                pos = pos.checked_add(4)?.checked_add(padded_s)?;
+            }
+            2 => {
+                // XSETTINGS_TYPE_COLOR (4 * u16 = 8 bytes)
+                pos = pos.checked_add(8)?;
+            }
+            _ => return None,
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_xft_dpi_and_xsettings_enable_animations() {
+        assert_eq!(
+            parse_xft_dpi("Xft.antialias:\t1\nXft.dpi:\t192\n"),
+            Some(192.0)
+        );
+        assert_eq!(parse_xft_dpi("Xft.hinting: 1\n"), None);
+
+        // Construct a minimal little-endian XSETTINGS blob with 1 setting: `Net/EnableAnimations` = 0
+        let mut blob = Vec::new();
+        blob.extend_from_slice(&[0u8, 0, 0, 0]); // byte-order = LSBFirst (0) + 3 pad
+        blob.extend_from_slice(&1u32.to_le_bytes()); // serial = 1
+        blob.extend_from_slice(&1u32.to_le_bytes()); // n_settings = 1
+        let name = b"Net/EnableAnimations"; // 20 bytes (already multiple of 4)
+        blob.push(0); // XSETTINGS_TYPE_INT
+        blob.push(0); // pad
+        blob.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        blob.extend_from_slice(name);
+        blob.extend_from_slice(&1u32.to_le_bytes()); // last-change-serial
+        blob.extend_from_slice(&0u32.to_le_bytes()); // value = 0 (animations disabled)
+
+        assert_eq!(parse_xsettings_enable_animations(&blob), Some(false));
+    }
 }

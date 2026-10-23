@@ -425,11 +425,12 @@ impl AppConfig {
         }
     }
 
-    /// Resolves the [`Theme`] (`dark` or `light`).
+    /// Resolves the [`Theme`] (`dark`, `light`, or `auto`).
     #[must_use]
     pub fn resolve_theme(&self) -> Theme {
         match self.appearance.theme.trim().to_ascii_lowercase().as_str() {
             "light" => Theme::light(),
+            "auto" => detect_desktop_theme(),
             _ => Theme::dark(),
         }
     }
@@ -490,6 +491,52 @@ impl AppConfig {
             pointer_nudge: self.x11.pointer_nudge,
         }
     }
+}
+
+fn detect_desktop_theme() -> Theme {
+    if let Ok(gtk_theme) = std::env::var("GTK_THEME") {
+        let lower = gtk_theme.to_ascii_lowercase();
+        if lower.contains("dark") {
+            return Theme::dark();
+        }
+        if lower.contains("light") {
+            return Theme::light();
+        }
+    }
+    let gtk_ini = std::env::var("XDG_CONFIG_HOME")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var("HOME")
+                .ok()
+                .map(|h| PathBuf::from(h).join(".config"))
+        })
+        .map(|cfg| cfg.join("gtk-3.0").join("settings.ini"));
+    if let Some(ini_path) = gtk_ini
+        && let Ok(text) = fs::read_to_string(ini_path)
+    {
+        for line in text.lines() {
+            let trimmed = line.trim().to_ascii_lowercase();
+            if let Some(val) = trimmed.strip_prefix("gtk-application-prefer-dark-theme=") {
+                if val.trim() == "1" || val.trim() == "true" {
+                    return Theme::dark();
+                }
+                if val.trim() == "0" || val.trim() == "false" {
+                    return Theme::light();
+                }
+            }
+            if let Some(val) = trimmed.strip_prefix("gtk-theme-name=") {
+                if val.contains("dark") {
+                    return Theme::dark();
+                }
+                if val.contains("light") {
+                    return Theme::light();
+                }
+            }
+        }
+    }
+    Theme::dark()
 }
 
 #[cfg(test)]

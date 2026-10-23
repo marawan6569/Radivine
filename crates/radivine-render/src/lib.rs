@@ -38,10 +38,12 @@ pub struct Renderer {
     theme: Theme,
     cache: cache::AssetCache,
     damage: DamageTracker,
+    dirty_union: RectPx,
     pixmap: Option<Pixmap>,
     clip_mask: Option<Mask>,
     size_px: SizePx,
     scale: f32,
+    opaque_fallback: bool,
 }
 
 impl Renderer {
@@ -52,11 +54,21 @@ impl Renderer {
             theme,
             cache,
             damage: DamageTracker::new(),
+            dirty_union: RectPx::default(),
             pixmap: None,
             clip_mask: None,
             size_px: SizePx::new(0, 0),
             scale: 1.0,
+            opaque_fallback: false,
         })
+    }
+
+    /// Enables or disables the no-compositor opaque card rendering fallback (`PLATFORM_INTEGRATION.md` §3.11).
+    pub fn set_opaque_fallback(&mut self, opaque: bool) {
+        if self.opaque_fallback != opaque {
+            self.opaque_fallback = opaque;
+            self.damage.invalidate_all();
+        }
     }
 
     /// Updates the active [`Theme`] and invalidates damage so the next frame redraws with the new palette.
@@ -90,13 +102,12 @@ impl Renderer {
         if needs_alloc {
             self.pixmap = Pixmap::new(w, h);
             self.clip_mask = Mask::new(w, h);
-        } else {
+            self.dirty_union = RectPx::default();
+        } else if !self.dirty_union.is_empty() {
             if let Some(ref mut pm) = self.pixmap {
-                pm.fill(tiny_skia::Color::TRANSPARENT);
+                fill_rect_px(pm, self.dirty_union, [0, 0, 0, 0]);
             }
-            if let Some(ref mut cm) = self.clip_mask {
-                cm.clear();
-            }
+            self.dirty_union = RectPx::default();
         }
     }
 
@@ -115,10 +126,22 @@ impl Renderer {
 
         let clip_rects: smallvec::SmallVec<[RectPx; 4]> = smallvec::SmallVec::from_slice(dmg_slice);
 
-        // 1. Clear damaged rectangles to transparent and populate clip_mask (§13.2 step 1, §13.3)
+        // 1. Clear damaged rectangles to transparent (or opaque theme card background in no-compositor fallback)
+        // and populate clip_mask (§13.2 step 1, §13.3)
+        let bg_pixel = if self.opaque_fallback {
+            [
+                self.theme.ring_fill.r,
+                self.theme.ring_fill.g,
+                self.theme.ring_fill.b,
+                0xFF,
+            ]
+        } else {
+            [0, 0, 0, 0]
+        };
         if let Some(ref mut pm) = self.pixmap {
             for r in &clip_rects {
-                clear_rect_px(pm, *r);
+                fill_rect_px(pm, *r, bg_pixel);
+                self.dirty_union = self.dirty_union.union(*r);
             }
         }
         if let Some(ref mut cm) = self.clip_mask {
@@ -178,11 +201,11 @@ impl Renderer {
 
     /// Ends the current rendering session.
     pub fn end_session(&mut self) {
-        if let Some(ref mut pm) = self.pixmap {
-            pm.fill(tiny_skia::Color::TRANSPARENT);
-        }
-        if let Some(ref mut cm) = self.clip_mask {
-            cm.clear();
+        if !self.dirty_union.is_empty() {
+            if let Some(ref mut pm) = self.pixmap {
+                fill_rect_px(pm, self.dirty_union, [0, 0, 0, 0]);
+            }
+            self.dirty_union = RectPx::default();
         }
         self.damage.reset();
     }
@@ -191,6 +214,7 @@ impl Renderer {
     pub fn release_buffers(&mut self) {
         self.pixmap = None;
         self.clip_mask = None;
+        self.dirty_union = RectPx::default();
         self.size_px = SizePx::new(0, 0);
         self.damage.reset();
     }
@@ -272,10 +296,14 @@ impl Renderer {
             return;
         }
 
-        // 1. Soft shadow sprite (pre-blurred disc per radius, cached, offset (0, 4 lp))
+        // 1. Soft shadow sprite (pre-blurred disc per radius, cached, offset (0, 4 lp); skipped in no-compositor fallback)
         let r_out_px = r_out.round().max(8.0) as u32;
         let blur_px = (18.0 * scale).round().max(4.0) as u32;
-        let shadow_alpha = (self.theme.shadow_alpha * wheel.opacity).clamp(0.0, 1.0);
+        let shadow_alpha = if self.opaque_fallback {
+            0.0
+        } else {
+            (self.theme.shadow_alpha * wheel.opacity).clamp(0.0, 1.0)
+        };
         if shadow_alpha > 1e-3 {
             let shadow_col = ColorRgba::new(0, 0, 0, (shadow_alpha * 255.0).round() as u8);
             let sprite = self.cache.shadow_sprite(r_out_px, blur_px);
@@ -757,7 +785,7 @@ impl Renderer {
     }
 }
 
-fn clear_rect_px(pm: &mut Pixmap, rect: RectPx) {
+fn fill_rect_px(pm: &mut Pixmap, rect: RectPx, pixel: [u8; 4]) {
     let w = pm.width() as i32;
     let h = pm.height() as i32;
     let x0 = rect.x.clamp(0, w) as usize;
@@ -770,9 +798,18 @@ fn clear_rect_px(pm: &mut Pixmap, rect: RectPx) {
     let stride = (w as usize) * 4;
     let row_bytes = (x1 - x0) * 4;
     let data = pm.data_mut();
-    for y in y0..y1 {
-        let start = y * stride + x0 * 4;
-        data[start..start + row_bytes].fill(0);
+    if pixel == [0, 0, 0, 0] {
+        for y in y0..y1 {
+            let start = y * stride + x0 * 4;
+            data[start..start + row_bytes].fill(0);
+        }
+    } else {
+        for y in y0..y1 {
+            let start = y * stride + x0 * 4;
+            for px in data[start..start + row_bytes].chunks_exact_mut(4) {
+                px.copy_from_slice(&pixel);
+            }
+        }
     }
 }
 

@@ -37,7 +37,7 @@ use crate::x11::selection::{
     SelectionReader, handle_property_notify_wire, handle_selection_notify_wire,
     request_selection_wire,
 };
-use crate::x11::shape::apply_input_region;
+use crate::x11::shape::{apply_bounding_region, apply_input_region};
 use crate::x11::shm::{ChannelShuffle, ShmPresenter};
 use crate::x11::source::identify_window_source;
 use crate::x11::xdnd::{
@@ -434,7 +434,7 @@ impl Platform for X11Platform {
     }
 
     fn reduced_motion(&self) -> Option<bool> {
-        None
+        self.doctor.reduced_motion
     }
 
     fn pointer_position(&mut self) -> Result<PhysPoint, PlatformError> {
@@ -506,6 +506,19 @@ impl Platform for X11Platform {
             let _ = self.conn.flush();
         }
         Ok(())
+    }
+
+    fn set_bounding_region(&mut self, shapes: Option<&[ShapePx]>) -> Result<(), PlatformError> {
+        if !self.shape_supported {
+            return Ok(());
+        }
+        apply_bounding_region(
+            &self.conn,
+            self.overlay.window,
+            self.overlay.current_rect.w as u16,
+            self.overlay.current_rect.h as u16,
+            shapes,
+        )
     }
 
     fn hide_overlay(&mut self) {

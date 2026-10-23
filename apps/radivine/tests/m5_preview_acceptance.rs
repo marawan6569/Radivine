@@ -892,7 +892,7 @@ impl Drop for XdndSourceHarness {
 
 #[test]
 fn m5_e2e_x11_drag_and_invoke_preview_actions_and_rss_isolation_ac_5_5() {
-    if std::env::var("DISPLAY").is_err() {
+    if !radivine_platform::is_isolated_test_display() {
         return;
     }
     let Ok((_conn, _)) = RustConnection::connect(None) else {

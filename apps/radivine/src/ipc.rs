@@ -101,6 +101,18 @@ pub struct DaemonStatus {
     /// Live enablement state of leaf actions in the current or most recent session.
     #[serde(default)]
     pub active_item_states: Vec<ItemStateSnapshot>,
+    /// Latency in microseconds from summon/trigger to overlay mapped + initial frame presented.
+    #[serde(default)]
+    pub last_summon_us: Option<u64>,
+    /// Latency in microseconds from `XdndPosition` receipt to `XdndStatus` reply.
+    #[serde(default)]
+    pub last_dnd_status_us: Option<u64>,
+    /// Latency in microseconds from `XdndDrop` receipt to `XdndFinished` + job dispatch.
+    #[serde(default)]
+    pub last_drop_dispatch_us: Option<u64>,
+    /// Duration in microseconds of the most recent frame render + SHM presentation.
+    #[serde(default)]
+    pub last_frame_render_us: Option<u64>,
 }
 
 /// IPC response returned by the daemon.

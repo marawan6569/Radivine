@@ -1,8 +1,6 @@
 //! `radivine` — Daemon, CLI client, IPC server, and diagnostic tool (`ARCHITECTURE.md` §3, §5).
 
-pub mod config;
-pub mod ipc;
-pub mod session;
+use radivine::{config, ipc, session};
 
 use std::fs;
 use std::io::ErrorKind;
@@ -214,6 +212,7 @@ fn run_daemon(config_path: Option<PathBuf>, sock_path: &Path) -> anyhow::Result<
     let mut controller = SessionController::new(platform, renderer, registry, config);
     let actions_path = AppConfig::actions_path_for(config_path.as_deref());
     controller.load_actions_from_path(&actions_path);
+    check_and_emit_wayland_first_run_notice(&mut controller);
 
     let mut event_loop: EventLoop<'static, DaemonLoopState> = EventLoop::try_new()?;
     let handle = event_loop.handle();
@@ -318,9 +317,45 @@ fn run_daemon(config_path: Option<PathBuf>, sock_path: &Path) -> anyhow::Result<
     }
 
     state.controller.dismiss_immediate();
+    state.controller.log_timing_summary_if_enabled();
     let _ = fs::remove_file(sock_path);
     tracing::info!("radivine daemon stopped cleanly");
     Ok(())
+}
+
+fn check_and_emit_wayland_first_run_notice(controller: &mut SessionController) {
+    let is_wayland = std::env::var("XDG_SESSION_TYPE")
+        .is_ok_and(|s| s.trim().eq_ignore_ascii_case("wayland"))
+        || std::env::var("WAYLAND_DISPLAY").is_ok_and(|s| !s.trim().is_empty());
+    if !is_wayland {
+        return;
+    }
+
+    let state_base = std::env::var("XDG_STATE_HOME")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var("HOME")
+                .ok()
+                .map(|h| PathBuf::from(h).join(".local").join("state"))
+        });
+
+    let Some(base) = state_base else {
+        return;
+    };
+    let marker = base.join("radivine").join("wayland-notified");
+    if marker.exists() {
+        return;
+    }
+    if let Some(parent) = marker.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let _ = fs::write(&marker, "1\n");
+
+    let msg = "Drag-and-Shift isn't available on Wayland. Use right-click -> Radivine..., or radivine invoke.";
+    tracing::warn!("{msg}");
+    controller.notify_startup("Wayland session detected", msg);
 }
 
 fn handle_ipc_client(stream: &mut std::os::unix::net::UnixStream, state: &mut DaemonLoopState) {

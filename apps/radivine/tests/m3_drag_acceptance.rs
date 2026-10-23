@@ -714,7 +714,7 @@ impl Drop for XdndSourceHarness {
 
 #[test]
 fn m3_drag_and_drop_acceptance_suite() {
-    if std::env::var("DISPLAY").is_err() {
+    if !radivine_platform::is_isolated_test_display() {
         return;
     }
     let Ok((conn, _)) = RustConnection::connect(None) else {
@@ -1188,7 +1188,7 @@ fn m3_drag_and_drop_acceptance_suite() {
 /// source files untouched.
 #[test]
 fn m3_real_gtk3_drag_retargeting() {
-    if std::env::var("DISPLAY").is_err() {
+    if !radivine_platform::is_isolated_test_display() {
         return;
     }
     let Ok((conn, _)) = RustConnection::connect(None) else {

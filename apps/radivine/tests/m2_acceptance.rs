@@ -128,7 +128,7 @@ fn is_override_redirect(conn: &RustConnection, win: u32) -> bool {
 
 #[test]
 fn m2_live_acceptance_suite() {
-    if std::env::var("DISPLAY").is_err() {
+    if !radivine_platform::is_isolated_test_display() {
         return;
     }
     let Ok((conn, _)) = RustConnection::connect(None) else {

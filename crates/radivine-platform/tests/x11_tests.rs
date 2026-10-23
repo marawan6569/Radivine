@@ -150,7 +150,7 @@ fn translate_keysyms_cover_all_navigation_keys() {
 
 #[test]
 fn live_x11_doctor_and_overlay_shm_lifecycle() {
-    if std::env::var("DISPLAY").is_err() {
+    if !radivine_platform::is_isolated_test_display() {
         return;
     }
     let report = match probe_x11_doctor() {
@@ -406,7 +406,7 @@ fn source_identification_parses_comm_and_resolves_live_window_pid() {
     assert_eq!(parse_proc_comm("   \n"), None);
     assert!(read_proc_comm(std::process::id()).is_some());
 
-    if std::env::var("DISPLAY").is_err() {
+    if !radivine_platform::is_isolated_test_display() {
         return;
     }
     let Ok(plat) = X11Platform::connect(X11Config::default()) else {
@@ -636,7 +636,7 @@ fn selection_reader_single_shot_incr_refused_timeout_and_size_cap() {
     );
 
     // 6. Live X11 check: DELETE target is strictly forbidden
-    if std::env::var("DISPLAY").is_ok()
+    if radivine_platform::is_isolated_test_display()
         && let Ok(plat) = X11Platform::connect(X11Config::default())
     {
         let atoms = radivine_platform::x11::atoms::Atoms::new(plat.connection())
@@ -692,7 +692,7 @@ fn clipboard_formatting_and_live_x11_selection_serving() {
         b"/tmp/alpha.txt\n/tmp/dir with space/beta.rs"
     );
 
-    if std::env::var("DISPLAY").is_err() {
+    if !radivine_platform::is_isolated_test_display() {
         return;
     }
     let Ok(mut plat) = X11Platform::connect(X11Config::default()) else {
