@@ -1,25 +1,26 @@
 #!/usr/bin/env bash
-# Build `target/debian/radivine_0.1.0_amd64.deb` and `target/debian/SHA256SUMS.txt` (`IMPLEMENTATION_PLAN.md` §10.2).
+# Build `target/debian/radivine_0.1.1_amd64.deb` and `target/debian/SHA256SUMS.txt` (`IMPLEMENTATION_PLAN.md` §10.2).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 PKG_NAME="radivine"
-PKG_VERSION="0.1.0"
+PKG_VERSION="0.1.1"
 PKG_ARCH="amd64"
 DEB_BASENAME="${PKG_NAME}_${PKG_VERSION}_${PKG_ARCH}"
 OUT_DIR="${REPO_ROOT}/target/debian"
 STAGE_DIR="${OUT_DIR}/${DEB_BASENAME}"
 DEB_PATH="${OUT_DIR}/${DEB_BASENAME}.deb"
 
-echo "==> Building release binaries (radivine, radivine-viewer)..."
-DISPLAY="" cargo build --release -p radivine -p radivine-viewer
+echo "==> Building release binaries (radivine, radivine-viewer, radivine-control)..."
+DISPLAY="" cargo build --release -p radivine -p radivine-viewer -p radivine-control
 
 rm -rf "$STAGE_DIR"
 mkdir -p \
     "${STAGE_DIR}/DEBIAN" \
     "${STAGE_DIR}/usr/bin" \
+    "${STAGE_DIR}/usr/lib/systemd/user" \
     "${STAGE_DIR}/usr/share/applications" \
     "${STAGE_DIR}/usr/share/nemo/actions" \
     "${STAGE_DIR}/usr/share/icons/hicolor/256x256/apps" \
@@ -30,10 +31,15 @@ mkdir -p \
 echo "==> Installing and stripping binaries..."
 install -m 0755 "${REPO_ROOT}/target/release/radivine" "${STAGE_DIR}/usr/bin/radivine"
 install -m 0755 "${REPO_ROOT}/target/release/radivine-viewer" "${STAGE_DIR}/usr/bin/radivine-viewer"
-strip --strip-unneeded "${STAGE_DIR}/usr/bin/radivine" "${STAGE_DIR}/usr/bin/radivine-viewer"
+install -m 0755 "${REPO_ROOT}/target/release/radivine-control" "${STAGE_DIR}/usr/bin/radivine-control"
+strip --strip-unneeded \
+    "${STAGE_DIR}/usr/bin/radivine" \
+    "${STAGE_DIR}/usr/bin/radivine-viewer" \
+    "${STAGE_DIR}/usr/bin/radivine-control"
 
-echo "==> Installing desktop entry and Nemo action..."
+echo "==> Installing desktop entry, systemd user unit, and Nemo action..."
 install -m 0644 "${REPO_ROOT}/packaging/radivine.desktop" "${STAGE_DIR}/usr/share/applications/radivine.desktop"
+install -m 0644 "${REPO_ROOT}/packaging/radivine.service" "${STAGE_DIR}/usr/lib/systemd/user/radivine.service"
 install -m 0644 "${REPO_ROOT}/packaging/radivine.nemo_action" "${STAGE_DIR}/usr/share/nemo/actions/radivine.nemo_action"
 
 if command -v desktop-file-validate >/dev/null 2>&1; then
@@ -70,7 +76,7 @@ if [ -f "${REPO_ROOT}/README.md" ]; then
 fi
 
 cat <<'MAN1' | gzip -9nc > "${STAGE_DIR}/usr/share/man/man1/radivine.1.gz"
-.TH RADIVINE 1 "October 2026" "Radivine 0.1.0" "User Commands"
+.TH RADIVINE 1 "October 2026" "Radivine 0.1.1" "User Commands"
 .SH NAME
 radivine \- context-aware radial action wheel daemon and CLI client
 .SH SYNOPSIS
@@ -103,7 +109,7 @@ MAN1
 chmod 0644 "${STAGE_DIR}/usr/share/man/man1/radivine.1.gz"
 
 cat <<'MAN2' | gzip -9nc > "${STAGE_DIR}/usr/share/man/man1/radivine-viewer.1.gz"
-.TH RADIVINE-VIEWER 1 "October 2026" "Radivine 0.1.0" "User Commands"
+.TH RADIVINE-VIEWER 1 "October 2026" "Radivine 0.1.1" "User Commands"
 .SH NAME
 radivine-viewer \- read-only file preview window for Radivine
 .SH SYNOPSIS
@@ -114,6 +120,20 @@ Opens a fast, read-only desktop preview window for text files in Full, Head,
 or Tail mode with incremental search and multi-gigabyte file support.
 MAN2
 chmod 0644 "${STAGE_DIR}/usr/share/man/man1/radivine-viewer.1.gz"
+
+cat <<'MAN3' | gzip -9nc > "${STAGE_DIR}/usr/share/man/man1/radivine-control.1.gz"
+.TH RADIVINE-CONTROL 1 "October 2026" "Radivine 0.1.1" "User Commands"
+.SH NAME
+radivine-control \- graphical Control Center for Radivine
+.SH SYNOPSIS
+.B radivine-control
+[\fB\-\-page\fR \fIdashboard|general|wheel|actions|diagnostics|about\fR] [\fB\-\-config\fR \fIPATH\fR] [\fB\-\-socket\fR \fIPATH\fR]
+.SH DESCRIPTION
+Opens the native Radivine Control Center desktop application to manage the
+background Radivine daemon, login autostart, radial wheel geometry, shell-free
+custom actions, and diagnostics without requiring a terminal session.
+MAN3
+chmod 0644 "${STAGE_DIR}/usr/share/man/man1/radivine-control.1.gz"
 
 INSTALLED_SIZE="$(du -sk "${STAGE_DIR}/usr" | awk '{print $1}')"
 sed "s/__INSTALLED_SIZE__/${INSTALLED_SIZE}/g" \

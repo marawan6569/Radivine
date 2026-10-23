@@ -1,8 +1,6 @@
 [Unit]
 Description=Radivine — Context-aware radial action wheel daemon
 Documentation=https://github.com/marawan6569/Radivine
-PartOf=graphical-session.target
-After=graphical-session.target
 
 [Service]
 Type=simple
@@ -11,6 +9,7 @@ ExecReload=/usr/bin/radivine reload
 ExecStop=/usr/bin/radivine quit
 Restart=on-failure
 RestartSec=2
+SuccessExitStatus=0 143
 
 [Install]
-WantedBy=graphical-session.target
+WantedBy=default.target

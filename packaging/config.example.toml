@@ -1,32 +1,37 @@
 # Radivine Configuration (`~/.config/radivine/config.toml`)
-# Copy this file to `~/.config/radivine/config.toml` and run `radivine reload`.
+# Managed graphically by `radivine-control` or edited manually (`radivine reload`).
+
+[trigger]
+# Trigger key pressed during an active file drag: "shift", "ctrl", "alt", "super", or "disabled"
+drag_modifier = "shift"
+# Press the trigger key a second time mid-drag to hide the wheel and continue native drag
+toggle_off_on_repress = true
+# Dismiss the wheel as soon as the trigger modifier key is released
+hold_to_keep_open = false
 
 [wheel]
 # Root wheel inner and outer radii in logical pixels (20.0..=500.0)
-root_inner_radius = 42.0
+root_inner_radius = 40.0
 root_outer_radius = 128.0
 
 # Child submenu wheel inner and outer radii in logical pixels (20.0..=500.0)
 child_inner_radius = 34.0
-child_outer_radius = 104.0
+child_outer_radius = 108.0
 
-# Angular gap between adjacent segments in degrees (0.0..=15.0)
-segment_gap_deg = 2.0
+# Radial gap between parent outer radius and child inner radius in logical pixels (4.0..=80.0)
+child_offset_gap = 20.0
 
-# Minimum radial distance between parent and child wheel centers in logical pixels
-child_offset = 172.0
+# Hover dwell time before a submenu opens automatically in milliseconds (20..=2000)
+submenu_dwell_ms = 110
 
-# Hover dwell time before a submenu opens automatically in milliseconds (50..=2000)
-dwell_ms = 140
+# Intent-triangle diagonal travel grace period in milliseconds (20..=2000)
+diagonal_corridor_ms = 180
 
-# Intent-triangle diagonal travel grace period in milliseconds (50..=1000)
-corridor_grace_ms = 220
+# Outside-cluster leave grace period in milliseconds (50..=5000)
+leave_grace_ms = 350
 
-# Center-hub dwell time before closing open child submenus in milliseconds (50..=2000)
-hub_close_ms = 160
-
-# Minimum pointer movement from summon point before hover/drop engages (0.0..=64.0)
-activation_slop_px = 6.0
+# Segment boundary angular hysteresis in degrees (0.0..=15.0)
+hysteresis_deg = 3.5
 
 [appearance]
 # Color theme: "dark", "light", or "auto" (queries GTK_THEME / gtk-3.0/settings.ini)
@@ -35,13 +40,13 @@ theme = "dark"
 # UI scale factor: "auto" (queries Xft.dpi) or a numeric factor in 0.5..=4.0 (e.g. 1.25)
 scale = "auto"
 
-# Disable emerge/collapse animations ("true", "false", or omit to follow desktop Net/EnableAnimations)
-# reduced_motion = false
+# Reduce animations: "auto" (follows desktop Net/EnableAnimations), true, or false
+reduced_motion = "auto"
+
+# Monitor backdrop dimming opacity (0.0..=0.5)
+backdrop_dim_alpha = 0.0
 
 [input]
-# Trigger key pressed during an active file drag: "shift"
-trigger_modifier = "shift"
-
 # Safety default: false (capture-all overlay during active sessions so releasing outside
 # the wheel cancels cleanly instead of dropping files into underlying windows; ADR-0001).
 passthrough = false
@@ -52,3 +57,9 @@ head_lines = 50
 
 # Default line count for `File Preview -> Tail` (1..=10000)
 tail_lines = 50
+
+[notifications]
+# Enable desktop notifications via org.freedesktop.Notifications
+enabled = true
+notify_on_action_error = true
+notify_on_config_warning = true
