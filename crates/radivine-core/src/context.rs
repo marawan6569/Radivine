@@ -404,7 +404,7 @@ fn parse_file_uri_to_local_path(uri: &str) -> Option<PathBuf> {
 
     // Strip any query or fragment if present in a URI, though rare in file://
     let decoded_bytes: Vec<u8> = percent_decode_str(path_part).collect();
-    if decoded_bytes.first() != Some(&b'/') {
+    if decoded_bytes.first() != Some(&b'/') || decoded_bytes.contains(&0) {
         return None;
     }
 

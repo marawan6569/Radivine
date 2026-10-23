@@ -1,0 +1,38 @@
+[package]
+name = "radivine-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+radivine-core = { path = "../crates/radivine-core" }
+radivine-platform = { path = "../crates/radivine-platform" }
+radivine-actions = { path = "../crates/radivine-actions" }
+
+[[bin]]
+name = "fuzz_uri_list"
+path = "fuzz_targets/fuzz_uri_list.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_xdnd_msg"
+path = "fuzz_targets/fuzz_xdnd_msg.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_actions_toml"
+path = "fuzz_targets/fuzz_actions_toml.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]
