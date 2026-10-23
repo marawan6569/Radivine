@@ -295,13 +295,7 @@ pub fn probe_with_connection(
         Support::Yes
     };
 
-    let translucency = if visual.is_argb && compositor_active {
-        Support::Yes
-    } else if !compositor_active {
-        Support::Degraded("no compositor owns _NET_WM_CM_S0; using opaque card fallback")
-    } else {
-        Support::Degraded("no 32-bit TrueColor visual; using 24-bit root visual")
-    };
+    let translucency = compute_translucency_support(&visual, compositor_active);
 
     let input_passthrough = if shape.available {
         Support::Yes
@@ -341,7 +335,23 @@ pub fn probe_with_connection(
     }
 }
 
-fn query_window_pid_and_comm(
+/// Computes the [`Capabilities::translucency`] status from the selected [`VisualSpec`] and live
+/// `_NET_WM_CM_S0` compositor state.
+#[must_use]
+pub(crate) fn compute_translucency_support(
+    visual: &VisualSpec,
+    compositor_active: bool,
+) -> Support {
+    if visual.is_argb && compositor_active {
+        Support::Yes
+    } else if !compositor_active {
+        Support::Degraded("no compositor owns _NET_WM_CM_S0; using opaque card fallback")
+    } else {
+        Support::Degraded("no 32-bit TrueColor visual; using 24-bit root visual")
+    }
+}
+
+pub(crate) fn query_window_pid_and_comm(
     conn: &RustConnection,
     atoms: &Atoms,
     win: Window,

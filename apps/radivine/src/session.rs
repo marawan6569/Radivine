@@ -150,6 +150,7 @@ pub struct SessionController {
     last_dnd_pos: Option<PhysPoint>,
     last_dnd_accept: Option<bool>,
     pending_drop_commit: Option<ItemPath>,
+    bounding_region_clipped: bool,
     debug_overlay: bool,
     trace_timings: bool,
     last_summon_us: Option<u64>,
@@ -297,6 +298,7 @@ impl SessionController {
             last_dnd_pos: None,
             last_dnd_accept: None,
             pending_drop_commit: None,
+            bounding_region_clipped: false,
             debug_overlay,
             trace_timings,
             last_summon_us: None,
@@ -562,6 +564,10 @@ impl SessionController {
         let info = self.platform.prepare_overlay(pointer_phys)?;
         let scale = self.config.effective_scale(info.scale);
         self.effective_scale = scale;
+        let reduced_motion = self
+            .config
+            .effective_reduced_motion(self.platform.reduced_motion());
+        self.wheel_cfg = self.config.to_wheel_config(reduced_motion);
 
         let local_phys_x = (pointer_phys.x - info.origin.x) as f32;
         let local_phys_y = (pointer_phys.y - info.origin.y) as f32;
@@ -670,6 +676,10 @@ impl SessionController {
         let info = self.platform.prepare_overlay(pointer_phys)?;
         let scale = self.config.effective_scale(info.scale);
         self.effective_scale = scale;
+        let reduced_motion = self
+            .config
+            .effective_reduced_motion(self.platform.reduced_motion());
+        self.wheel_cfg = self.config.to_wheel_config(reduced_motion);
 
         let local_phys_x = (pointer_phys.x - info.origin.x) as f32;
         let local_phys_y = (pointer_phys.y - info.origin.y) as f32;
@@ -1020,7 +1030,31 @@ impl SessionController {
                     self.feed_wheel_input(WheelInput::Nav(nav), now);
                 }
                 PlatformEvent::SettingsChanged | PlatformEvent::MonitorsChanged => {
+                    let reduced_motion = self
+                        .config
+                        .effective_reduced_motion(self.platform.reduced_motion());
+                    self.wheel_cfg = self.config.to_wheel_config(reduced_motion);
                     self.effective_scale = self.config.effective_scale(self.platform.scale());
+                    if matches!(
+                        self.state,
+                        SessionState::Summoning | SessionState::Active | SessionState::LeftGrace
+                    ) {
+                        let ref_pt = self
+                            .last_dnd_pos
+                            .or_else(|| self.overlay_info.as_ref().map(|i| i.origin))
+                            .unwrap_or_else(|| PhysPoint::new(0, 0));
+                        if let Ok(info) = self.platform.prepare_overlay(ref_pt) {
+                            let scale = self.config.effective_scale(info.scale);
+                            self.effective_scale = scale;
+                            self.renderer.set_opaque_fallback(!info.translucent);
+                            self.renderer
+                                .begin_session(SizePx::new(info.size.0, info.size.1), scale);
+                            self.overlay_info = Some(info);
+                            let _ = self.sync_input_region();
+                            let _ = self.render_and_present(true);
+                            let _ = self.platform.flush();
+                        }
+                    }
                     tracing::info!(
                         scale = self.effective_scale,
                         "updated display settings / monitors"
@@ -1408,11 +1442,16 @@ impl SessionController {
     }
 
     fn process_wheel_events(&mut self, events: Vec<WheelEvent>, now: Instant) {
+        let non_translucent = self.overlay_info.as_ref().is_some_and(|i| !i.translucent);
         for ev in events {
             match ev {
                 WheelEvent::HoverChanged(_)
                 | WheelEvent::SubmenuOpened(_)
-                | WheelEvent::SubmenuClosed(_) => {}
+                | WheelEvent::SubmenuClosed(_) => {
+                    if non_translucent {
+                        let _ = self.sync_input_region();
+                    }
+                }
                 WheelEvent::InputRegionChanged => {
                     let _ = self.sync_input_region();
                 }
@@ -1794,6 +1833,10 @@ impl SessionController {
 
     fn sync_input_region(&mut self) -> anyhow::Result<()> {
         let translucent = self.overlay_info.as_ref().is_none_or(|i| i.translucent);
+        if translucent && self.bounding_region_clipped {
+            self.platform.set_bounding_region(None)?;
+            self.bounding_region_clipped = false;
+        }
         // Fast path: with a compositor (`translucent == true`) in Invoke mode or capture-all Drag mode
         // (`input.passthrough == false`, safe default per ADR-016 / AGENTS.md §2.4), `ShapeBounding`
         // is already unclipped and `ShapeInput` is full-window (`None`).
@@ -1829,11 +1872,29 @@ impl SessionController {
             }
         }
 
-        // No-compositor fallback (`PLATFORM_INTEGRATION.md` §3.11): clip `ShapeBounding` to the wheel
-        // cluster + caption box when per-pixel alpha translucency is unavailable.
+        // No-compositor fallback (`PLATFORM_INTEGRATION.md` §3.11): clip `ShapeBounding` strictly to
+        // the visible wheel disks + caption box (excluding invisible pointer hit-slop corridors) when
+        // per-pixel alpha translucency is unavailable.
         if !translucent {
-            let mut bounding_px = shapes_px.clone();
-            if let Some(ref cap) = ws.scene().caption {
+            let scene = ws.scene();
+            let mut bounding_px: Vec<ShapePx> = Vec::with_capacity(scene.wheels.len() + 2);
+            for w in &scene.wheels {
+                if w.opacity <= 0.01 {
+                    continue;
+                }
+                let visual_r = (w.r_out + 4.0) * w.scale.max(0.1) * scale;
+                bounding_px.push(ShapePx::Circle {
+                    cx: w.center.x * scale,
+                    cy: w.center.y * scale,
+                    r: visual_r,
+                });
+            }
+            if bounding_px.is_empty() {
+                bounding_px.clone_from(&shapes_px);
+            }
+            if let Some(ref cap) = scene.caption
+                && cap.opacity > 0.02
+            {
                 let x0 = cap.box_.x * scale;
                 let y0 = cap.box_.y * scale;
                 let x1 = (cap.box_.x + cap.box_.w) * scale;
@@ -1846,6 +1907,7 @@ impl SessionController {
                 bounding_px.push(ShapePx::Polygon(rect_poly));
             }
             self.platform.set_bounding_region(Some(&bounding_px))?;
+            self.bounding_region_clipped = true;
         }
 
         if self.active_mode == Some(InvocationMode::Invoke) || !self.config.input.passthrough {

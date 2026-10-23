@@ -14,12 +14,16 @@ pub mod source;
 pub mod xdnd;
 
 use std::os::fd::{AsRawFd, RawFd};
-use std::time::Instant;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use x11rb::connection::Connection;
 use x11rb::protocol::Event;
-use x11rb::protocol::xproto::{ChangeWindowAttributesAux, ConnectionExt as _, Cursor, EventMask};
+use x11rb::protocol::xproto::{
+    AtomEnum, ChangeWindowAttributesAux, ConnectionExt as _, Cursor, EventMask, PropMode,
+};
 use x11rb::rust_connection::RustConnection;
+use x11rb::wrapper::ConnectionExt as _;
 
 use crate::x11::arming::{
     ArmingTracker, ArmingTransition, TriggerEdge, query_modifier_keycodes, query_pointer_state,
@@ -27,17 +31,20 @@ use crate::x11::arming::{
 };
 use crate::x11::atoms::Atoms;
 use crate::x11::clipboard::ClipboardService;
-use crate::x11::doctor::{DoctorReport, probe_with_connection};
+use crate::x11::doctor::{
+    DoctorReport, compute_translucency_support, probe_with_connection, query_window_pid_and_comm,
+};
 use crate::x11::invoke::{KeymapTable, create_left_ptr_cursor, grab_input, ungrab_input};
 use crate::x11::monitors::{
-    pick_monitor_for_point, query_monitors, query_xft_scale, select_randr_notifications,
+    is_compositor_active, pick_monitor_for_point, query_monitors, query_reduced_motion,
+    query_xft_scale, select_randr_notifications,
 };
 use crate::x11::overlay::OverlayWindow;
 use crate::x11::selection::{
     SelectionReader, handle_property_notify_wire, handle_selection_notify_wire,
     request_selection_wire,
 };
-use crate::x11::shape::{apply_bounding_region, apply_input_region};
+use crate::x11::shape::{apply_bounding_region, apply_input_region, reset_bounding_region};
 use crate::x11::shm::{ChannelShuffle, ShmPresenter};
 use crate::x11::source::identify_window_source;
 use crate::x11::xdnd::{
@@ -85,7 +92,17 @@ impl X11Platform {
             .reply()
             .map_err(|e| PlatformError::X11(e.to_string()))?;
 
-        let doctor = probe_with_connection(&conn, screen_num, &atoms, session_type, display);
+        let mut doctor = probe_with_connection(
+            &conn,
+            screen_num,
+            &atoms,
+            session_type.clone(),
+            display.clone(),
+        );
+        if should_wait_for_initial_compositor(&doctor) && wait_for_initial_compositor(&conn, &atoms)
+        {
+            doctor = probe_with_connection(&conn, screen_num, &atoms, session_type, display);
+        }
         let setup = conn.setup();
         let screen = &setup.roots[screen_num];
         let root = screen.root;
@@ -95,6 +112,7 @@ impl X11Platform {
             root,
             &ChangeWindowAttributesAux::new().event_mask(EventMask::PROPERTY_CHANGE),
         );
+        subscribe_xsettings_owner_properties(&conn, &atoms);
 
         let randr_supported = doctor
             .extensions
@@ -128,6 +146,8 @@ impl X11Platform {
         let overlay = OverlayWindow::create(&conn, screen, &atoms, cfg.window_type)?;
         if xfixes_supported {
             let _ = select_xdnd_selection_notify(&conn, overlay.helper_window, atoms.XdndSelection);
+            let _ = select_xdnd_selection_notify(&conn, overlay.helper_window, atoms._NET_WM_CM_S0);
+            let _ = select_xdnd_selection_notify(&conn, overlay.helper_window, atoms._XSETTINGS_S0);
         }
 
         let shuffle = ChannelShuffle::from_visual(
@@ -187,6 +207,82 @@ impl X11Platform {
     fn is_poll_trigger_mode(&self) -> bool {
         self.cfg.trigger_detection == TriggerDetectionMode::Poll || !self.xi2_supported
     }
+
+    /// Re-queries `_NET_WM_CM_S0` ownership and updates cached compositor diagnostics,
+    /// translucency capability, and `ShapeBounding` / `_NET_WM_BYPASS_COMPOSITOR` state.
+    ///
+    /// Returns `true` if compositor availability or owner window XID changed.
+    pub fn refresh_compositor_state(&mut self) -> bool {
+        let (compositor_active, compositor_owner) = is_compositor_active(&self.conn, &self.atoms);
+        let changed = compositor_active != self.doctor.compositor_active
+            || compositor_owner != self.doctor.compositor_owner;
+
+        if !changed {
+            return false;
+        }
+
+        self.doctor.compositor_active = compositor_active;
+        self.doctor.compositor_owner = compositor_owner;
+        let (pid, comm) = if compositor_active && compositor_owner != 0 {
+            query_window_pid_and_comm(&self.conn, &self.atoms, compositor_owner)
+        } else {
+            (None, None)
+        };
+        self.doctor.compositor_pid = pid;
+        self.doctor.compositor_comm = comm;
+        self.doctor.capabilities.translucency =
+            compute_translucency_support(&self.overlay.visual, compositor_active);
+
+        if compositor_active {
+            if self.shape_supported {
+                let _ = reset_bounding_region(&self.conn, self.overlay.window);
+            }
+            let _ = self.conn.change_property32(
+                PropMode::REPLACE,
+                self.overlay.window,
+                self.atoms._NET_WM_BYPASS_COMPOSITOR,
+                AtomEnum::CARDINAL,
+                &[2u32],
+            );
+            if !self.overlay.is_mapped {
+                self.shm.release(&self.conn);
+            }
+            let _ = self.conn.flush();
+        }
+
+        tracing::info!(
+            compositor_active = self.doctor.compositor_active,
+            compositor_owner = format!("0x{:08x}", self.doctor.compositor_owner),
+            compositor_comm = ?self.doctor.compositor_comm,
+            translucency = %self.doctor.capabilities.translucency,
+            "updated X11 compositor state"
+        );
+        true
+    }
+
+    /// Re-queries RandR monitors, `Xft.dpi` scale, and `_XSETTINGS_S0` reduced-motion preference.
+    ///
+    /// Returns `(monitors_changed, settings_changed)`.
+    pub fn refresh_display_settings(&mut self) -> (bool, bool) {
+        let setup = self.conn.setup();
+        let screen = &setup.roots[self.screen_num];
+        let root = screen.root;
+
+        let new_monitors = query_monitors(&self.conn, screen, self.randr_supported);
+        let monitors_changed = new_monitors != self.doctor.monitors;
+        self.doctor.monitors = new_monitors;
+
+        let (dpi, scale) = query_xft_scale(&self.conn, root, &self.atoms);
+        let reduced = query_reduced_motion(&self.conn, &self.atoms);
+        let settings_changed = (self.doctor.scale - scale).abs() > 1e-4
+            || self.doctor.xft_dpi != dpi
+            || self.doctor.reduced_motion != reduced;
+        self.doctor.xft_dpi = dpi;
+        self.doctor.scale = scale;
+        self.doctor.reduced_motion = reduced;
+
+        (monitors_changed, settings_changed)
+    }
 }
 
 impl Platform for X11Platform {
@@ -211,6 +307,32 @@ impl Platform for X11Platform {
         loop {
             match self.conn.poll_for_event() {
                 Ok(Some(event)) => match event {
+                    Event::XfixesSelectionNotify(se)
+                        if se.selection == self.atoms._NET_WM_CM_S0 =>
+                    {
+                        let comp_changed = self.refresh_compositor_state();
+                        let (mon_changed, set_changed) = self.refresh_display_settings();
+                        if comp_changed || set_changed {
+                            out.push(PlatformEvent::SettingsChanged);
+                        }
+                        if mon_changed {
+                            out.push(PlatformEvent::MonitorsChanged);
+                        }
+                    }
+                    Event::XfixesSelectionNotify(se)
+                        if se.selection == self.atoms._XSETTINGS_S0 =>
+                    {
+                        if se.owner != x11rb::NONE {
+                            let _ = self.conn.change_window_attributes(
+                                se.owner,
+                                &ChangeWindowAttributesAux::new()
+                                    .event_mask(EventMask::PROPERTY_CHANGE),
+                            );
+                        }
+                        let _ = self.refresh_compositor_state();
+                        let _ = self.refresh_display_settings();
+                        out.push(PlatformEvent::SettingsChanged);
+                    }
                     Event::XfixesSelectionNotify(se)
                         if se.selection == self.atoms.XdndSelection =>
                     {
@@ -396,20 +518,19 @@ impl Platform for X11Platform {
                         self.clipboard.on_selection_clear(ev, self.atoms.CLIPBOARD);
                     }
                     Event::PropertyNotify(ev)
-                        if ev.window == root && ev.atom == self.atoms.RESOURCE_MANAGER =>
+                        if (ev.window == root && ev.atom == self.atoms.RESOURCE_MANAGER)
+                            || ev.atom == self.atoms._XSETTINGS_SETTINGS =>
                     {
-                        let (dpi, scale) = query_xft_scale(&self.conn, root, &self.atoms);
-                        self.doctor.xft_dpi = dpi;
-                        self.doctor.scale = scale;
+                        let _ = self.refresh_compositor_state();
+                        let _ = self.refresh_display_settings();
                         out.push(PlatformEvent::SettingsChanged);
                     }
                     Event::PropertyNotify(ev) => {
                         self.clipboard.on_property_notify(&self.conn, ev);
                     }
                     Event::RandrScreenChangeNotify(_) | Event::RandrNotify(_) => {
-                        let screen = &self.conn.setup().roots[self.screen_num];
-                        self.doctor.monitors =
-                            query_monitors(&self.conn, screen, self.randr_supported);
+                        let _ = self.refresh_compositor_state();
+                        let _ = self.refresh_display_settings();
                         out.push(PlatformEvent::MonitorsChanged);
                     }
                     Event::ShmCompletion(_) => {}
@@ -456,11 +577,26 @@ impl Platform for X11Platform {
     }
 
     fn prepare_overlay(&mut self, at: PhysPoint) -> Result<OverlayInfo, PlatformError> {
+        let comp_changed = self.refresh_compositor_state();
+        let fallback_monitor_only = self.randr_supported
+            && self.doctor.monitors.len() == 1
+            && self.doctor.monitors[0].name == "Screen-0";
+        if comp_changed
+            || fallback_monitor_only
+            || self.doctor.xft_dpi.is_none()
+            || self.doctor.reduced_motion.is_none()
+        {
+            let _ = self.refresh_display_settings();
+        }
+
         let monitor = pick_monitor_for_point(&self.doctor.monitors, at);
         self.overlay.prepare(&self.conn, monitor.rect)?;
         self.shm
             .ensure_size(&self.conn, monitor.rect.w, monitor.rect.h)?;
         let translucent = matches!(self.doctor.capabilities.translucency, Support::Yes);
+        if translucent && self.shape_supported {
+            let _ = reset_bounding_region(&self.conn, self.overlay.window);
+        }
 
         Ok(OverlayInfo {
             origin: PhysPoint::new(monitor.rect.x, monitor.rect.y),
@@ -649,6 +785,73 @@ impl Platform for X11Platform {
             }
         }
     }
+
+    fn sync_graphical_state(&mut self) {
+        let comp_changed = self.refresh_compositor_state();
+        let fallback_monitor_only = self.randr_supported
+            && self.doctor.monitors.len() == 1
+            && self.doctor.monitors[0].name == "Screen-0";
+        if comp_changed
+            || fallback_monitor_only
+            || self.doctor.xft_dpi.is_none()
+            || self.doctor.reduced_motion.is_none()
+        {
+            let _ = self.refresh_display_settings();
+        }
+    }
+}
+
+fn subscribe_xsettings_owner_properties(conn: &RustConnection, atoms: &Atoms) {
+    if let Ok(cookie) = conn.get_selection_owner(atoms._XSETTINGS_S0)
+        && let Ok(reply) = cookie.reply()
+        && reply.owner != x11rb::NONE
+    {
+        let _ = conn.change_window_attributes(
+            reply.owner,
+            &ChangeWindowAttributesAux::new().event_mask(EventMask::PROPERTY_CHANGE),
+        );
+    }
+}
+
+fn should_wait_for_initial_compositor(doctor: &DoctorReport) -> bool {
+    if doctor.compositor_active || doctor.is_wayland_session() {
+        return false;
+    }
+    if let Ok(val) = std::env::var("RADIVINE_WAIT_FOR_COMPOSITOR") {
+        let trimmed = val.trim();
+        if trimmed == "0" || trimmed.eq_ignore_ascii_case("false") {
+            return false;
+        }
+        if trimmed == "1" || trimmed.eq_ignore_ascii_case("true") {
+            return true;
+        }
+    }
+    if std::env::var("RADIVINE_SYSTEMD_SERVICE")
+        .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+    {
+        return !crate::is_isolated_test_display();
+    }
+    false
+}
+
+fn wait_for_initial_compositor(conn: &RustConnection, atoms: &Atoms) -> bool {
+    let wait_ms = std::env::var("RADIVINE_COMPOSITOR_WAIT_MS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .unwrap_or(2500)
+        .min(5000);
+    let deadline = Instant::now() + Duration::from_millis(wait_ms);
+    while Instant::now() < deadline {
+        let (active, _owner) = is_compositor_active(conn, atoms);
+        if active {
+            // Brief settle pause so initial RandR / RESOURCE_MANAGER properties applied alongside
+            // compositor startup are visible in the subsequent probe.
+            thread::sleep(Duration::from_millis(60));
+            return true;
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+    false
 }
 
 impl Drop for X11Platform {

@@ -461,6 +461,9 @@ pub trait Platform {
 
     /// Fires any backend-internal timers due at `now`.
     fn on_deadline(&mut self, now: Instant, out: &mut Vec<PlatformEvent>);
+
+    /// Re-synchronizes cached compositor, monitor, and DPI state with the display server.
+    fn sync_graphical_state(&mut self) {}
 }
 
 /// Headless non-X11 platform backend used only when `RADIVINE_HEADLESS_DAEMON=1` is explicitly set
