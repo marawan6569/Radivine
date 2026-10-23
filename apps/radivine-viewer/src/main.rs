@@ -9,13 +9,16 @@
 
 #![forbid(unsafe_code)]
 
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
-use radivine_viewer::file_io::{EXIT_CANNOT_OPEN, EXIT_OK, OpenedTextFile};
+use radivine_viewer::file_io::{EXIT_CANNOT_OPEN, EXIT_OK, EXIT_USAGE, OpenedTextFile};
+use radivine_viewer::head_tail::{read_head, read_tail};
+use radivine_viewer::ui::{ViewerApp, run_viewer_window};
 use radivine_viewer::{PreviewMode, ViewerTheme};
 
 /// Radivine read-only file preview window (`Full`, `Head`, `Tail`).
@@ -62,7 +65,7 @@ fn main() -> ExitCode {
     let cli = ViewerCli::parse();
     if cli.lines == 0 {
         eprintln!("radivine-viewer: --lines must be >= 1");
-        return ExitCode::from(radivine_viewer::file_io::EXIT_USAGE);
+        return ExitCode::from(EXIT_USAGE);
     }
 
     let opened = match OpenedTextFile::open(&cli.path) {
@@ -81,5 +84,54 @@ fn main() -> ExitCode {
         "opened file for preview"
     );
 
-    ExitCode::from(EXIT_OK)
+    let headless_env = std::env::var("RADIVINE_VIEWER_HEADLESS")
+        .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+
+    if cli.print || headless_env {
+        if cli.print {
+            match cli.mode {
+                PreviewMode::Head => match read_head(&opened, cli.lines) {
+                    Ok(res) => {
+                        let _ = std::io::stdout().write_all(res.raw_output.as_bytes());
+                    }
+                    Err(err) => {
+                        eprintln!("radivine-viewer: {err}");
+                        return ExitCode::from(EXIT_CANNOT_OPEN);
+                    }
+                },
+                PreviewMode::Tail => match read_tail(&opened, cli.lines) {
+                    Ok(res) => {
+                        let _ = std::io::stdout().write_all(res.raw_output.as_bytes());
+                    }
+                    Err(err) => {
+                        eprintln!("radivine-viewer: {err}");
+                        return ExitCode::from(EXIT_CANNOT_OPEN);
+                    }
+                },
+                PreviewMode::Full => {
+                    if let Err(err) = ViewerApp::new(opened, cli.mode, cli.lines, cli.theme, None) {
+                        eprintln!("radivine-viewer: {err}");
+                        return ExitCode::from(EXIT_CANNOT_OPEN);
+                    }
+                    return ExitCode::from(EXIT_OK);
+                }
+            }
+        }
+        // Also initialize `ViewerApp` so `RADIVINE_VIEWER_DUMP_PATH` is populated if set
+        if std::env::var("RADIVINE_VIEWER_DUMP_PATH").is_ok()
+            && let Err(err) = ViewerApp::new(opened, cli.mode, cli.lines, cli.theme, None)
+        {
+            eprintln!("radivine-viewer: {err}");
+            return ExitCode::from(EXIT_CANNOT_OPEN);
+        }
+        return ExitCode::from(EXIT_OK);
+    }
+
+    match run_viewer_window(opened, cli.mode, cli.lines, cli.title, cli.theme) {
+        Ok(()) => ExitCode::from(EXIT_OK),
+        Err(err) => {
+            eprintln!("radivine-viewer window error: {err}");
+            ExitCode::from(EXIT_CANNOT_OPEN)
+        }
+    }
 }

@@ -13,6 +13,7 @@ pub mod file_io;
 pub mod full;
 pub mod head_tail;
 pub mod search;
+pub mod ui;
 
 use clap::ValueEnum;
 
