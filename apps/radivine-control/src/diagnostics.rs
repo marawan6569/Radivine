@@ -207,10 +207,19 @@ pub fn format_diagnostic_report(
         service.autostart.method_label, service.autostart.enabled
     ));
     if let Some(ref d) = service.daemon {
+        let overlay_mode = if d.translucent_overlay {
+            "32-bit ARGB (composited)"
+        } else if d.graphical_ready {
+            "XShape bounding fallback (no compositor)"
+        } else {
+            "degraded / unavailable"
+        };
         report.push_str(&format!(
-            "- **Daemon Runtime:** `pid={}` · `state={}` · `uptime={}s` · `scale={:.2}` · `rss={} KiB`\n",
+            "- **Daemon Runtime:** `pid={}` · `state={}` · `overlay={}` · `monitors={}` · `uptime={}s` · `scale={:.2}` · `rss={} KiB`\n",
             d.pid,
             d.session_state,
+            overlay_mode,
+            d.monitor_count,
             d.uptime_secs,
             d.scale,
             d.rss_kib.unwrap_or(0)

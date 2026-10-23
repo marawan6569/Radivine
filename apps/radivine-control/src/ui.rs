@@ -1183,6 +1183,26 @@ impl ControlCenterApp {
                     kv_cell(
                         ui,
                         pal,
+                        "Overlay Rendering Mode",
+                        &d_opt.map_or_else(
+                            || "—".to_string(),
+                            |d| {
+                                let mode = if d.translucent_overlay {
+                                    "32-bit ARGB (Composited)"
+                                } else if d.graphical_ready {
+                                    "XShape Fallback"
+                                } else {
+                                    "Degraded"
+                                };
+                                format!("{mode} ({} monitor(s))", d.monitor_count.max(1))
+                            },
+                        ),
+                    );
+                    ui.end_row();
+
+                    kv_cell(
+                        ui,
+                        pal,
                         "Last Frame / Summon Latency",
                         &d_opt.map_or_else(
                             || "—".to_string(),
@@ -1197,6 +1217,15 @@ impl ControlCenterApp {
                                 );
                                 format!("Render: {render} · Summon: {summon}")
                             },
+                        ),
+                    );
+                    kv_cell(
+                        ui,
+                        pal,
+                        "Display Target",
+                        &d_opt.map_or_else(
+                            || std::env::var("DISPLAY").unwrap_or_else(|_| "(unset)".to_string()),
+                            |d| d.display.clone(),
                         ),
                     );
                     ui.end_row();
@@ -2429,6 +2458,10 @@ impl ControlCenterApp {
                 display: ":0".to_string(),
                 custom_action_count: 2,
                 rss_kib: Some(18_840),
+                graphical_ready: true,
+                compositor_active: true,
+                translucent_overlay: true,
+                monitor_count: 2,
             }),
             systemd: SystemdUnitInfo {
                 available: true,

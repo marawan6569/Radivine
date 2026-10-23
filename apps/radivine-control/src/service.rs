@@ -310,6 +310,18 @@ impl ServiceController {
                             .as_ref()
                             .and_then(|d| d.config_warnings.first().cloned())
                     })
+                    .or_else(|| {
+                        ipc_status.as_ref().and_then(|d| {
+                            if !d.graphical_ready {
+                                Some(
+                                    "Daemon IPC is responsive, but the graphical overlay is degraded or unavailable on this display session."
+                                        .to_string(),
+                                )
+                            } else {
+                                None
+                            }
+                        })
+                    })
             })
             .or_else(|| {
                 if health == DaemonHealthState::Failed && !systemd.result.is_empty() {
@@ -684,10 +696,21 @@ impl ServiceController {
 
     fn ensure_systemd_unit_available(&self, systemd: &SystemdUnitInfo) -> Result<(), String> {
         let user_unit = self.paths.systemd_user_dir.join("radivine.service");
-        if self.paths.system_unit_path.exists()
-            || user_unit.exists()
-            || systemd.load_state == "loaded"
-        {
+        if user_unit.exists() {
+            if let Ok(existing) = fs::read_to_string(&user_unit)
+                && (!existing.contains("StartLimitIntervalSec=0")
+                    || !existing.contains("RADIVINE_SYSTEMD_SERVICE=1"))
+            {
+                let content = generate_systemd_unit_content(&self.paths.daemon_bin);
+                let _ = fs::write(&user_unit, content);
+                let _ = Command::new("systemctl")
+                    .args(["--user", "daemon-reload"])
+                    .stdin(Stdio::null())
+                    .output();
+            }
+            return Ok(());
+        }
+        if self.paths.system_unit_path.exists() || systemd.load_state == "loaded" {
             return Ok(());
         }
         fs::create_dir_all(&self.paths.systemd_user_dir).map_err(|e| {
@@ -807,12 +830,12 @@ pub fn generate_systemd_unit_content(daemon_bin: &Path) -> String {
         "[Unit]\n\
          Description=Radivine — Context-aware radial action wheel daemon\n\
          Documentation=https://github.com/marawan6569/Radivine\n\
-         After=default.target graphical-session-pre.target\n\
-         StartLimitIntervalSec=30\n\
-         StartLimitBurst=5\n\
+         After=default.target graphical-session-pre.target dbus.socket\n\
+         StartLimitIntervalSec=0\n\
          \n\
          [Service]\n\
          Type=simple\n\
+         Environment=RADIVINE_SYSTEMD_SERVICE=1\n\
          ExecStart={bin} daemon\n\
          ExecReload={bin} reload\n\
          ExecStop={bin} quit\n\

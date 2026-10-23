@@ -458,6 +458,18 @@ impl SessionController {
     /// Builds a [`DaemonStatus`] snapshot for `radivine status`.
     pub fn status(&mut self) -> DaemonStatus {
         self.drain_async_events(Instant::now());
+        self.platform.sync_graphical_state();
+        if matches!(self.state, SessionState::Idle | SessionState::Armed) {
+            self.effective_scale = self.config.effective_scale(self.platform.scale());
+        }
+        let caps = self.platform.capabilities();
+        let graphical_ready = !matches!(caps.invoke_at_pointer, radivine_platform::Support::No(_));
+        let compositor_active = matches!(caps.translucency, radivine_platform::Support::Yes);
+        let translucent_overlay = self
+            .overlay_info
+            .as_ref()
+            .map_or(compositor_active, |info| info.translucent);
+        let monitor_count = self.platform.monitors().len();
         let monitor_rect = self
             .overlay_info
             .as_ref()
@@ -532,6 +544,10 @@ impl SessionController {
             display: std::env::var("DISPLAY").unwrap_or_else(|_| "(unset)".to_string()),
             custom_action_count: self.custom_action_count,
             rss_kib: query_self_rss_kib(),
+            graphical_ready,
+            compositor_active,
+            translucent_overlay,
+            monitor_count,
         }
     }
 

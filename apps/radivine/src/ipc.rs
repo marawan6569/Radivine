@@ -134,6 +134,22 @@ pub struct DaemonStatus {
     /// Resident memory usage in KiB (`VmRSS` from `/proc/self/status`), if available.
     #[serde(default)]
     pub rss_kib: Option<u64>,
+    /// Whether the graphical display connection and overlay capability are ready (`invoke_at_pointer != No`).
+    #[serde(default = "default_true")]
+    pub graphical_ready: bool,
+    /// Whether the daemon's live X11 platform currently detects an active compositor (`_NET_WM_CM_S0`).
+    #[serde(default)]
+    pub compositor_active: bool,
+    /// Whether the daemon's overlay is operating in 32-bit ARGB per-pixel alpha mode (`true`) vs XShape fallback (`false`).
+    #[serde(default)]
+    pub translucent_overlay: bool,
+    /// Number of active monitors known to the daemon.
+    #[serde(default)]
+    pub monitor_count: usize,
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 /// IPC response returned by the daemon.

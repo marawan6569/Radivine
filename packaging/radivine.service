@@ -1,9 +1,12 @@
 [Unit]
 Description=Radivine — Context-aware radial action wheel daemon
 Documentation=https://github.com/marawan6569/Radivine
+After=default.target graphical-session-pre.target dbus.socket
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
+Environment=RADIVINE_SYSTEMD_SERVICE=1
 ExecStart=/usr/bin/radivine daemon
 ExecReload=/usr/bin/radivine reload
 ExecStop=/usr/bin/radivine quit

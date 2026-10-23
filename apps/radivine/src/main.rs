@@ -191,6 +191,31 @@ fn run_client_request(sock_path: &Path, req: &IpcRequest, json_out: bool) -> Exi
     }
 }
 
+fn connect_platform_with_login_retry(
+    config: &AppConfig,
+) -> Result<Box<dyn radivine_platform::Platform>, radivine_platform::PlatformError> {
+    let is_systemd = std::env::var("RADIVINE_SYSTEMD_SERVICE")
+        .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+    let max_attempts = if is_systemd { 6 } else { 1 };
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        match connect_with_config(config.to_x11_config()) {
+            Ok(plat) => return Ok(plat),
+            Err(err) if attempt < max_attempts => {
+                tracing::debug!(
+                    attempt,
+                    max_attempts,
+                    error = %err,
+                    "X11 display not yet ready during service startup; retrying"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(250));
+            }
+            Err(err) => return Err(err),
+        }
+    }
+}
+
 fn run_daemon(config_path: Option<PathBuf>, sock_path: &Path) -> anyhow::Result<()> {
     let Some(listener) = bind_single_instance(sock_path)? else {
         tracing::info!(
@@ -201,7 +226,7 @@ fn run_daemon(config_path: Option<PathBuf>, sock_path: &Path) -> anyhow::Result<
     };
 
     let config = AppConfig::load_or_default(config_path.as_deref());
-    let platform = connect_with_config(config.to_x11_config())?;
+    let platform = connect_platform_with_login_retry(&config)?;
     let overlay_win_id = platform.overlay_window_id();
 
     install_emergency_panic_hook(overlay_win_id);
