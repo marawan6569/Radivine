@@ -29,7 +29,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Updated `/usr/share/applications/radivine.desktop` to launch `radivine-control` instead of `radivine daemon`.
-- Extended `DaemonStatus` IPC telemetry with `version`, `uptime_secs`, `desktop_session`, `desktop_environment`, `display`, `custom_action_count`, and `rss_kib`.
+- Extended `DaemonStatus` IPC telemetry with `version`, `uptime_secs`, `desktop_session`, `desktop_environment`, `display`, `custom_action_count`, `rss_kib`, `graphical_ready`, `compositor_active`, `translucent_overlay`, and `monitor_count`.
+
+### Fixed
+- **Login Autostart Rendering & Dynamic Compositor Recovery (`ADR-026`):**
+  - Fixed radial wheel visual distortion after Linux Mint Cinnamon login autostart when `radivine.service` starts before Muffin (`cinnamon --replace`) claims `_NET_WM_CM_S0` or before `csd-xsettings`/`csd-xrandr` finish applying DPI and monitor geometry.
+  - Subscribed the X11 platform adapter to `XfixesSelectionNotify` on `_NET_WM_CM_S0` and `_XSETTINGS_S0` and re-verified compositor ownership and display settings inside `prepare_overlay()` before every wheel summon, dynamically switching to 32-bit ARGB translucency and resetting `ShapeBounding` without requiring a daemon restart.
+  - Hardened `radivine.service` with `After=default.target graphical-session-pre.target dbus.socket`, `StartLimitIntervalSec=0`, and `Environment=RADIVINE_SYSTEMD_SERVICE=1`, plus bounded login X11 connection retry and initial compositor wait.
+  - Restricted no-compositor `ShapeBounding` fallback strictly to visible wheel disks and caption boxes (excluding invisible pointer hit-slop corridors) and updated `ShapeBounding` on `HoverChanged`, `SubmenuOpened`, and `SubmenuClosed`.
 
 ---
 
