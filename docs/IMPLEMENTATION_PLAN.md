@@ -1,7 +1,7 @@
 # Radivine — Implementation Plan
 
-Status: **M0, M1a, M1b, M2, M3, M4, M5 Complete — Ready for M6 (pending authorization)** · Last updated: 2026-10-23
-Order of work: **M0 (Done) → M1a/M1b (Done) → M2 (Done) → M3 (Done) → M4 (Done) → M5 (Done) → M6** (M1 may start in parallel with M0 because it is platform-independent).
+Status: **M0, M1a, M1b, M2, M3, M4, M5, M6 Complete — v0.1.0 Release Prepared** · Last updated: 2026-10-23
+Order of work: **M0 (Done) → M1a/M1b (Done) → M2 (Done) → M3 (Done) → M4 (Done) → M5 (Done) → M6 (Done)** (M1 may start in parallel with M0 because it is platform-independent).
 
 ---
 
@@ -286,7 +286,7 @@ Relative sizes (rough, for sequencing only — not estimates of calendar time): 
 - AC-6.4 Fuzzers run 10 min each without findings.
 - AC-6.5 README lets a new user install and use Radivine without reading `docs/`.
 
-**Completion definition:** v0.1.0 tag candidate.
+**Completion definition:** v0.1.0 tag candidate (**COMPLETED 2026-10-23** — see [`docs/test-reports/M6.md`](file:///home/marwanmohamed/Documents/work/rust/radivine/docs/test-reports/M6.md), [`docs/BENCHMARKS.md`](file:///home/marwanmohamed/Documents/work/rust/radivine/docs/BENCHMARKS.md), and [`docs/RELEASE_NOTES_v0.1.0.md`](file:///home/marwanmohamed/Documents/work/rust/radivine/docs/RELEASE_NOTES_v0.1.0.md)).
 
 ---
 

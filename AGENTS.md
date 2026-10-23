@@ -101,5 +101,5 @@ At the end of each milestone:
 - Do not implement functionality belonging to future milestones unless the user explicitly approves expanding the scope.
 
 ### 3.3 Current Project State
-- Milestones M0, M1a, M1b, M2, M3, M4, and M5 are complete.
-- **Do not begin M6** without explicit authorization from the user.
+- Milestones M0, M1a, M1b, M2, M3, M4, M5, and M6 are complete (`v0.1.0` prepared).
+- **Do not begin any milestone beyond M6** without explicit authorization from the user.
