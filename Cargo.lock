@@ -2519,7 +2519,7 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "radivine"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "calloop 0.14.5",
@@ -2542,7 +2542,7 @@ dependencies = [
 
 [[package]]
 name = "radivine-actions"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "radivine-core",
  "serde",
@@ -2552,8 +2552,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "radivine-control"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "eframe",
+ "egui",
+ "radivine",
+ "radivine-actions",
+ "radivine-core",
+ "radivine-platform",
+ "serde",
+ "serde_json",
+ "tiny-skia",
+ "toml",
+ "toml_edit 0.22.27",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "radivine-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "mime_guess",
  "percent-encoding",
@@ -2565,7 +2586,7 @@ dependencies = [
 
 [[package]]
 name = "radivine-platform"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rustix 1.1.5",
  "smallvec",
@@ -2576,7 +2597,7 @@ dependencies = [
 
 [[package]]
 name = "radivine-render"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cosmic-text",
  "criterion",
@@ -2589,7 +2610,7 @@ dependencies = [
 
 [[package]]
 name = "radivine-viewer"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -2608,7 +2629,7 @@ dependencies = [
 
 [[package]]
 name = "radivine-wheel"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "criterion",
  "proptest",
@@ -4051,7 +4072,7 @@ dependencies = [
 
 [[package]]
 name = "wheel-sandbox"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cosmic-text",
  "radivine-render",

@@ -8,6 +8,7 @@ members = [
     "crates/radivine-platform",
     "apps/radivine",
     "apps/radivine-viewer",
+    "apps/radivine-control",
     "tools/wheel-sandbox",
 ]
 exclude = [
