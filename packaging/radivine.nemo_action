@@ -1,0 +1,9 @@
+[Nemo Action]
+Active=true
+Name=Open in Radivine
+Comment=Summon the Radivine radial action wheel for the selected items
+Exec=radivine invoke %F
+Icon-Name=radivine
+Selection=notnone
+Extensions=any;
+Quote=double

@@ -1,0 +1,16 @@
+radivine (0.1.0) noble; urgency=medium
+
+  * Initial public release of Radivine v0.1.0 ("Branch into action.").
+  * Hierarchical radial wheel engine (radivine-wheel) with 1-to-3-level
+    branching navigation, intent triangles, and viewport-aware placement.
+  * Software RGBA8 renderer (radivine-render) with premultiplied alpha,
+    Inter typography, Lucide icons, and damage-clipped MIT-SHM uploads.
+  * Native X11 drag-and-drop (Shift mid-drag) and Invoke mode
+    integration for Linux Mint Cinnamon and Nemo (radivine-platform).
+  * Context-aware action engine (radivine-core, radivine-actions) with
+    background enrichment, multi-target X11 clipboard service, D-Bus
+    properties, and user-defined shell-free custom actions.
+  * Separate read-only file preview application (radivine-viewer)
+    supporting Full, Head, and Tail modes on multi-gigabyte files.
+
+ -- marawan6569 <marawan6569@gmail.com>  Fri, 23 Oct 2026 07:00:00 +0300

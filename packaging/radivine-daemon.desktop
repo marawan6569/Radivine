@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Radivine Daemon
+GenericName=Radial Action Wheel Daemon
+Comment=Start the Radivine background daemon on desktop login (opt-in)
+Exec=radivine daemon
+TryExec=radivine
+Icon=radivine
+Terminal=false
+Categories=Utility;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true
+OnlyShowIn=X-Cinnamon;GNOME;MATE;XFCE;KDE;

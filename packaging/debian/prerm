@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "remove" ] || [ "$1" = "deconfigure" ]; then
+    if command -v radivine >/dev/null 2>&1; then
+        for sock in /run/user/*/radivine.sock; do
+            if [ -S "$sock" ]; then
+                radivine --socket "$sock" quit >/dev/null 2>&1 || true
+            fi
+        done
+    fi
+fi
+
+exit 0

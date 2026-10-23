@@ -1,0 +1,54 @@
+# Radivine Configuration (`~/.config/radivine/config.toml`)
+# Copy this file to `~/.config/radivine/config.toml` and run `radivine reload`.
+
+[wheel]
+# Root wheel inner and outer radii in logical pixels (20.0..=500.0)
+root_inner_radius = 42.0
+root_outer_radius = 128.0
+
+# Child submenu wheel inner and outer radii in logical pixels (20.0..=500.0)
+child_inner_radius = 34.0
+child_outer_radius = 104.0
+
+# Angular gap between adjacent segments in degrees (0.0..=15.0)
+segment_gap_deg = 2.0
+
+# Minimum radial distance between parent and child wheel centers in logical pixels
+child_offset = 172.0
+
+# Hover dwell time before a submenu opens automatically in milliseconds (50..=2000)
+dwell_ms = 140
+
+# Intent-triangle diagonal travel grace period in milliseconds (50..=1000)
+corridor_grace_ms = 220
+
+# Center-hub dwell time before closing open child submenus in milliseconds (50..=2000)
+hub_close_ms = 160
+
+# Minimum pointer movement from summon point before hover/drop engages (0.0..=64.0)
+activation_slop_px = 6.0
+
+[appearance]
+# Color theme: "dark", "light", or "auto" (queries GTK_THEME / gtk-3.0/settings.ini)
+theme = "dark"
+
+# UI scale factor: "auto" (queries Xft.dpi) or a numeric factor in 0.5..=4.0 (e.g. 1.25)
+scale = "auto"
+
+# Disable emerge/collapse animations ("true", "false", or omit to follow desktop Net/EnableAnimations)
+# reduced_motion = false
+
+[input]
+# Trigger key pressed during an active file drag: "shift"
+trigger_modifier = "shift"
+
+# Safety default: false (capture-all overlay during active sessions so releasing outside
+# the wheel cancels cleanly instead of dropping files into underlying windows; ADR-0001).
+passthrough = false
+
+[preview]
+# Default line count for `File Preview -> Head` (1..=10000)
+head_lines = 50
+
+# Default line count for `File Preview -> Tail` (1..=10000)
+tail_lines = 50

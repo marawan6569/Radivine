@@ -1,0 +1,37 @@
+# Radivine Custom Actions (`~/.config/radivine/actions.toml`)
+# Copy this file to `~/.config/radivine/actions.toml` and run `radivine reload`.
+#
+# Security Invariants:
+# - Commands are executed directly via `execve` without a shell (`sh -c` is rejected).
+# - `exec[0]` must be an absolute path (e.g. `/usr/bin/sha256sum`).
+# - Placeholders (`{path}`, `{paths}`, `{uri}`, `{uris}`, `{dir}`, `{name}`) must occupy
+#   an entire argument token (partial strings like `"--file={path}"` are rejected).
+# - `{path}` and `{uri}` require either `per_item = true` or `when.count = "1"`.
+
+# Optional top-level menu customization:
+# [menu]
+# order = ["radivine.preview", "radivine.copy", "radivine.properties", "radivine.custom"]
+# hide = []
+
+[[action]]
+id = "custom.open_terminal_here"
+label = "Open Terminal"
+icon = "lucide:terminal"
+description = "Open terminal in the file's parent folder"
+exec = ["/usr/bin/x-terminal-emulator", "--working-directory", "{dir}"]
+per_item = false
+wait = false
+notify = "on-error"
+when = { count = "1" }
+
+[[action]]
+id = "custom.sha256_notify"
+label = "SHA-256 Digest"
+icon = "lucide:code"
+description = "Calculate SHA-256 checksum for selected text/binary files"
+exec = ["/usr/bin/sha256sum", "{paths}"]
+per_item = false
+wait = true
+timeout_ms = 10000
+notify = "always"
+when = { count = "1..=16" }

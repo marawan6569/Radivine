@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Radivine
+GenericName=Radial Action Wheel
+Comment=A fast, extensible, context-aware radial action wheel for your desktop
+Exec=radivine daemon
+TryExec=radivine
+Icon=radivine
+Terminal=false
+Categories=Utility;FileTools;
+Keywords=radial;wheel;menu;actions;drag;drop;nemo;preview;
+StartupNotify=false
