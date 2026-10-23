@@ -173,10 +173,14 @@ pub struct ControlCenterApp {
     actions_path: PathBuf,
     config_disk_snapshot: DiskFileSnapshot,
     actions_disk_snapshot: DiskFileSnapshot,
-    saved_config: AppConfig,
-    draft_config: AppConfig,
-    saved_actions: EditableActionsDoc,
-    draft_actions: EditableActionsDoc,
+    /// Last saved configuration loaded from or written to `config.toml`.
+    pub saved_config: AppConfig,
+    /// In-memory editable configuration draft.
+    pub draft_config: AppConfig,
+    /// Last saved custom actions loaded from or written to `actions.toml`.
+    pub saved_actions: EditableActionsDoc,
+    /// In-memory editable custom actions draft.
+    pub draft_actions: EditableActionsDoc,
     actions_load_warnings: Vec<String>,
     config_conflict_pending: bool,
     actions_conflict_pending: bool,
@@ -578,13 +582,13 @@ impl ControlCenterApp {
             self.fonts_installed = true;
         }
         if self.app_icon_tex.is_none()
-            && let Some(img) = decode_png_to_color_image(EMBEDDED_APP_ICON_PNG)
+            && let Some(img) = decode_png_to_color_image(EMBEDDED_APP_ICON_PNG, 128)
         {
             self.app_icon_tex =
                 Some(ctx.load_texture("radivine-app-icon", img, TextureOptions::LINEAR));
         }
         if self.logo_horiz_tex.is_none()
-            && let Some(img) = decode_png_to_color_image(EMBEDDED_LOGO_HORIZONTAL_PNG)
+            && let Some(img) = decode_png_to_color_image(EMBEDDED_LOGO_HORIZONTAL_PNG, 380)
         {
             self.logo_horiz_tex =
                 Some(ctx.load_texture("radivine-logo-horiz", img, TextureOptions::LINEAR));
@@ -616,10 +620,15 @@ impl ControlCenterApp {
         visuals.override_text_color = Some(pal.fg_primary);
         visuals.widgets.noninteractive.bg_fill = pal.bg_card;
         visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0, pal.border);
+        visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0, pal.fg_primary);
         visuals.widgets.inactive.bg_fill = pal.bg_elevated;
         visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, pal.border);
+        visuals.widgets.inactive.fg_stroke = Stroke::new(1.0, pal.fg_primary);
         visuals.widgets.hovered.bg_fill = pal.accent_bg;
         visuals.widgets.hovered.bg_stroke = Stroke::new(1.5, pal.leaf_green);
+        visuals.widgets.hovered.fg_stroke = Stroke::new(1.0, pal.fg_primary);
+        visuals.widgets.open.bg_fill = pal.bg_elevated;
+        visuals.widgets.open.fg_stroke = Stroke::new(1.0, pal.fg_primary);
         visuals.widgets.active.bg_fill = pal.leaf_green;
         visuals.widgets.active.fg_stroke = Stroke::new(1.5, pal.fg_on_accent);
         visuals.selection.bg_fill = pal.leaf_green;
@@ -1065,7 +1074,7 @@ impl ControlCenterApp {
             let d_opt = self.service_snapshot.daemon.as_ref();
             egui::Grid::new("dashboard_telemetry_grid")
                 .num_columns(4)
-                .spacing([24.0, 10.0])
+                .spacing([16.0, 9.0])
                 .striped(false)
                 .show(ui, |ui| {
                     kv_cell(
@@ -1222,7 +1231,7 @@ impl ControlCenterApp {
                 ui.add_space(4.0);
             }
 
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 let mut login_enabled = self.service_snapshot.autostart.enabled;
                 if ui
                     .checkbox(
@@ -1235,15 +1244,13 @@ impl ControlCenterApp {
                         .worker_tx
                         .send(WorkerCommand::SetAutostart(login_enabled));
                 }
-
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if ui.button("Open Diagnostics & Logs →").clicked() {
-                        self.set_page(ControlPage::Diagnostics);
-                    }
-                    if ui.button("Manage Custom Actions →").clicked() {
-                        self.set_page(ControlPage::Actions);
-                    }
-                });
+                ui.add_space(16.0);
+                if ui.button("Manage Custom Actions →").clicked() {
+                    self.set_page(ControlPage::Actions);
+                }
+                if ui.button("Open Diagnostics & Logs →").clicked() {
+                    self.set_page(ControlPage::Diagnostics);
+                }
             });
         });
     }
@@ -1297,7 +1304,11 @@ impl ControlCenterApp {
         // 2. Appearance Card
         section_card(ui, pal, "Appearance & Scaling", |ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Color Theme:").strong());
+                ui.label(
+                    RichText::new("Color Theme:")
+                        .strong()
+                        .color(pal.fg_secondary),
+                );
                 for (code, label) in [
                     ("dark", "Dark (Vine & Leaf)"),
                     ("light", "Light (Mint Porcelain)"),
@@ -1316,7 +1327,11 @@ impl ControlCenterApp {
 
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new("UI Scale Factor:").strong());
+                ui.label(
+                    RichText::new("UI Scale Factor:")
+                        .strong()
+                        .color(pal.fg_secondary),
+                );
                 let is_auto = matches!(self.draft_config.appearance.scale, ScaleSetting::Auto);
                 if ui.selectable_label(is_auto, "Auto (Xft.dpi)").clicked() {
                     self.draft_config.appearance.scale = ScaleSetting::Auto;
@@ -1595,7 +1610,11 @@ impl ControlCenterApp {
 
         section_card(ui, pal, "Mid-Drag Trigger & Input Safety", |ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Drag Trigger Modifier Key:").strong());
+                ui.label(
+                    RichText::new("Drag Trigger Modifier Key:")
+                        .strong()
+                        .color(pal.fg_secondary),
+                );
                 for (code, label) in [
                     ("shift", "Shift (Recommended)"),
                     ("ctrl", "Ctrl"),
@@ -2122,7 +2141,7 @@ impl ControlCenterApp {
     ) {
         // 1. Compatibility & Desktop Environment Summary
         section_card(ui, pal, "Desktop Compatibility & Doctor Summary", |ui| {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 if ui.button("Run Doctor & Refresh Logs").clicked() {
                     let _ = self.worker_tx.send(WorkerCommand::RefreshDiagnostics);
                 }
@@ -2189,7 +2208,9 @@ impl ControlCenterApp {
                 }
                 ui.add_space(8.0);
                 egui::CollapsingHeader::new(
-                    RichText::new("X11 Doctor Probe Output (radivine doctor)").strong(),
+                    RichText::new("X11 Doctor Probe Output (radivine doctor)")
+                        .strong()
+                        .color(pal.fg_primary),
                 )
                 .default_open(true)
                 .show(ui, |ui| {
@@ -2344,6 +2365,7 @@ impl ControlCenterApp {
                 .spacing([24.0, 8.0])
                 .show(ui, |ui| {
                     kv_cell(ui, pal, "Open-Source License", "MIT OR Apache-2.0");
+                    ui.end_row();
                     kv_cell(
                         ui,
                         pal,
@@ -2357,6 +2379,7 @@ impl ControlCenterApp {
                         "Components",
                         "radivine (daemon/CLI), radivine-control (Control Center), radivine-viewer (Preview)",
                     );
+                    ui.end_row();
                     kv_cell(
                         ui,
                         pal,
@@ -2370,6 +2393,8 @@ impl ControlCenterApp {
 
     /// Populates realistic running-daemon telemetry and diagnostics for headless screenshot export.
     pub fn load_demo_showcase_state(&mut self) {
+        self.config_path = PathBuf::from("~/.config/radivine/config.toml");
+        self.actions_path = PathBuf::from("~/.config/radivine/actions.toml");
         self.service_snapshot = ServiceSnapshot {
             health: DaemonHealthState::Running,
             daemon: Some(DaemonStatus {
@@ -2414,7 +2439,7 @@ impl ControlCenterApp {
                 main_pid: 4821,
                 result: "success".to_string(),
             },
-            management_mode: "Systemd User Service (radivine.service)".to_string(),
+            management_mode: "systemd --user (radivine.service)".to_string(),
             autostart: AutostartStatus {
                 enabled: true,
                 method_label: "Systemd User Service (radivine.service)".to_string(),
@@ -2549,6 +2574,12 @@ pub fn export_all_page_screenshots(
         app.set_page(page);
         let target = out_dir.join(filename);
         rasterizer.render_to_png(&ctx, size, 1.0, &target, |ui| {
+            app.drain_worker_events();
+            app.load_demo_showcase_state();
+            if page == ControlPage::Actions && !app.draft_actions.actions.is_empty() {
+                let first = app.draft_actions.actions[0].clone();
+                app.open_action_editor(ActionEditorMode::Edit(0), first);
+            }
             app.render_frame(ui);
         })?;
         written.push(target);
@@ -2601,13 +2632,15 @@ fn section_card<F>(ui: &mut egui::Ui, pal: &BrandPalette, title: &str, body: F)
 where
     F: FnOnce(&mut egui::Ui),
 {
+    let inner_w = (ui.available_width() - 36.0).max(200.0);
     egui::Frame::NONE
         .fill(pal.bg_card)
         .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::symmetric(16, 14))
         .stroke(Stroke::new(1.0, pal.border))
         .show(ui, |ui| {
-            ui.set_width(ui.available_width());
+            ui.set_min_width(inner_w);
+            ui.set_max_width(inner_w);
             ui.label(
                 RichText::new(title)
                     .font(FontId::new(15.0, FontFamily::Proportional))
@@ -2656,8 +2689,34 @@ fn format_uptime(secs: u64) -> String {
     }
 }
 
-fn decode_png_to_color_image(png_bytes: &[u8]) -> Option<ColorImage> {
-    let pm = tiny_skia::Pixmap::decode_png(png_bytes).ok()?;
+fn decode_scaled_pixmap(png_bytes: &[u8], max_dim: u32) -> Option<tiny_skia::Pixmap> {
+    let src = tiny_skia::Pixmap::decode_png(png_bytes).ok()?;
+    let sw = src.width();
+    let sh = src.height();
+    if sw <= max_dim && sh <= max_dim {
+        return Some(src);
+    }
+    let scale = (max_dim as f32 / sw.max(sh) as f32).clamp(0.05, 1.0);
+    let dw = ((sw as f32 * scale).round() as u32).max(1);
+    let dh = ((sh as f32 * scale).round() as u32).max(1);
+    let mut dst = tiny_skia::Pixmap::new(dw, dh)?;
+    let paint = tiny_skia::PixmapPaint {
+        quality: tiny_skia::FilterQuality::Bicubic,
+        ..Default::default()
+    };
+    dst.draw_pixmap(
+        0,
+        0,
+        src.as_ref(),
+        &paint,
+        tiny_skia::Transform::from_scale(dw as f32 / sw as f32, dh as f32 / sh as f32),
+        None,
+    );
+    Some(dst)
+}
+
+fn decode_png_to_color_image(png_bytes: &[u8], max_dim: u32) -> Option<ColorImage> {
+    let pm = decode_scaled_pixmap(png_bytes, max_dim)?;
     let w = pm.width() as usize;
     let h = pm.height() as usize;
     let data = pm.data();
@@ -2674,7 +2733,7 @@ fn decode_png_to_color_image(png_bytes: &[u8]) -> Option<ColorImage> {
 }
 
 fn decode_png_to_icon_data(png_bytes: &[u8]) -> Option<egui::IconData> {
-    let pm = tiny_skia::Pixmap::decode_png(png_bytes).ok()?;
+    let pm = decode_scaled_pixmap(png_bytes, 128)?;
     let width = pm.width();
     let height = pm.height();
     let mut rgba = Vec::with_capacity(pm.data().len());

@@ -175,6 +175,8 @@ pub fn redact_sensitive_text(input: &str) -> String {
     out = redact_run_user_uid(&out);
     // Redact file:///... URIs to avoid leaking personal filenames
     out = redact_file_uris(&out);
+    // Redact any remaining /home/<username> path prefixes
+    out = redact_home_user_paths(&out);
     out
 }
 
@@ -402,6 +404,29 @@ fn redact_file_uris(s: &str) -> String {
             .unwrap_or(after.len());
         out.push_str("file://<REDACTED_PATH>");
         rest = &after[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
+fn redact_home_user_paths(s: &str) -> String {
+    let needle = "/home/";
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(pos) = rest.find(needle) {
+        out.push_str(&rest[..pos]);
+        let after = &rest[pos + needle.len()..];
+        let user_len = after
+            .bytes()
+            .take_while(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+            .count();
+        if user_len > 0 {
+            out.push('~');
+            rest = &after[user_len..];
+        } else {
+            out.push_str(needle);
+            rest = after;
+        }
     }
     out.push_str(rest);
     out

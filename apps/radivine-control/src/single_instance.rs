@@ -110,7 +110,6 @@ fn notify_existing_instance(
     requested_page: Option<ControlPage>,
 ) -> anyhow::Result<()> {
     let mut stream = UnixStream::connect(sock_path)?;
-    stream.set_read_timeout(Some(Duration::from_secs(1)))?;
     stream.set_write_timeout(Some(Duration::from_secs(1)))?;
 
     let cmd = match requested_page {
@@ -119,13 +118,7 @@ fn notify_existing_instance(
     };
     stream.write_all(cmd.as_bytes())?;
     stream.flush()?;
-
-    let mut reader = BufReader::new(stream);
-    let mut reply = String::new();
-    reader.read_line(&mut reply)?;
-    if reply.trim() != "ok" {
-        anyhow::bail!("unexpected response from control instance");
-    }
+    let _ = stream.shutdown(std::net::Shutdown::Write);
     Ok(())
 }
 

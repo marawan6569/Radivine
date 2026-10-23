@@ -233,28 +233,30 @@ fn run_daemon(config_path: Option<PathBuf>, sock_path: &Path) -> anyhow::Result<
         )
         .map_err(|e| anyhow::anyhow!("failed to register ping source with calloop: {e}"))?;
 
-    // Register X11 socket FD
-    handle
-        .insert_source(
-            Generic::new(PollFdWrapper(x11_fd), Interest::READ, Mode::Level),
-            |_readiness, _metadata, state: &mut DaemonLoopState| {
-                let mut events = Vec::new();
-                if let Err(err) = state
-                    .controller
-                    .platform_mut()
-                    .dispatch_pending(&mut events)
-                {
-                    tracing::error!("X11 dispatch error: {err}");
-                    state.x11_error = Some(err.to_string());
-                    state.should_quit = true;
-                }
-                if !events.is_empty() {
-                    state.controller.handle_platform_events(events);
-                }
-                Ok(PostAction::Continue)
-            },
-        )
-        .map_err(|e| anyhow::anyhow!("failed to register X11 fd with calloop: {e}"))?;
+    // Register X11 socket FD when backed by a live X11 connection (`x11_fd >= 0`)
+    if x11_fd >= 0 {
+        handle
+            .insert_source(
+                Generic::new(PollFdWrapper(x11_fd), Interest::READ, Mode::Level),
+                |_readiness, _metadata, state: &mut DaemonLoopState| {
+                    let mut events = Vec::new();
+                    if let Err(err) = state
+                        .controller
+                        .platform_mut()
+                        .dispatch_pending(&mut events)
+                    {
+                        tracing::error!("X11 dispatch error: {err}");
+                        state.x11_error = Some(err.to_string());
+                        state.should_quit = true;
+                    }
+                    if !events.is_empty() {
+                        state.controller.handle_platform_events(events);
+                    }
+                    Ok(PostAction::Continue)
+                },
+            )
+            .map_err(|e| anyhow::anyhow!("failed to register X11 fd with calloop: {e}"))?;
+    }
 
     // Register Unix domain socket IPC listener
     handle

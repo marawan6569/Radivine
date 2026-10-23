@@ -463,6 +463,128 @@ pub trait Platform {
     fn on_deadline(&mut self, now: Instant, out: &mut Vec<PlatformEvent>);
 }
 
+/// Headless non-X11 platform backend used only when `RADIVINE_HEADLESS_DAEMON=1` is explicitly set
+/// for isolated IPC/lifecycle testing in environments without an X11 server (`DISPLAY=""`).
+struct HeadlessPlatform {
+    caps: Capabilities,
+    monitors: Vec<Monitor>,
+    scale: f32,
+}
+
+impl HeadlessPlatform {
+    fn new(scale: f32) -> Self {
+        Self {
+            caps: Capabilities {
+                drag_session: Support::No("headless test daemon"),
+                invoke_at_pointer: Support::Yes,
+                translucency: Support::Yes,
+                input_passthrough: Support::Yes,
+                keyboard_in_drag: Support::No("headless test daemon"),
+                clipboard_files: Support::No("headless test daemon"),
+            },
+            monitors: vec![Monitor {
+                id: 0,
+                name: "HEADLESS-0".into(),
+                rect: RectPx::new(0, 0, 1920, 1080),
+                refresh_mhz: 60_000,
+                primary: true,
+            }],
+            scale,
+        }
+    }
+}
+
+impl Platform for HeadlessPlatform {
+    fn name(&self) -> &'static str {
+        "headless"
+    }
+
+    fn capabilities(&self) -> &Capabilities {
+        &self.caps
+    }
+
+    #[cfg(unix)]
+    fn poll_fd(&self) -> std::os::fd::RawFd {
+        -1
+    }
+
+    fn dispatch_pending(&mut self, _out: &mut Vec<PlatformEvent>) -> Result<(), PlatformError> {
+        Ok(())
+    }
+
+    fn monitors(&self) -> &[Monitor] {
+        &self.monitors
+    }
+
+    fn scale(&self) -> f32 {
+        self.scale
+    }
+
+    fn reduced_motion(&self) -> Option<bool> {
+        Some(false)
+    }
+
+    fn pointer_position(&mut self) -> Result<PhysPoint, PlatformError> {
+        Ok(PhysPoint::new(960, 540))
+    }
+
+    fn overlay_window_id(&self) -> u32 {
+        0
+    }
+
+    fn prepare_overlay(&mut self, _at: PhysPoint) -> Result<OverlayInfo, PlatformError> {
+        Ok(OverlayInfo {
+            origin: PhysPoint::new(0, 0),
+            size: (1920, 1080),
+            monitor: self.monitors[0].clone(),
+            scale: self.scale,
+            translucent: true,
+        })
+    }
+
+    fn map_overlay(&mut self) -> Result<(), PlatformError> {
+        Ok(())
+    }
+
+    fn present(&mut self, _frame: FrameRef<'_>, _damage: &[RectPx]) -> Result<(), PlatformError> {
+        Ok(())
+    }
+
+    fn set_input_region(&mut self, _shapes: Option<&[ShapePx]>) -> Result<(), PlatformError> {
+        Ok(())
+    }
+
+    fn hide_overlay(&mut self) {}
+
+    fn release_buffers(&mut self) {}
+
+    fn dnd_reply(&mut self, _accept: bool) {}
+
+    fn request_payload(&mut self, _mime: &str) {}
+
+    fn dnd_finish(&mut self, _success: bool) {}
+
+    fn grab_input(&mut self) -> Result<(), PlatformError> {
+        Ok(())
+    }
+
+    fn ungrab_input(&mut self) {}
+
+    fn set_clipboard(&mut self, _content: ClipboardContent) -> Result<(), PlatformError> {
+        Ok(())
+    }
+
+    fn flush(&mut self) -> Result<(), PlatformError> {
+        Ok(())
+    }
+
+    fn next_deadline(&self) -> Option<Instant> {
+        None
+    }
+
+    fn on_deadline(&mut self, _now: Instant, _out: &mut Vec<PlatformEvent>) {}
+}
+
 /// Connects to the default platform backend using default [`X11Config`] (`PLATFORM_INTEGRATION.md` §7).
 pub fn connect_default() -> Result<Box<dyn Platform>, PlatformError> {
     connect_with_config(X11Config::default())
@@ -470,6 +592,11 @@ pub fn connect_default() -> Result<Box<dyn Platform>, PlatformError> {
 
 /// Connects to the platform backend with the provided [`X11Config`].
 pub fn connect_with_config(cfg: X11Config) -> Result<Box<dyn Platform>, PlatformError> {
+    if std::env::var("RADIVINE_HEADLESS_DAEMON")
+        .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+    {
+        return Ok(Box::new(HeadlessPlatform::new(1.0)));
+    }
     let plat = x11::X11Platform::connect(cfg)?;
     Ok(Box::new(plat))
 }

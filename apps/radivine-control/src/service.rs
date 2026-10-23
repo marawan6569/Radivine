@@ -727,6 +727,13 @@ impl ServiceController {
             .map_err(|e| format!("Failed to clone log file handle: {e}"))?;
 
         let mut cmd = Command::new(&self.paths.daemon_bin);
+        if std::env::var("DISPLAY")
+            .unwrap_or_default()
+            .trim()
+            .is_empty()
+        {
+            cmd.env("RADIVINE_HEADLESS_DAEMON", "1");
+        }
         if let Some(ref cfg) = self.paths.config_path {
             cmd.arg("--config").arg(cfg);
         }

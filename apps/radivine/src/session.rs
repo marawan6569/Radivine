@@ -398,7 +398,11 @@ impl SessionController {
                 match registry_from_actions_and_preview_config(&actions_cfg, &preview_settings) {
                     Ok(new_reg) => {
                         self.registry = Arc::new(new_reg);
-                        self.custom_action_count = actions_cfg.actions.len();
+                        self.custom_action_count = actions_cfg
+                            .actions
+                            .iter()
+                            .filter(|a| a.is_enabled())
+                            .count();
                         self.config_warnings.clone_from(&actions_cfg.warnings);
                         for warning in &actions_cfg.warnings {
                             tracing::warn!("{warning}");

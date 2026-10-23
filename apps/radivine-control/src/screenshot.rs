@@ -65,10 +65,11 @@ impl EguiSoftRasterizer {
                 ..Default::default()
             };
             ctx.set_pixels_per_point(pixels_per_point);
-            let output = ctx.run_ui(raw_input, |ui| {
+            let mut output = ctx.run_ui(raw_input, |ui| {
                 ui_fn(ui);
             });
             self.apply_textures_delta(&output.textures_delta);
+            output.textures_delta.clear();
             last_output = Some(output);
         }
 
