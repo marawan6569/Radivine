@@ -1,7 +1,7 @@
 # Radivine — Context & Action System
 
-Status: **Implemented in M4 (`radivine-core`, `radivine-actions`, `radivine`; viewer actions scheduled for M5)** · Last updated: 2026-10-22
-Crates: `radivine-core` (API, context, registry, dispatcher) and `radivine-actions` (built-ins).
+Status: **Implemented in M4–M5 (`radivine-core`, `radivine-actions`, `radivine`, `radivine-viewer`)** · Last updated: 2026-10-23
+Crates: `radivine-core` (API, context, registry, dispatcher), `radivine-actions` (built-ins), and `radivine-viewer` (preview application).
 
 ---
 

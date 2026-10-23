@@ -1,7 +1,7 @@
 # Radivine — Implementation Plan
 
-Status: **M0, M1a, M1b, M2, M3 Complete — Ready for M4** · Last updated: 2026-10-22
-Order of work: **M0 (Done) → M1a/M1b (Done) → M2 (Done) → M3 (Done) → M4 → M5 → M6** (M1 may start in parallel with M0 because it is platform-independent).
+Status: **M0, M1a, M1b, M2, M3, M4, M5 Complete — Ready for M6 (pending authorization)** · Last updated: 2026-10-23
+Order of work: **M0 (Done) → M1a/M1b (Done) → M2 (Done) → M3 (Done) → M4 (Done) → M5 (Done) → M6** (M1 may start in parallel with M0 because it is platform-independent).
 
 ---
 
@@ -259,7 +259,7 @@ Relative sizes (rough, for sequencing only — not estimates of calendar time): 
 
 **Testing requirements:** unit tests for head/tail/index/search on generated corpora; property test comparing tail implementation to a naive reference on random files; manual viewer checklist.
 
-**Completion definition:** ACs pass; viewer documented in README/user docs.
+**Completion definition:** ACs pass; viewer documented in README/user docs (**COMPLETED 2026-10-23** — see [`docs/test-reports/M5.md`](file:///home/marwanmohamed/Documents/work/rust/radivine/docs/test-reports/M5.md)).
 
 ---
 
