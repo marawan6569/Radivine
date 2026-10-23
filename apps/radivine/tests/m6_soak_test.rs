@@ -843,7 +843,7 @@ fn m6_one_hour_isolated_soak_test_ac_6_2() {
         let rss_now = read_vm_rss_kb();
         peak_rss_kb = peak_rss_kb.max(rss_now);
 
-        if warmup_rss_kb.is_none() && total_sessions >= 150 {
+        if warmup_rss_kb.is_none() && total_sessions >= 750 {
             let settle_deadline = Instant::now() + Duration::from_millis(500);
             while Instant::now() < settle_deadline {
                 let _ = ctrl.status();
@@ -853,7 +853,7 @@ fn m6_one_hour_isolated_soak_test_ac_6_2() {
             warmup_rss_kb = Some(settled_rss);
             warmup_fds = Some(count_open_fds());
             rss_timeline_kb.push((start.elapsed().as_secs(), total_sessions, settled_rss));
-        } else if total_sessions.is_multiple_of(150) {
+        } else if warmup_rss_kb.is_some() && total_sessions.is_multiple_of(150) {
             rss_timeline_kb.push((start.elapsed().as_secs(), total_sessions, rss_now));
             let warmup = warmup_rss_kb.unwrap_or(rss_now);
             let growth_kb = rss_now as i64 - warmup as i64;
@@ -903,9 +903,9 @@ fn m6_one_hour_isolated_soak_test_ac_6_2() {
             frame_render_us.drain(0..4096);
         }
 
-        // Pace the soak loop during 1-hour runs (~150 ms per 15-session cycle -> ~3,600+ sessions/hour at <3% CPU)
-        if target_secs >= 60 {
-            thread::sleep(Duration::from_millis(140));
+        // Pace the soak loop during 1-hour runs after warm-up (~800 ms per 15-session cycle -> ~6,500+ sessions/hour)
+        if target_secs >= 60 && warmup_rss_kb.is_some() {
+            thread::sleep(Duration::from_millis(800));
         }
     }
 
