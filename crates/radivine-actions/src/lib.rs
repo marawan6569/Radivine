@@ -14,8 +14,9 @@ use radivine_core::{
 };
 
 pub use builtins::{
-    CopyAction, PreviewPlaceholderAction, PropertiesAction, PropertiesBackend,
-    SessionDbusPropertiesBackend, evaluate_text_file_facts, is_known_non_text_mime,
+    CopyAction, PreviewAction, PreviewKind, PreviewPlaceholderAction, PreviewSettings,
+    PropertiesAction, PropertiesBackend, SessionDbusPropertiesBackend, evaluate_text_file_facts,
+    is_known_non_text_mime, resolve_viewer_binary,
 };
 pub use custom::{
     ActionsConfig, ActionsLoadError, ArgPlaceholder, ArgToken, CountRange, CustomAction,
@@ -78,31 +79,53 @@ pub fn register_builtins_with_config(
     registry: &mut ActionRegistry,
     config: &ActionsConfig,
 ) -> Result<(), RegistryError> {
-    // 1. Preview actions (M4 visibility + FileFacts enablement; M5 viewer placeholder on execution)
+    register_builtins_with_preview(registry, config, &PreviewSettings::default())
+}
+
+/// Registers all built-in actions with explicit [`PreviewSettings`] together with validated user custom
+/// actions and `[menu]` overrides from [`ActionsConfig`] (`ACTION_SYSTEM.md` §8–§10).
+pub fn register_builtins_with_preview(
+    registry: &mut ActionRegistry,
+    config: &ActionsConfig,
+    preview: &PreviewSettings,
+) -> Result<(), RegistryError> {
+    // 1. Real file preview actions (`radivine.preview.full`, `radivine.preview.head`, `radivine.preview.tail`)
+    let head_lines = preview.head_lines.max(1);
+    let tail_lines = preview.tail_lines.max(1);
+    let head_desc = format!("Preview first {head_lines} lines of file");
+    let tail_desc = format!("Preview last {tail_lines} lines of file");
+
     let preview_builtins = [
-        (
+        PreviewAction::with_settings(
             "radivine.preview.full",
             "Full Preview",
             "lucide:file-text",
             "Open full interactive document preview",
+            PreviewKind::Full,
+            50,
+            &preview.theme,
         ),
-        (
+        PreviewAction::with_settings(
             "radivine.preview.head",
             "Head",
             "lucide:arrow-up-to-line",
-            "Preview first 50 lines of file",
+            &head_desc,
+            PreviewKind::Head,
+            head_lines,
+            &preview.theme,
         ),
-        (
+        PreviewAction::with_settings(
             "radivine.preview.tail",
             "Tail",
             "lucide:arrow-down-to-line",
-            "Preview last 50 lines of file",
+            &tail_desc,
+            PreviewKind::Tail,
+            tail_lines,
+            &preview.theme,
         ),
     ];
-    for (id, label, icon, desc) in preview_builtins {
-        registry.register(Arc::new(PreviewPlaceholderAction::new(
-            id, label, icon, desc,
-        )))?;
+    for action in preview_builtins {
+        registry.register(Arc::new(action))?;
     }
 
     // 2. Real Copy and Properties actions
@@ -167,5 +190,15 @@ pub fn registry_from_actions_config(
 ) -> Result<ActionRegistry, RegistryError> {
     let mut reg = ActionRegistry::new();
     register_builtins_with_config(&mut reg, config)?;
+    Ok(reg)
+}
+
+/// Constructs a new [`ActionRegistry`] populated with built-ins, [`PreviewSettings`], and [`ActionsConfig`].
+pub fn registry_from_actions_and_preview_config(
+    config: &ActionsConfig,
+    preview: &PreviewSettings,
+) -> Result<ActionRegistry, RegistryError> {
+    let mut reg = ActionRegistry::new();
+    register_builtins_with_preview(&mut reg, config, preview)?;
     Ok(reg)
 }

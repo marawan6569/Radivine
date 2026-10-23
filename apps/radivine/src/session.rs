@@ -9,7 +9,9 @@ use std::time::{Duration, Instant};
 
 use smallvec::SmallVec;
 
-use radivine_actions::{call_desktop_notify, load_actions_file, registry_from_actions_config};
+use radivine_actions::{
+    call_desktop_notify, load_actions_file, registry_from_actions_and_preview_config,
+};
 use radivine_core::{
     ActionId, ActionIndex, ActionRegistry, BasicContext, ClipOp, ClipboardRequest, Context,
     Dispatcher, Effect, Enablement, EnrichEvent, Enricher, FileFacts, FileKind, InvocationMode,
@@ -321,29 +323,32 @@ impl SessionController {
     /// If `actions_path` is invalid or fails validation, logs and notifies the error with line
     /// information while preserving the previously active [`ActionRegistry`] (`AC-4.6`).
     pub fn load_actions_from_path(&mut self, actions_path: &Path) {
+        let preview_settings = self.config.to_preview_settings();
         match load_actions_file(actions_path) {
-            Ok(actions_cfg) => match registry_from_actions_config(&actions_cfg) {
-                Ok(new_reg) => {
-                    self.registry = Arc::new(new_reg);
-                    self.config_warnings.clone_from(&actions_cfg.warnings);
-                    for warning in &actions_cfg.warnings {
-                        tracing::warn!("{warning}");
-                        self.emit_notification("Actions configuration warning", warning);
+            Ok(actions_cfg) => {
+                match registry_from_actions_and_preview_config(&actions_cfg, &preview_settings) {
+                    Ok(new_reg) => {
+                        self.registry = Arc::new(new_reg);
+                        self.config_warnings.clone_from(&actions_cfg.warnings);
+                        for warning in &actions_cfg.warnings {
+                            tracing::warn!("{warning}");
+                            self.emit_notification("Actions configuration warning", warning);
+                        }
+                        tracing::info!(
+                            path = %actions_path.display(),
+                            custom_actions = actions_cfg.actions.len(),
+                            warnings = actions_cfg.warnings.len(),
+                            "loaded actions.toml"
+                        );
                     }
-                    tracing::info!(
-                        path = %actions_path.display(),
-                        custom_actions = actions_cfg.actions.len(),
-                        warnings = actions_cfg.warnings.len(),
-                        "loaded actions.toml"
-                    );
+                    Err(err) => {
+                        let msg = format!("{}: {err}", actions_path.display());
+                        tracing::warn!("{msg}");
+                        self.config_warnings = vec![msg.clone()];
+                        self.emit_notification("Invalid actions.toml", &msg);
+                    }
                 }
-                Err(err) => {
-                    let msg = format!("{}: {err}", actions_path.display());
-                    tracing::warn!("{msg}");
-                    self.config_warnings = vec![msg.clone()];
-                    self.emit_notification("Invalid actions.toml", &msg);
-                }
-            },
+            }
             Err(err) => {
                 let msg = err.to_string();
                 tracing::warn!("{msg}");

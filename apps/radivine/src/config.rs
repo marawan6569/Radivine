@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Deserializer};
 
+use radivine_actions::PreviewSettings;
 use radivine_platform::{OverlayWindowType, TriggerDetectionMode, TriggerModifier, X11Config};
 use radivine_render::Theme;
 use radivine_wheel::WheelConfig;
@@ -100,6 +101,8 @@ pub struct AppConfig {
     pub wheel: WheelSection,
     /// Theme, scale, and motion settings.
     pub appearance: AppearanceSection,
+    /// File preview line count settings (`[preview] head_lines`, `tail_lines`).
+    pub preview: PreviewSection,
     /// Input region and outside-release behavior.
     pub input: InputSection,
     /// X11 backend settings.
@@ -113,6 +116,7 @@ impl Default for AppConfig {
             trigger: TriggerSection::default(),
             wheel: WheelSection::default(),
             appearance: AppearanceSection::default(),
+            preview: PreviewSection::default(),
             input: InputSection::default(),
             x11: X11Section::default(),
         }
@@ -207,6 +211,25 @@ impl Default for AppearanceSection {
             scale: ScaleSetting::Auto,
             reduced_motion: ReducedMotionSetting::Auto,
             backdrop_dim: 0.0,
+        }
+    }
+}
+
+/// `[preview]` configuration section (`ARCHITECTURE.md` §7.4).
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct PreviewSection {
+    /// Number of lines displayed by `Head` preview (`default: 50`).
+    pub head_lines: usize,
+    /// Number of lines displayed by `Tail` preview (`default: 50`).
+    pub tail_lines: usize,
+}
+
+impl Default for PreviewSection {
+    fn default() -> Self {
+        Self {
+            head_lines: 50,
+            tail_lines: 50,
         }
     }
 }
@@ -364,6 +387,24 @@ impl AppConfig {
             self.appearance.scale = ScaleSetting::Auto;
         }
         self.appearance.backdrop_dim = self.appearance.backdrop_dim.clamp(0.0, 0.5);
+        if !(1..=10_000).contains(&self.preview.head_lines) {
+            tracing::warn!("preview.head_lines out of [1, 10000]; resetting to 50");
+            self.preview.head_lines = 50;
+        }
+        if !(1..=10_000).contains(&self.preview.tail_lines) {
+            tracing::warn!("preview.tail_lines out of [1, 10000]; resetting to 50");
+            self.preview.tail_lines = 50;
+        }
+    }
+
+    /// Builds [`PreviewSettings`] for built-in preview action registration.
+    #[must_use]
+    pub fn to_preview_settings(&self) -> PreviewSettings {
+        PreviewSettings {
+            head_lines: self.preview.head_lines,
+            tail_lines: self.preview.tail_lines,
+            theme: self.appearance.theme.clone(),
+        }
     }
 
     /// Resolves the effective scale factor given the platform's auto-detected scale (`Xft.dpi / 96.0`).

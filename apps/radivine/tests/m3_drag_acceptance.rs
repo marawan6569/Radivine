@@ -68,6 +68,7 @@ impl TestDaemon {
         let sock_path = temp_dir.join("radivine.sock");
 
         let child = Command::new(radivine_bin())
+            .env("RADIVINE_DRY_RUN_VIEWER", "1")
             .env("RADIVINE_DRY_RUN_PROPERTIES", "1")
             .env("RADIVINE_SUPPRESS_DESKTOP_NOTIFY", "1")
             .arg("--config")

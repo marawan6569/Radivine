@@ -1,11 +1,16 @@
 //! Built-in actions (`ACTION_SYSTEM.md` §8):
-//! - `PreviewPlaceholderAction` (`radivine.preview.full`, `radivine.preview.head`, `radivine.preview.tail`)
+//! - `PreviewAction` (`radivine.preview.full`, `radivine.preview.head`, `radivine.preview.tail`)
 //! - `CopyAction` (`radivine.copy`)
 //! - `PropertiesAction` (`radivine.properties`)
 
 use std::borrow::Cow;
-use std::path::PathBuf;
+use std::ffi::OsString;
+use std::io::Read;
+use std::os::unix::process::CommandExt;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::Arc;
+use std::thread;
 
 use radivine_core::{
     Action, ActionError, ActionId, ActionMeta, BasicContext, ClipOp, ClipboardRequest, Context,
@@ -115,19 +120,118 @@ pub fn evaluate_text_file_facts(facts: &FileFacts) -> Enablement {
     }
 }
 
-/// Milestone M4 context-aware preview action (`radivine.preview.full`, `radivine.preview.head`, `radivine.preview.tail`).
-///
-/// Implements full M4 visibility and asynchronous `FileFacts` enablement rules (`ACTION_SYSTEM.md` §8),
-/// while remaining a clearly identified M5 placeholder on execution (`IMPLEMENTATION_PLAN.md` §M4).
-#[derive(Clone, Debug)]
-pub struct PreviewPlaceholderAction {
-    meta: ActionMeta,
+/// Preview mode launched by [`PreviewAction`] (`ACTION_SYSTEM.md` §8.1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PreviewKind {
+    /// `radivine.preview.full` (`--mode full`).
+    Full,
+    /// `radivine.preview.head` (`--mode head --lines <N>`).
+    Head,
+    /// `radivine.preview.tail` (`--mode tail --lines <N>`).
+    Tail,
 }
 
-impl PreviewPlaceholderAction {
-    /// Creates a new [`PreviewPlaceholderAction`] with the given metadata.
+impl PreviewKind {
+    /// Returns the `--mode` CLI flag value for `radivine-viewer`.
+    #[must_use]
+    pub const fn mode_arg(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::Head => "head",
+            Self::Tail => "tail",
+        }
+    }
+}
+
+/// Preview behavior settings from `config.toml` (`[preview] head_lines`, `tail_lines`, and `[appearance] theme`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PreviewSettings {
+    /// Number of lines for `radivine.preview.head` (default: `50`).
+    pub head_lines: usize,
+    /// Number of lines for `radivine.preview.tail` (default: `50`).
+    pub tail_lines: usize,
+    /// Color theme passed to `radivine-viewer` (`"dark"`, `"light"`, or `"auto"`).
+    pub theme: String,
+}
+
+impl Default for PreviewSettings {
+    fn default() -> Self {
+        Self {
+            head_lines: 50,
+            tail_lines: 50,
+            theme: "dark".to_string(),
+        }
+    }
+}
+
+/// Resolves the path to the `radivine-viewer` executable (`ACTION_SYSTEM.md` §8.1):
+/// 1. `RADIVINE_VIEWER_BIN` environment variable override (if set and non-empty),
+/// 2. Sibling executable next to `current_exe()` (`current_exe().parent()/radivine-viewer`),
+/// 3. Parent directory of `current_exe().parent()` (`target/debug/radivine-viewer` when running under `target/debug/deps/`),
+/// 4. Fallback to `"radivine-viewer"` in `PATH`.
+#[must_use]
+pub fn resolve_viewer_binary() -> PathBuf {
+    if let Some(env_bin) = std::env::var_os("RADIVINE_VIEWER_BIN")
+        && !env_bin.is_empty()
+    {
+        return PathBuf::from(env_bin);
+    }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent()
+    {
+        let sibling = dir.join("radivine-viewer");
+        if sibling.is_file() {
+            return sibling;
+        }
+        if let Some(parent_dir) = dir.parent() {
+            let parent_sibling = parent_dir.join("radivine-viewer");
+            if parent_sibling.is_file() {
+                return parent_sibling;
+            }
+        }
+    }
+    PathBuf::from("radivine-viewer")
+}
+
+/// Real context-aware file preview action (`radivine.preview.full`, `radivine.preview.head`, `radivine.preview.tail`)
+/// (`ACTION_SYSTEM.md` §8 & §8.1).
+///
+/// Spawns `radivine-viewer` as a detached process with `--mode <full|head|tail>`, `--lines <N>`,
+/// `--theme <dark|light|auto>`, and `-- <path>`.
+#[derive(Clone, Debug)]
+pub struct PreviewAction {
+    meta: ActionMeta,
+    kind: PreviewKind,
+    lines: usize,
+    theme: String,
+}
+
+/// Backwards-compatible alias for [`PreviewAction`].
+pub type PreviewPlaceholderAction = PreviewAction;
+
+impl PreviewAction {
+    /// Creates a new [`PreviewAction`] with the given metadata and default settings (`50` lines, `"dark"` theme).
     #[must_use]
     pub fn new(id: &str, label: &str, icon: &str, description: &str) -> Self {
+        let kind = match id {
+            "radivine.preview.head" => PreviewKind::Head,
+            "radivine.preview.tail" => PreviewKind::Tail,
+            _ => PreviewKind::Full,
+        };
+        Self::with_settings(id, label, icon, description, kind, 50, "dark")
+    }
+
+    /// Creates a new [`PreviewAction`] with explicit [`PreviewKind`], line count, and theme.
+    #[must_use]
+    pub fn with_settings(
+        id: &str,
+        label: &str,
+        icon: &str,
+        description: &str,
+        kind: PreviewKind,
+        lines: usize,
+        theme: impl Into<String>,
+    ) -> Self {
         Self {
             meta: ActionMeta {
                 id: ActionId::from(id),
@@ -136,11 +240,49 @@ impl PreviewPlaceholderAction {
                 description: Some(description.to_string()),
                 kinds: &[ContextKind::Files],
             },
+            kind,
+            lines: lines.max(1),
+            theme: theme.into(),
         }
+    }
+
+    /// Returns the [`PreviewKind`] of this preview action.
+    #[must_use]
+    pub const fn kind(&self) -> PreviewKind {
+        self.kind
+    }
+
+    /// Returns the configured line count for `Head` or `Tail` mode.
+    #[must_use]
+    pub const fn lines(&self) -> usize {
+        self.lines
+    }
+
+    /// Builds the exact CLI argument vector passed to `radivine-viewer` for `path`.
+    #[must_use]
+    pub fn build_viewer_args(&self, path: &Path) -> Vec<OsString> {
+        let mut args = vec![
+            OsString::from("--mode"),
+            OsString::from(self.kind.mode_arg()),
+        ];
+        if matches!(self.kind, PreviewKind::Head | PreviewKind::Tail) {
+            args.push(OsString::from("--lines"));
+            args.push(OsString::from(self.lines.to_string()));
+        }
+        let normalized_theme = match self.theme.trim().to_ascii_lowercase().as_str() {
+            "light" => "light",
+            "auto" => "auto",
+            _ => "dark",
+        };
+        args.push(OsString::from("--theme"));
+        args.push(OsString::from(normalized_theme));
+        args.push(OsString::from("--"));
+        args.push(path.as_os_str().to_os_string());
+        args
     }
 }
 
-impl Action for PreviewPlaceholderAction {
+impl Action for PreviewAction {
     fn meta(&self) -> &ActionMeta {
         &self.meta
     }
@@ -173,15 +315,99 @@ impl Action for PreviewPlaceholderAction {
         if job.is_cancelled() {
             return Err(ActionError::Cancelled);
         }
-        let uris: Vec<&str> = ctx.basic.items.iter().map(|i| i.uri.as_str()).collect();
+        if ctx.basic.items.len() != 1 {
+            return Err(ActionError::NotApplicable(
+                "Select a single file to preview".to_string(),
+            ));
+        }
+        let Some(ref local_path) = ctx.basic.items[0].local_path else {
+            return Err(ActionError::NotApplicable(
+                "item is not a local file".to_string(),
+            ));
+        };
+        if let Some(ref facts_vec) = ctx.facts
+            && let Some(first_facts) = facts_vec.first()
+            && let Enablement::Disabled { reason } = evaluate_text_file_facts(first_facts)
+        {
+            return Err(ActionError::NotApplicable(reason.into_owned()));
+        }
+
+        if std::env::var("RADIVINE_DRY_RUN_VIEWER").ok().as_deref() == Some("1") {
+            tracing::info!(
+                action_id = %self.meta.id,
+                job_id = ?job.id(),
+                path = %local_path.display(),
+                "RADIVINE_DRY_RUN_VIEWER=1 set; skipping live radivine-viewer spawn"
+            );
+            return Ok(Outcome::Done);
+        }
+
+        let viewer_bin = resolve_viewer_binary();
+        let program_display = viewer_bin.display().to_string();
+        let args = self.build_viewer_args(local_path);
+
         tracing::info!(
             action_id = %self.meta.id,
             job_id = ?job.id(),
-            mode = ?ctx.basic.mode,
-            source_app = ?ctx.basic.source.app,
-            uris = ?uris,
-            "preview placeholder action selected (radivine-viewer is scheduled for M5)"
+            viewer = %program_display,
+            mode = self.kind.mode_arg(),
+            lines = self.lines,
+            path = %local_path.display(),
+            "spawning detached radivine-viewer process"
         );
+
+        let mut cmd = Command::new(&viewer_bin);
+        cmd.args(&args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .process_group(0);
+
+        let mut child = cmd.spawn().map_err(|source| ActionError::Spawn {
+            program: program_display.clone(),
+            source,
+        })?;
+
+        let action_id_str = self.meta.id.as_str().to_string();
+        let path_str = local_path.display().to_string();
+        let _ = thread::Builder::new()
+            .name("radivine-viewer-reap".to_string())
+            .spawn(move || {
+                let mut stderr_buf = String::new();
+                if let Some(mut err_pipe) = child.stderr.take() {
+                    let _ = err_pipe.read_to_string(&mut stderr_buf);
+                }
+                match child.wait() {
+                    Ok(status) if !status.success() => {
+                        tracing::warn!(
+                            action_id = %action_id_str,
+                            path = %path_str,
+                            status = %status,
+                            stderr = %stderr_buf.trim(),
+                            "radivine-viewer exited with non-zero status"
+                        );
+                    }
+                    Ok(_) => {
+                        if !stderr_buf.trim().is_empty() {
+                            tracing::debug!(
+                                action_id = %action_id_str,
+                                path = %path_str,
+                                stderr = %stderr_buf.trim(),
+                                "radivine-viewer stderr output"
+                            );
+                        }
+                    }
+                    Err(err) => {
+                        tracing::warn!(
+                            action_id = %action_id_str,
+                            path = %path_str,
+                            error = %err,
+                            "failed to wait on radivine-viewer child"
+                        );
+                    }
+                }
+            });
+
         Ok(Outcome::Done)
     }
 }

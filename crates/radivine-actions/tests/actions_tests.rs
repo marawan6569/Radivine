@@ -8,8 +8,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use radivine_actions::{
-    CopyAction, PreviewPlaceholderAction, PropertiesAction, PropertiesBackend,
-    SessionDbusPropertiesBackend, builtin_registry, parse_actions_toml,
+    ActionsConfig, CopyAction, PreviewAction, PreviewKind, PreviewPlaceholderAction,
+    PreviewSettings, PropertiesAction, PropertiesBackend, SessionDbusPropertiesBackend,
+    builtin_registry, parse_actions_toml, registry_from_actions_and_preview_config,
     registry_from_actions_config,
 };
 use radivine_core::{
@@ -463,4 +464,94 @@ require_text = true
     );
 
     let _ = std::fs::remove_dir_all(&tmp_dir);
+}
+
+#[test]
+fn test_preview_action_viewer_command_arguments_and_settings() {
+    let path = PathBuf::from("/tmp/My File 🚀.txt");
+
+    let full = PreviewAction::with_settings(
+        "radivine.preview.full",
+        "Full Preview",
+        "lucide:file-text",
+        "Open full interactive document preview",
+        PreviewKind::Full,
+        50,
+        "dark",
+    );
+    assert_eq!(
+        full.build_viewer_args(&path),
+        vec![
+            OsString::from("--mode"),
+            OsString::from("full"),
+            OsString::from("--theme"),
+            OsString::from("dark"),
+            OsString::from("--"),
+            OsString::from("/tmp/My File 🚀.txt"),
+        ]
+    );
+
+    let head = PreviewAction::with_settings(
+        "radivine.preview.head",
+        "Head",
+        "lucide:arrow-up-to-line",
+        "Preview first 25 lines of file",
+        PreviewKind::Head,
+        25,
+        "light",
+    );
+    assert_eq!(
+        head.build_viewer_args(&path),
+        vec![
+            OsString::from("--mode"),
+            OsString::from("head"),
+            OsString::from("--lines"),
+            OsString::from("25"),
+            OsString::from("--theme"),
+            OsString::from("light"),
+            OsString::from("--"),
+            OsString::from("/tmp/My File 🚀.txt"),
+        ]
+    );
+
+    let tail = PreviewAction::with_settings(
+        "radivine.preview.tail",
+        "Tail",
+        "lucide:arrow-down-to-line",
+        "Preview last 75 lines of file",
+        PreviewKind::Tail,
+        75,
+        "auto",
+    );
+    assert_eq!(
+        tail.build_viewer_args(&path),
+        vec![
+            OsString::from("--mode"),
+            OsString::from("tail"),
+            OsString::from("--lines"),
+            OsString::from("75"),
+            OsString::from("--theme"),
+            OsString::from("auto"),
+            OsString::from("--"),
+            OsString::from("/tmp/My File 🚀.txt"),
+        ]
+    );
+
+    let custom_preview = PreviewSettings {
+        head_lines: 30,
+        tail_lines: 60,
+        theme: "light".to_string(),
+    };
+    let reg = registry_from_actions_and_preview_config(&ActionsConfig::default(), &custom_preview)
+        .unwrap();
+    let head_act = reg.get(&ActionId::from("radivine.preview.head")).unwrap();
+    let tail_act = reg.get(&ActionId::from("radivine.preview.tail")).unwrap();
+    assert_eq!(
+        head_act.meta().description.as_deref(),
+        Some("Preview first 30 lines of file")
+    );
+    assert_eq!(
+        tail_act.meta().description.as_deref(),
+        Some("Preview last 60 lines of file")
+    );
 }
