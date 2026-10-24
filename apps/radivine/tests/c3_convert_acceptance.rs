@@ -54,15 +54,19 @@ fn ensure_worker_bin() -> PathBuf {
                 .expect("radivine bin parent")
                 .to_path_buf();
             let candidate = bin_dir.join("radivine-worker");
-            let status = Command::new("cargo")
-                .args([
-                    "build",
-                    "-q",
-                    "-p",
-                    "radivine-worker",
-                    "--bin",
-                    "radivine-worker",
-                ])
+            let mut cmd = Command::new("cargo");
+            cmd.args([
+                "build",
+                "-q",
+                "-p",
+                "radivine-worker",
+                "--bin",
+                "radivine-worker",
+            ]);
+            if cfg!(not(debug_assertions)) {
+                cmd.arg("--release");
+            }
+            let status = cmd
                 .status()
                 .expect("build radivine-worker binary for C3 tests");
             assert!(status.success(), "cargo build -p radivine-worker failed");
@@ -568,7 +572,11 @@ fn ac_c3_5_responsiveness_10k_visibility_and_summon_latency() {
         assert_eq!(d.as_deref(), Some("Convert 10000 images to WebP"));
     }
     vis_samples_us.sort_unstable();
+    let p50_10k_us = vis_samples_us[vis_samples_us.len() / 2];
     let p95_10k_us = vis_samples_us[(vis_samples_us.len() * 95) / 100];
+    eprintln!(
+        "[C3 PERF] 10,000-item Convert visibility+caption: p50 = {p50_10k_us} us, p95 = {p95_10k_us} us"
+    );
     assert!(
         p95_10k_us < 10_000,
         "10,000-item visibility + caption p95 = {p95_10k_us} us"
@@ -604,9 +612,14 @@ fn ac_c3_5_responsiveness_10k_visibility_and_summon_latency() {
     }
     txt_summon_us.sort_unstable();
     img_summon_us.sort_unstable();
+    let txt_p50 = txt_summon_us[txt_summon_us.len() / 2];
     let txt_p95 = txt_summon_us[(txt_summon_us.len() * 95) / 100];
+    let img_p50 = img_summon_us[img_summon_us.len() / 2];
     let img_p95 = img_summon_us[(img_summon_us.len() * 95) / 100];
     let delta_us = img_p95.saturating_sub(txt_p95);
+    eprintln!(
+        "[C3 PERF] Summon latency: text p50={txt_p50} us / p95={txt_p95} us | image p50={img_p50} us / p95={img_p95} us (delta p95={delta_us} us)"
+    );
     assert!(
         delta_us <= 2_000,
         "image summon p95 ({img_p95} us) exceeded text baseline ({txt_p95} us) by {delta_us} us"
@@ -707,7 +720,12 @@ fn ac_c3_6_and_c3_9_drag_and_invoke_wheel_quick_convert_and_mixed_batch_skips() 
 
     let t_drop = Instant::now();
     ctrl.handle_platform_events(vec![PlatformEvent::DndDrop]);
-    let drop_wall_ms = t_drop.elapsed().as_millis();
+    let drop_wall_us = t_drop.elapsed().as_micros() as u64;
+    let drop_wall_ms = drop_wall_us / 1_000;
+    eprintln!(
+        "[C3 PERF] Warm worker DndDrop -> job accepted wall time: {drop_wall_us} us ({:.2} ms)",
+        drop_wall_us as f64 / 1000.0
+    );
     assert!(
         drop_wall_ms < 50,
         "DndDrop + job submission took {drop_wall_ms} ms, must be < 50 ms with warm worker (AC-C3.6)"
@@ -1239,6 +1257,10 @@ fn ac_c3_10_and_c3_11_and_e8_non_utf8_invoke_cli_and_dependency_and_rss_budget()
 
     // 2. AC-C3.10: Daemon RSS & Dependency Graph Isolation check (`cargo tree`)
     if let Some(rss) = idle_rss_kib {
+        eprintln!(
+            "[C3 PERF] Headless daemon RSS with Convert actions registered: {rss} KiB ({:.2} MiB)",
+            rss as f64 / 1024.0
+        );
         assert!(
             rss < 50_000,
             "daemon RSS ({rss} KiB) must stay well within the < 50 MB budget"

@@ -209,6 +209,45 @@ impl WorkerRuntimePaths {
     }
 }
 
+#[derive(serde::Serialize)]
+struct SubmitRequestRef<'a, O: serde::Serialize + ?Sized> {
+    #[serde(rename = "type")]
+    req_type: &'static str,
+    v: u32,
+    request_id: &'a RequestId,
+    origin: Origin,
+    kind: &'a str,
+    items: &'a [WirePath],
+    options: &'a O,
+}
+
+#[derive(serde::Serialize)]
+struct PingRequestRef {
+    #[serde(rename = "type")]
+    req_type: &'static str,
+    v: u32,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum FastAckResponse {
+    Pong {
+        #[serde(default)]
+        #[allow(dead_code)]
+        v: u32,
+    },
+    Submitted {
+        job_id: JobId,
+        state: JobState,
+        #[serde(default)]
+        deduplicated: bool,
+    },
+    Error {
+        code: crate::protocol::WorkerErrorCode,
+        message: String,
+    },
+}
+
 /// On-demand launcher for `radivine-worker` (`JOB_SYSTEM_DESIGN.md` §2.2).
 #[derive(Debug, Default, Clone)]
 pub struct WorkerLauncher;
@@ -260,7 +299,7 @@ impl WorkerLauncher {
         let Ok(mut client) = JobsClient::connect_with_timeout(socket_path, timeout) else {
             return false;
         };
-        client.ping().is_ok()
+        client.ping_fast().is_ok()
     }
 
     fn launch_via_systemd(
@@ -425,12 +464,31 @@ impl JobsClient {
     pub fn connect_or_launch(paths: &WorkerRuntimePaths) -> Result<Self, ClientError> {
         if let Ok(mut client) =
             Self::connect_with_timeout(&paths.socket_path, Duration::from_secs(5))
-            && client.ping().is_ok()
+            && client.ping_fast().is_ok()
         {
             return Ok(client);
         }
         WorkerLauncher::ensure_running(paths)?;
         Self::connect(&paths.socket_path)
+    }
+
+    fn ping_fast(&mut self) -> Result<(), ClientError> {
+        let mut line = serde_json::to_string(&PingRequestRef {
+            req_type: "ping",
+            v: PROTOCOL_VERSION,
+        })?;
+        line.push('\n');
+        let raw_resp = self.send_and_read_once(line.as_bytes())?;
+        let resp: FastAckResponse = serde_json::from_str(&raw_resp)?;
+        match resp {
+            FastAckResponse::Pong { .. } => Ok(()),
+            FastAckResponse::Error { code, message } => {
+                Err(ClientError::WorkerError { code, message })
+            }
+            FastAckResponse::Submitted { .. } => {
+                Err(ClientError::UnexpectedResponse("submitted".to_string()))
+            }
+        }
     }
 
     fn send_and_read_once(&mut self, line_bytes: &[u8]) -> Result<String, ClientError> {
@@ -474,6 +532,55 @@ impl JobsClient {
         })
     }
 
+    /// Submits a new job to the worker with strongly-typed options without intermediate `Value` allocation.
+    pub fn submit_typed<O: serde::Serialize>(
+        &mut self,
+        request_id: RequestId,
+        origin: Origin,
+        kind: &str,
+        items: &[WirePath],
+        options: &O,
+    ) -> Result<(JobId, JobState, bool), ClientError> {
+        let req = SubmitRequestRef {
+            req_type: "submit",
+            v: PROTOCOL_VERSION,
+            request_id: &request_id,
+            origin,
+            kind,
+            items,
+            options,
+        };
+        let mut line = serde_json::to_string(&req)?;
+        line.push('\n');
+        let raw_resp = match self.send_and_read_once(line.as_bytes()) {
+            Ok(s) => s,
+            Err(
+                ClientError::Io(_)
+                | ClientError::Frame(FrameReadError::Eof | FrameReadError::Io(_)),
+            ) => {
+                let fresh = Self::connect_with_timeout(&self.socket_path, self.timeout)?;
+                self.reader = fresh.reader;
+                self.writer = fresh.writer;
+                self.send_and_read_once(line.as_bytes())?
+            }
+            Err(e) => return Err(e),
+        };
+        let resp: FastAckResponse = serde_json::from_str(&raw_resp)?;
+        match resp {
+            FastAckResponse::Submitted {
+                job_id,
+                state,
+                deduplicated,
+            } => Ok((job_id, state, deduplicated)),
+            FastAckResponse::Error { code, message } => {
+                Err(ClientError::WorkerError { code, message })
+            }
+            FastAckResponse::Pong { .. } => {
+                Err(ClientError::UnexpectedResponse("pong".to_string()))
+            }
+        }
+    }
+
     /// Submits a new job to the worker.
     pub fn submit(
         &mut self,
@@ -483,23 +590,8 @@ impl JobsClient {
         items: Vec<WirePath>,
         options: serde_json::Value,
     ) -> Result<(JobId, JobState, bool), ClientError> {
-        let resp = self.request(&WorkerRequest::Submit {
-            v: PROTOCOL_VERSION,
-            request_id,
-            origin,
-            kind: kind.into(),
-            items,
-            options,
-        })?;
-        match resp {
-            WorkerResponse::Submitted {
-                job_id,
-                state,
-                deduplicated,
-                ..
-            } => Ok((job_id, state, deduplicated)),
-            other => Err(ClientError::UnexpectedResponse(format!("{other:?}"))),
-        }
+        let kind_str = kind.into();
+        self.submit_typed(request_id, origin, &kind_str, &items, &options)
     }
 
     /// Requests cooperative cancellation of `job_id`.

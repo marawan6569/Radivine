@@ -116,6 +116,40 @@ impl ConvertAction {
     pub const fn target(&self) -> FormatId {
         self.target
     }
+
+    #[inline]
+    const fn fmt_idx(fmt: FormatId) -> usize {
+        match fmt {
+            FormatId::Png => 0,
+            FormatId::Jpeg => 1,
+            FormatId::WebP => 2,
+            _ => 3,
+        }
+    }
+
+    /// Precomputes `(is_input, is_routable_to_target)` for each of `[Png, Jpeg, WebP]` in `O(1)`
+    /// before scanning up to 10,000 items (`AC-C3.5`).
+    fn precompute_format_table(&self) -> ([bool; 4], [bool; 4]) {
+        let catalog = self.menu_ctx.catalog();
+        let inputs = catalog.inputs();
+        let mut is_input = [false; 4];
+        let mut is_routable = [false; 4];
+        for &fmt in FormatId::ALL {
+            let idx = Self::fmt_idx(fmt);
+            if inputs.contains(&fmt) {
+                is_input[idx] = true;
+                if fmt != self.target
+                    && !matches!(
+                        catalog.target_status(fmt, self.target),
+                        TargetStatus::Unsupported
+                    )
+                {
+                    is_routable[idx] = true;
+                }
+            }
+        }
+        (is_input, is_routable)
+    }
 }
 
 impl Action for ConvertAction {
@@ -131,24 +165,14 @@ impl Action for ConvertAction {
         if ctx.kind != ContextKind::Files || ctx.items.is_empty() {
             return false;
         }
-        let catalog = self.menu_ctx.catalog();
-        let inputs = catalog.inputs();
+        let (_, is_routable) = self.precompute_format_table();
         ctx.items.iter().any(|item| {
-            if item.local_path.is_none() {
-                return false;
-            }
-            let Some(ext) = item.ext.as_deref() else {
-                return false;
-            };
-            let Some(src_fmt) = format_from_extension(ext) else {
-                return false;
-            };
-            inputs.contains(&src_fmt)
-                && src_fmt != self.target
-                && !matches!(
-                    catalog.target_status(src_fmt, self.target),
-                    TargetStatus::Unsupported
-                )
+            item.local_path.is_some()
+                && item
+                    .ext
+                    .as_deref()
+                    .and_then(format_from_extension)
+                    .is_some_and(|src_fmt| is_routable[Self::fmt_idx(src_fmt)])
         })
     }
 
@@ -162,8 +186,7 @@ impl Action for ConvertAction {
             return Some(Cow::Owned(format!("Convert to {t_name}")));
         }
 
-        let catalog = self.menu_ctx.catalog();
-        let inputs = catalog.inputs();
+        let (is_input, is_routable) = self.precompute_format_table();
 
         let mut convertible = 0usize;
         let mut same_fmt = 0usize;
@@ -171,16 +194,14 @@ impl Action for ConvertAction {
             if item.local_path.is_none() {
                 continue;
             }
-            if let Some(src_fmt) = item.ext.as_deref().and_then(format_from_extension)
-                && inputs.contains(&src_fmt)
-            {
-                if src_fmt == self.target {
-                    same_fmt += 1;
-                } else if !matches!(
-                    catalog.target_status(src_fmt, self.target),
-                    TargetStatus::Unsupported
-                ) {
-                    convertible += 1;
+            if let Some(src_fmt) = item.ext.as_deref().and_then(format_from_extension) {
+                let idx = Self::fmt_idx(src_fmt);
+                if is_input[idx] {
+                    if src_fmt == self.target {
+                        same_fmt += 1;
+                    } else if is_routable[idx] {
+                        convertible += 1;
+                    }
                 }
             }
         }
@@ -427,17 +448,22 @@ impl Action for ConvertAction {
             ActionError::Other(format!("Couldn't start the conversion service: {e}"))
         })?;
 
-        let options_json = serde_json::json!({
-            "target": self.target.as_str(),
-        });
+        #[derive(serde::Serialize)]
+        struct QuickConvertOptions<'a> {
+            target: &'a str,
+        }
+
+        let options = QuickConvertOptions {
+            target: self.target.as_str(),
+        };
 
         let (job_id, state, deduplicated) = client
-            .submit(
+            .submit_typed(
                 RequestId::generate(),
                 Origin::Wheel,
                 CONVERT_IMAGE_KIND,
-                wire_items,
-                options_json,
+                &wire_items,
+                &options,
             )
             .map_err(|e| ActionError::Other(format!("Couldn't submit conversion job: {e}")))?;
 
