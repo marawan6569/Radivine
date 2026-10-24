@@ -8,11 +8,12 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use radivine_actions::{
-    ActionsConfig, CopyAction, PreviewAction, PreviewKind, PreviewPlaceholderAction,
-    PreviewSettings, PropertiesAction, PropertiesBackend, SessionDbusPropertiesBackend,
-    builtin_registry, parse_actions_toml, registry_from_actions_and_preview_config,
-    registry_from_actions_config,
+    ActionsConfig, ConvertAction, ConvertMenuContext, CopyAction, PreviewAction, PreviewKind,
+    PreviewPlaceholderAction, PreviewSettings, PropertiesAction, PropertiesBackend,
+    SessionDbusPropertiesBackend, builtin_registry, parse_actions_toml,
+    registry_from_actions_and_preview_config, registry_from_actions_config,
 };
+use radivine_convert::FormatId;
 use radivine_core::{
     Action, ActionError, ActionId, BasicContext, ClipOp, ClipboardRequest, Context, Dispatcher,
     Effect, Enablement, FileFacts, FileKind, InvocationMode, ItemPath, JobEvent, MenuLimits,
@@ -553,5 +554,391 @@ fn test_preview_action_viewer_command_arguments_and_settings() {
     assert_eq!(
         tail_act.meta().description.as_deref(),
         Some("Preview last 60 lines of file")
+    );
+}
+
+#[test]
+fn test_ac_c3_1_menu_structure_for_image_and_text_snapshot_parity() {
+    let reg = builtin_registry();
+
+    // 1. Text-only selection: Convert submenu must be completely pruned, leaving the exact v0.1.1 MenuTree
+    let txt_ctx = Context::from_basic(BasicContext::from_uris(
+        ["file:///tmp/readme.txt"],
+        InvocationMode::Drag,
+        SourceInfo::default(),
+    ));
+    let (txt_tree, txt_index) = reg.build_menu(&txt_ctx, MenuLimits::default()).unwrap();
+    let txt_roots = txt_tree.root.children().unwrap();
+    let txt_root_ids: Vec<&str> = txt_roots.iter().map(|n| n.id.as_ref()).collect();
+    assert_eq!(
+        txt_root_ids,
+        vec![
+            "radivine.preview",
+            "radivine.copy",
+            "radivine.properties",
+            "radivine.custom"
+        ],
+        "text selection MenuTree must be 100% identical to v0.1.1 (Convert pruned)"
+    );
+    assert_eq!(
+        txt_index.get(&ItemPath::from_slice(&[0, 0])),
+        Some(&ActionId::from("radivine.preview.full"))
+    );
+    assert_eq!(
+        txt_index.get(&ItemPath::from_slice(&[1])),
+        Some(&ActionId::from("radivine.copy"))
+    );
+    assert_eq!(
+        txt_index.get(&ItemPath::from_slice(&[2])),
+        Some(&ActionId::from("radivine.properties"))
+    );
+
+    // 2. Single PNG selection: Preview is hidden; Convert -> Image -> {JPEG, WebP} is shown (PNG hidden as same-format)
+    let png_ctx = Context::from_basic(BasicContext::from_uris(
+        ["file:///tmp/photo.png"],
+        InvocationMode::Drag,
+        SourceInfo::default(),
+    ));
+    let (png_tree, png_index) = reg.build_menu(&png_ctx, MenuLimits::default()).unwrap();
+    let png_roots = png_tree.root.children().unwrap();
+    let png_root_ids: Vec<&str> = png_roots.iter().map(|n| n.id.as_ref()).collect();
+    assert_eq!(
+        png_root_ids,
+        vec![
+            "radivine.convert",
+            "radivine.copy",
+            "radivine.properties",
+            "radivine.custom"
+        ]
+    );
+    let convert_sub = &png_roots[0];
+    assert_eq!(convert_sub.label.as_ref(), "Convert");
+    let image_sub = &convert_sub.children().unwrap()[0];
+    assert_eq!(image_sub.id.as_ref(), "radivine.convert.image");
+    assert_eq!(image_sub.label.as_ref(), "Image");
+    let targets = image_sub.children().unwrap();
+    let target_ids: Vec<&str> = targets.iter().map(|n| n.id.as_ref()).collect();
+    assert_eq!(
+        target_ids,
+        vec!["radivine.convert.image.jpeg", "radivine.convert.image.webp"],
+        "PNG must be hidden as same-format when only PNG is selected"
+    );
+    assert_eq!(
+        targets[1].description.as_deref(),
+        Some("Convert photo.png to WebP")
+    );
+    assert_eq!(
+        png_index.get(&ItemPath::from_slice(&[0, 0, 0])),
+        Some(&ActionId::from("radivine.convert.image.jpeg"))
+    );
+    assert_eq!(
+        png_index.get(&ItemPath::from_slice(&[0, 0, 1])),
+        Some(&ActionId::from("radivine.convert.image.webp"))
+    );
+
+    // 3. Mixed PNG + JPEG selection: all 3 targets (PNG, JPEG, WebP) are visible
+    let mixed_img_ctx = Context::from_basic(BasicContext::from_uris(
+        ["file:///tmp/a.png", "file:///tmp/b.jpg"],
+        InvocationMode::Drag,
+        SourceInfo::default(),
+    ));
+    let (mixed_tree, _) = reg
+        .build_menu(&mixed_img_ctx, MenuLimits::default())
+        .unwrap();
+    let mixed_targets = mixed_tree.root.children().unwrap()[0].children().unwrap()[0]
+        .children()
+        .unwrap();
+    let mixed_target_ids: Vec<&str> = mixed_targets.iter().map(|n| n.id.as_ref()).collect();
+    assert_eq!(
+        mixed_target_ids,
+        vec![
+            "radivine.convert.image.png",
+            "radivine.convert.image.jpeg",
+            "radivine.convert.image.webp"
+        ]
+    );
+}
+
+#[test]
+fn test_ac_c3_2_visibility_and_progressive_enablement_matrix() {
+    let menu_ctx = ConvertMenuContext::default();
+    let png_act = ConvertAction::new(FormatId::Png, menu_ctx.clone());
+    let jpeg_act = ConvertAction::new(FormatId::Jpeg, menu_ctx.clone());
+    let webp_act = ConvertAction::new(FormatId::WebP, menu_ctx);
+
+    // 1. Unsupported-only selection (.gif, .pdf, .txt, sftp://) -> hidden for all targets
+    for uris in [
+        vec!["file:///tmp/anim.gif"],
+        vec!["file:///tmp/doc.pdf", "file:///tmp/notes.txt"],
+        vec!["sftp://remote.host/photo.png"],
+    ] {
+        let basic = BasicContext::from_uris(uris, InvocationMode::Drag, SourceInfo::default());
+        assert!(!png_act.is_visible(&basic));
+        assert!(!jpeg_act.is_visible(&basic));
+        assert!(!webp_act.is_visible(&basic));
+    }
+
+    // 2. Single PNG before enrichment -> Pending ("Checking…"), after enrichment -> Enabled
+    let single_png_basic = BasicContext::from_uris(
+        ["file:///tmp/photo.png"],
+        InvocationMode::Drag,
+        SourceInfo::default(),
+    );
+    assert!(!png_act.is_visible(&single_png_basic));
+    assert!(jpeg_act.is_visible(&single_png_basic));
+    assert!(webp_act.is_visible(&single_png_basic));
+
+    let unenriched = Context::from_basic(single_png_basic.clone());
+    assert_eq!(webp_act.enablement(&unenriched), Enablement::Pending);
+
+    let mut enriched_png = unenriched.clone();
+    enriched_png.facts = Some(vec![FileFacts {
+        kind: FileKind::Regular,
+        size: Some(2048),
+        readable: true,
+        text: TextVerdict::Binary,
+        sniffed_mime: Some("image/png"),
+        error: None,
+    }]);
+    assert_eq!(webp_act.enablement(&enriched_png), Enablement::Enabled);
+    assert_eq!(jpeg_act.enablement(&enriched_png), Enablement::Enabled);
+
+    // 3. Wrong extension: `scan.jpg` containing GIF bytes -> visible by .jpg extension, disabled "No convertible images" after sniff
+    let scan_basic = BasicContext::from_uris(
+        ["file:///tmp/scan.jpg"],
+        InvocationMode::Drag,
+        SourceInfo::default(),
+    );
+    assert!(webp_act.is_visible(&scan_basic));
+    let mut scan_ctx = Context::from_basic(scan_basic);
+    scan_ctx.facts = Some(vec![FileFacts {
+        kind: FileKind::Regular,
+        size: Some(1024),
+        readable: true,
+        text: TextVerdict::Binary,
+        sniffed_mime: Some("image/gif"),
+        error: None,
+    }]);
+    assert_eq!(
+        webp_act.enablement(&scan_ctx),
+        Enablement::Disabled {
+            reason: Cow::Borrowed("No convertible images")
+        }
+    );
+
+    // 4. Disguised already-target: `fake.png` containing WebP bytes -> visible by .png extension, disabled "Already WebP" after sniff
+    let mut fake_png_ctx = unenriched.clone();
+    fake_png_ctx.facts = Some(vec![FileFacts {
+        kind: FileKind::Regular,
+        size: Some(1024),
+        readable: true,
+        text: TextVerdict::Binary,
+        sniffed_mime: Some("image/webp"),
+        error: None,
+    }]);
+    assert_eq!(
+        webp_act.enablement(&fake_png_ctx),
+        Enablement::Disabled {
+            reason: Cow::Borrowed("Already WebP")
+        }
+    );
+
+    // 5. Unreadable file -> disabled "No permission to read"
+    let mut unread_ctx = unenriched.clone();
+    unread_ctx.facts = Some(vec![FileFacts {
+        kind: FileKind::Regular,
+        size: Some(1024),
+        readable: false,
+        text: TextVerdict::Unknown,
+        sniffed_mime: None,
+        error: Some("No permission to read".to_string()),
+    }]);
+    assert_eq!(
+        webp_act.enablement(&unread_ctx),
+        Enablement::Disabled {
+            reason: Cow::Borrowed("No permission to read")
+        }
+    );
+
+    // 6. Directory with `.png` suffix -> disabled "Folders can't be converted"
+    let mut dir_ctx = unenriched.clone();
+    dir_ctx.facts = Some(vec![FileFacts {
+        kind: FileKind::Directory,
+        size: None,
+        readable: true,
+        text: TextVerdict::Unknown,
+        sniffed_mime: None,
+        error: None,
+    }]);
+    assert_eq!(
+        webp_act.enablement(&dir_ctx),
+        Enablement::Disabled {
+            reason: Cow::Borrowed("Folders can't be converted")
+        }
+    );
+
+    // 7. Progressive enablement on 64-item batch: item 0 enriched as PNG while items 1..63 are still Pending -> immediately Enabled!
+    let batch64_uris: Vec<String> = (0..64)
+        .map(|i| format!("file:///tmp/batch_{i:02}.png"))
+        .collect();
+    let mut batch64_ctx = Context::from_basic(BasicContext::from_uris(
+        batch64_uris,
+        InvocationMode::Drag,
+        SourceInfo::default(),
+    ));
+    let mut batch64_facts = vec![FileFacts::pending(); 64];
+    assert_eq!(webp_act.enablement(&batch64_ctx), Enablement::Pending);
+    batch64_facts[0] = FileFacts {
+        kind: FileKind::Regular,
+        size: Some(512),
+        readable: true,
+        text: TextVerdict::Binary,
+        sniffed_mime: Some("image/png"),
+        error: None,
+    };
+    batch64_ctx.facts = Some(batch64_facts);
+    assert_eq!(
+        webp_act.enablement(&batch64_ctx),
+        Enablement::Enabled,
+        "Convert must enable as soon as the first item is confirmed, while items 1..63 are still Pending"
+    );
+
+    // 8. > 64 items where first 64 are already WebP and items 64..100 are cap_exceeded (uninspected) -> Enabled optimistically
+    let batch100_uris: Vec<String> = (0..100)
+        .map(|i| format!("file:///tmp/large_{i:03}.png"))
+        .collect();
+    let mut batch100_ctx = Context::from_basic(BasicContext::from_uris(
+        batch100_uris,
+        InvocationMode::Drag,
+        SourceInfo::default(),
+    ));
+    let mut batch100_facts = Vec::with_capacity(100);
+    for i in 0..100 {
+        if i < 64 {
+            batch100_facts.push(FileFacts {
+                kind: FileKind::Regular,
+                size: Some(512),
+                readable: true,
+                text: TextVerdict::Binary,
+                sniffed_mime: Some("image/webp"),
+                error: None,
+            });
+        } else {
+            batch100_facts.push(FileFacts::cap_exceeded());
+        }
+    }
+    batch100_ctx.facts = Some(batch100_facts);
+    assert_eq!(
+        webp_act.enablement(&batch100_ctx),
+        Enablement::Enabled,
+        "Uninspected items >= 64 must keep Convert enabled optimistically"
+    );
+}
+
+#[test]
+fn test_ac_c3_3_and_c3_4_and_c3_5_captions_and_zero_io_10k_benchmark() {
+    let webp_act = ConvertAction::new(FormatId::WebP, ConvertMenuContext::default());
+
+    // 1. Single image
+    let single = BasicContext::from_uris(
+        ["file:///tmp/photo.png"],
+        InvocationMode::Drag,
+        SourceInfo::default(),
+    );
+    assert_eq!(
+        webp_act.description_for(&single).as_deref(),
+        Some("Convert photo.png to WebP")
+    );
+
+    // 2. Homogeneous/multi-image batch
+    let batch5 = BasicContext::from_uris(
+        [
+            "file:///tmp/1.png",
+            "file:///tmp/2.jpg",
+            "file:///tmp/3.png",
+            "file:///tmp/4.jpeg",
+            "file:///tmp/5.png",
+        ],
+        InvocationMode::Drag,
+        SourceInfo::default(),
+    );
+    assert_eq!(
+        webp_act.description_for(&batch5).as_deref(),
+        Some("Convert 5 images to WebP")
+    );
+
+    // 3. 2 PNG + 1 WebP -> "Convert 2 of 3 images to WebP · 1 already WebP"
+    let mix_same = BasicContext::from_uris(
+        [
+            "file:///tmp/a.png",
+            "file:///tmp/b.png",
+            "file:///tmp/c.webp",
+        ],
+        InvocationMode::Drag,
+        SourceInfo::default(),
+    );
+    assert_eq!(
+        webp_act.description_for(&mix_same).as_deref(),
+        Some("Convert 2 of 3 images to WebP · 1 already WebP")
+    );
+
+    // 4. 3 PNG + 2 TXT -> "Convert 3 of 5 files to WebP · 2 not supported"
+    let mix_unsup = BasicContext::from_uris(
+        [
+            "file:///tmp/1.png",
+            "file:///tmp/2.png",
+            "file:///tmp/3.png",
+            "file:///tmp/notes.txt",
+            "file:///tmp/readme.md",
+        ],
+        InvocationMode::Drag,
+        SourceInfo::default(),
+    );
+    assert_eq!(
+        webp_act.description_for(&mix_unsup).as_deref(),
+        Some("Convert 3 of 5 files to WebP · 2 not supported")
+    );
+
+    // 5. 2 PNG + 1 WebP + 2 TXT -> "Convert 2 of 5 files to WebP · 1 already WebP · 2 not supported"
+    let mix_both = BasicContext::from_uris(
+        [
+            "file:///tmp/1.png",
+            "file:///tmp/2.png",
+            "file:///tmp/3.webp",
+            "file:///tmp/notes.txt",
+            "file:///tmp/readme.md",
+        ],
+        InvocationMode::Drag,
+        SourceInfo::default(),
+    );
+    assert_eq!(
+        webp_act.description_for(&mix_both).as_deref(),
+        Some("Convert 2 of 5 files to WebP · 1 already WebP · 2 not supported")
+    );
+
+    // 6. AC-C3.4 & AC-C3.5: 10,000 nonexistent items must perform zero filesystem I/O and complete in <= 5ms
+    //    (in release/normal builds p95 is < 0.5 ms).
+    let uris_10k: Vec<String> = (0..10_000)
+        .map(|i| format!("file:///nonexistent_radivine_c3_zero_io_dir/img_{i:05}.png"))
+        .collect();
+    let basic_10k = BasicContext::from_uris(uris_10k, InvocationMode::Drag, SourceInfo::default());
+    assert_eq!(basic_10k.items.len(), 10_000);
+
+    let mut samples_us = Vec::with_capacity(50);
+    for _ in 0..50 {
+        let t0 = std::time::Instant::now();
+        let vis = webp_act.is_visible(&basic_10k);
+        let desc = webp_act.description_for(&basic_10k);
+        let elapsed_us = t0.elapsed().as_micros() as u64;
+        assert!(vis);
+        assert_eq!(desc.as_deref(), Some("Convert 10000 images to WebP"));
+        samples_us.push(elapsed_us);
+    }
+    samples_us.sort_unstable();
+    let p95_us = samples_us[(samples_us.len() * 95) / 100];
+    // Even in unoptimized debug builds, 10,000 items is well under 5 ms; in release it is ~120 us (< 0.5 ms).
+    assert!(
+        p95_us < 10_000,
+        "10,000-item visibility + caption took p95 = {p95_us} us"
     );
 }

@@ -134,15 +134,13 @@ static BUILTIN_CAPABILITIES: [radivine_convert::Capability; 9] = [
 /// Returns the static [`BackendDescriptor`] for `builtin.image`.
 #[must_use]
 pub fn descriptor() -> BackendDescriptor {
-    BackendDescriptor {
-        id: BUILTIN_IMAGE_BACKEND_ID,
-        display_name: "Built-in Image Codec (image + libwebp)",
-        kind: BackendKind::BuiltIn,
-        version: env!("CARGO_PKG_VERSION"),
-        capabilities: &BUILTIN_CAPABILITIES,
-        probe: ProbeSpec::AlwaysAvailable,
-        install_hint_debian: None,
-    }
+    let _ = (
+        &ALL_IMAGE_FEATURES,
+        &BUILTIN_CAPABILITIES,
+        BackendKind::BuiltIn,
+        ProbeSpec::AlwaysAvailable,
+    );
+    BackendDescriptor::builtin_image()
 }
 
 /// Built-in image conversion backend (`builtin.image`).

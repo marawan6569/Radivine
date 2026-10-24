@@ -5,9 +5,12 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+radivine-convert = { path = "../radivine-convert" }
 radivine-core = { path = "../radivine-core" }
 radivine-dbus = { path = "../radivine-dbus" }
+radivine-jobs = { path = "../radivine-jobs" }
 serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 toml.workspace = true
 tracing.workspace = true

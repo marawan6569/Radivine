@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 
 pub mod builtins;
+pub mod convert;
 pub mod custom;
 pub use radivine_dbus as dbus;
 
@@ -18,6 +19,7 @@ pub use builtins::{
     PropertiesAction, PropertiesBackend, SessionDbusPropertiesBackend, evaluate_text_file_facts,
     is_known_non_text_mime, resolve_viewer_binary,
 };
+pub use convert::{ConvertAction, ConvertMenuContext, register_convert_actions};
 pub use custom::{
     ActionsConfig, ActionsLoadError, ArgPlaceholder, ArgToken, CountRange, CustomAction,
     NotifyPolicy, WhenRule, load_actions_file, mime_glob_matches, parse_actions_toml,
@@ -27,7 +29,7 @@ pub use dbus::{
     resolve_session_bus_path,
 };
 
-/// Returns the default declarative [`MenuSpec`] tree (`ACTION_SYSTEM.md` §6.1).
+/// Returns the default declarative [`MenuSpec`] tree (`ACTION_SYSTEM.md` §6.1, `CONVERSION_ARCHITECTURE.md` §7.1).
 #[must_use]
 pub fn default_menu() -> Vec<MenuSpec> {
     vec![
@@ -41,6 +43,25 @@ pub fn default_menu() -> Vec<MenuSpec> {
                 MenuSpec::Action(ActionId::from("radivine.preview.head")),
                 MenuSpec::Action(ActionId::from("radivine.preview.tail")),
             ],
+            default: None,
+        },
+        MenuSpec::Submenu {
+            id: Arc::from("radivine.convert"),
+            label: "Convert".to_string(),
+            icon: Some(IconKey::from("lucide:arrow-right-left")),
+            description: Some("Convert to another format".to_string()),
+            children: vec![MenuSpec::Submenu {
+                id: Arc::from("radivine.convert.image"),
+                label: "Image".to_string(),
+                icon: Some(IconKey::from("lucide:image")),
+                description: Some("Image formats".to_string()),
+                children: vec![
+                    MenuSpec::Action(ActionId::from("radivine.convert.image.png")),
+                    MenuSpec::Action(ActionId::from("radivine.convert.image.jpeg")),
+                    MenuSpec::Action(ActionId::from("radivine.convert.image.webp")),
+                ],
+                default: None,
+            }],
             default: None,
         },
         MenuSpec::Action(ActionId::from("radivine.copy")),
@@ -71,7 +92,12 @@ pub fn default_menu() -> Vec<MenuSpec> {
 
 /// Registers all built-in actions and sets [`default_menu`] on `registry`.
 pub fn register_builtins(registry: &mut ActionRegistry) -> Result<(), RegistryError> {
-    register_builtins_with_config(registry, &ActionsConfig::default())
+    register_builtins_with_options(
+        registry,
+        &ActionsConfig::default(),
+        &PreviewSettings::default(),
+        &ConvertMenuContext::default(),
+    )
 }
 
 /// Registers all built-in actions together with validated user custom actions and `[menu]` overrides
@@ -80,7 +106,12 @@ pub fn register_builtins_with_config(
     registry: &mut ActionRegistry,
     config: &ActionsConfig,
 ) -> Result<(), RegistryError> {
-    register_builtins_with_preview(registry, config, &PreviewSettings::default())
+    register_builtins_with_options(
+        registry,
+        config,
+        &PreviewSettings::default(),
+        &ConvertMenuContext::default(),
+    )
 }
 
 /// Registers all built-in actions with explicit [`PreviewSettings`] together with validated user custom
@@ -89,6 +120,18 @@ pub fn register_builtins_with_preview(
     registry: &mut ActionRegistry,
     config: &ActionsConfig,
     preview: &PreviewSettings,
+) -> Result<(), RegistryError> {
+    register_builtins_with_options(registry, config, preview, &ConvertMenuContext::default())
+}
+
+/// Registers all built-in actions (`Preview`, `Convert`, `Copy`, `Properties`) with explicit
+/// [`PreviewSettings`] and [`ConvertMenuContext`] together with validated user custom actions and
+/// `[menu]` overrides from [`ActionsConfig`].
+pub fn register_builtins_with_options(
+    registry: &mut ActionRegistry,
+    config: &ActionsConfig,
+    preview: &PreviewSettings,
+    convert_ctx: &ConvertMenuContext,
 ) -> Result<(), RegistryError> {
     // 1. Real file preview actions (`radivine.preview.full`, `radivine.preview.head`, `radivine.preview.tail`)
     let head_lines = preview.head_lines.max(1);
@@ -129,17 +172,20 @@ pub fn register_builtins_with_preview(
         registry.register(Arc::new(action))?;
     }
 
-    // 2. Real Copy and Properties actions
+    // 2. Quick Convert actions (`radivine.convert.image.{png,jpeg,webp}`)
+    register_convert_actions(registry, convert_ctx)?;
+
+    // 3. Real Copy and Properties actions
     registry.register(Arc::new(CopyAction::new()))?;
     registry.register(Arc::new(PropertiesAction::new()))?;
 
-    // 3. User-defined custom actions from `actions.toml` (registered before built-in custom demo items
+    // 4. User-defined custom actions from `actions.toml` (registered before built-in custom demo items
     //    so user actions appear first in `Custom`)
     for custom_act in &config.actions {
         registry.register(Arc::new(custom_act.clone()))?;
     }
 
-    // 4. Non-destructive built-in custom demo entries (skipped if overridden by a user custom action with the same id)
+    // 5. Non-destructive built-in custom demo entries (skipped if overridden by a user custom action with the same id)
     let demo_customs = [
         (
             "custom.terminal",
@@ -201,5 +247,17 @@ pub fn registry_from_actions_and_preview_config(
 ) -> Result<ActionRegistry, RegistryError> {
     let mut reg = ActionRegistry::new();
     register_builtins_with_preview(&mut reg, config, preview)?;
+    Ok(reg)
+}
+
+/// Constructs a new [`ActionRegistry`] populated with built-ins, [`PreviewSettings`],
+/// [`ConvertMenuContext`], and [`ActionsConfig`].
+pub fn registry_from_options(
+    config: &ActionsConfig,
+    preview: &PreviewSettings,
+    convert_ctx: &ConvertMenuContext,
+) -> Result<ActionRegistry, RegistryError> {
+    let mut reg = ActionRegistry::new();
+    register_builtins_with_options(&mut reg, config, preview, convert_ctx)?;
     Ok(reg)
 }

@@ -430,6 +430,12 @@ fn plan_single_item(
         path: claimed.source_path.clone(),
         source,
     })?;
+    if meta.is_dir() {
+        return Ok(PlanSingleOutcome::Skipped {
+            reason_code: "not_regular_file".to_string(),
+            reason_message: "Folders cannot be converted".to_string(),
+        });
+    }
     if !meta.is_file() {
         return Err(ConversionError::Io {
             op: radivine_convert::FsOp::OpenSource,
@@ -460,6 +466,17 @@ fn plan_single_item(
             source,
         })?;
     let Some(source_format): Option<FormatId> = sniff_format(&header[..n]) else {
+        let claimed_image_ext = claimed
+            .source_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .and_then(radivine_convert::format_from_extension);
+        if claimed_image_ext.is_none() {
+            return Ok(PlanSingleOutcome::Skipped {
+                reason_code: "unsupported_format".to_string(),
+                reason_message: "Not a supported image format".to_string(),
+            });
+        }
         return Err(ConversionError::UnknownInputFormat {
             path: claimed.source_path.clone(),
         });

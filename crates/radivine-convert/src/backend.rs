@@ -177,6 +177,111 @@ pub struct BackendDescriptor {
     pub install_hint_debian: Option<&'static str>,
 }
 
+const ALL_BUILTIN_IMAGE_FEATURES: FeatureSet = FeatureSet(
+    FeatureSet::LOSSY_QUALITY.0
+        | FeatureSet::LOSSLESS.0
+        | FeatureSet::ALPHA.0
+        | FeatureSet::RESIZE.0
+        | FeatureSet::ICC_PRESERVE.0
+        | FeatureSet::EXIF_PRESERVE.0
+        | FeatureSet::EXIF_ORIENT.0
+        | FeatureSet::PROGRESSIVE_JPEG.0
+        | FeatureSet::WEBP_ALPHA_Q.0
+        | FeatureSet::WEBP_METHOD.0,
+);
+
+static BUILTIN_IMAGE_CAPABILITIES: [Capability; 9] = [
+    Capability {
+        from: FormatId::Png,
+        to: FormatId::Png,
+        features: ALL_BUILTIN_IMAGE_FEATURES,
+        max_dimension: 16_384,
+        max_pixels: 100_000_000,
+        priority: 100,
+    },
+    Capability {
+        from: FormatId::Png,
+        to: FormatId::Jpeg,
+        features: ALL_BUILTIN_IMAGE_FEATURES,
+        max_dimension: 16_384,
+        max_pixels: 100_000_000,
+        priority: 100,
+    },
+    Capability {
+        from: FormatId::Png,
+        to: FormatId::WebP,
+        features: ALL_BUILTIN_IMAGE_FEATURES,
+        max_dimension: 16_383,
+        max_pixels: 100_000_000,
+        priority: 100,
+    },
+    Capability {
+        from: FormatId::Jpeg,
+        to: FormatId::Png,
+        features: ALL_BUILTIN_IMAGE_FEATURES,
+        max_dimension: 16_384,
+        max_pixels: 100_000_000,
+        priority: 100,
+    },
+    Capability {
+        from: FormatId::Jpeg,
+        to: FormatId::Jpeg,
+        features: ALL_BUILTIN_IMAGE_FEATURES,
+        max_dimension: 16_384,
+        max_pixels: 100_000_000,
+        priority: 100,
+    },
+    Capability {
+        from: FormatId::Jpeg,
+        to: FormatId::WebP,
+        features: ALL_BUILTIN_IMAGE_FEATURES,
+        max_dimension: 16_383,
+        max_pixels: 100_000_000,
+        priority: 100,
+    },
+    Capability {
+        from: FormatId::WebP,
+        to: FormatId::Png,
+        features: ALL_BUILTIN_IMAGE_FEATURES,
+        max_dimension: 16_384,
+        max_pixels: 100_000_000,
+        priority: 100,
+    },
+    Capability {
+        from: FormatId::WebP,
+        to: FormatId::Jpeg,
+        features: ALL_BUILTIN_IMAGE_FEATURES,
+        max_dimension: 16_384,
+        max_pixels: 100_000_000,
+        priority: 100,
+    },
+    Capability {
+        from: FormatId::WebP,
+        to: FormatId::WebP,
+        features: ALL_BUILTIN_IMAGE_FEATURES,
+        max_dimension: 16_383,
+        max_pixels: 100_000_000,
+        priority: 100,
+    },
+];
+
+impl BackendDescriptor {
+    /// Returns the static descriptor for the built-in image backend (`builtin.image`) without
+    /// requiring callers (such as `radivine-actions` or the `radivine` daemon) to link heavy image codecs.
+    #[must_use]
+    pub const fn builtin_image() -> Self {
+        Self {
+            id: BackendId("builtin.image"),
+            display_name: "Built-in Image Codec (image + libwebp)",
+            kind: BackendKind::BuiltIn,
+            version: env!("CARGO_PKG_VERSION"),
+            capabilities: &BUILTIN_IMAGE_CAPABILITIES,
+            probe: ProbeSpec::AlwaysAvailable,
+            install_hint_debian: None,
+        }
+    }
+}
+
 /// Runtime probe result for a backend.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
@@ -277,6 +382,12 @@ impl CapabilityCatalog {
             )],
             &BackendPrefs::default(),
         )
+    }
+
+    /// Convenience constructor for a catalog containing the default `builtin.image` backend.
+    #[must_use]
+    pub fn default_builtin() -> Self {
+        Self::builtin_only(BackendDescriptor::builtin_image())
     }
 
     /// Returns all backend descriptors and their probed availability statuses.
