@@ -13,6 +13,7 @@ members = [
 ]
 exclude = [
     "spikes/xdnd-overlay",
+    "spikes/convert-spikes",
     "fuzz",
 ]
 
