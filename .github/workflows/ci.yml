@@ -31,10 +31,11 @@ jobs:
       - name: Cache Cargo registry and target
         uses: Swatinem/rust-cache@v2
 
-      - name: Install packaging & desktop validation tools
+      - name: Install packaging, C toolchain & desktop validation tools
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
+            build-essential \
             desktop-file-utils \
             dpkg-dev \
             lintian \
@@ -60,3 +61,12 @@ jobs:
         run: |
           ./scripts/build-deb.sh
           lintian --tag-display-limit 0 target/debian/radivine_0.1.1_amd64.deb
+
+  supply-chain:
+    name: Supply-Chain & License Audit (cargo-deny)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Run cargo-deny check (advisories, licenses, bans, sources)
+        uses: EmbarkStudios/cargo-deny-action@v2

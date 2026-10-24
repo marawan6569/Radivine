@@ -107,6 +107,17 @@ Development/CI tools (not dependencies): `cargo-deny`, `cargo-llvm-cov`, `cargo-
 
 Deliberately **not** used: `keyframe` (stale; our animation needs are ~100 lines), `content_inspector` (unmaintained since 2018), `tree_magic_mini` (depends on system shared-mime-info DB; may be added later for parity with Nemo's MIME naming), any GPU stack in the daemon, any async runtime in the daemon.
 
+### 2.6 Media Conversion Core & Built-in Image Backend (v0.2.0 — Milestone C1)
+
+| Concern | Crate (version 2026-10) | Notes |
+|---------|------------------------|-------|
+| Safe Image Decode & PNG/Lossless-WebP Encode | `image` 0.25.10 (`default-features = false, features = ["png", "jpeg", "webp"]`) | Pure-Rust decoding (`png 0.18.1`, `zune-jpeg 0.5.15`, `image-webp 0.2.4`) under `#![forbid(unsafe_code)]` with strict `image::Limits` (`ADR-030`) |
+| JPEG Encode (subsampling, progressive, ICC/EXIF) | `jpeg-encoder` 0.7.1 (`default-features = false, features = ["std"]`) | `#![forbid(unsafe_code)]`, zero transitive dependencies, 2.6× faster and 36% smaller output at `q=82` than `image`'s basic JPEG encoder; supports `4:4:4`/`4:2:2`/`4:2:0`, progressive DCT, optimized Huffman coding, ICC, and EXIF |
+| Lossy WebP Encode (bundled C `libwebp`) | `libwebp-sys` 0.14.4 (bundles `libwebp 1.6.0`) wrapped by internal `ffi/radivine-webp` | Audited ~300-LoC encode-only wrapper (`ADR-030`, `ADR-031`, `D2`). Never decodes untrusted bytes; uses `picture.use_argb = 0` direct YUV420 import and `progress_hook` mid-encode cancellation |
+| Comment-Preserving TOML Editing | `toml_edit` 0.22.27 | Used in `radivine-convert` and `radivine-control` to save `convert.toml` without stripping user comments |
+| Cryptographic Digest (Tests & Verification) | `sha2` 0.10.9 | Byte-for-byte ICC profile and source-immutability verification |
+| CSPRNG / Staging Suffices | `fastrand` 2.5.0 | Collision-free `.rvstage-<job>-<rand16>` and `item-<idx>-<rand16>.part` names |
+
 ## 3. Final recommended stack
 
 | Layer | Choice |

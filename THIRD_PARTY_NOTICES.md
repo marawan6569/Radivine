@@ -32,6 +32,10 @@ All direct workspace dependencies have been audited via `cargo metadata` for com
 | `eframe` | `0.37.0` | `MIT OR Apache-2.0` | <https://github.com/emilk/egui/tree/main/crates/eframe> |
 | `egui` | `0.37.0` | `MIT OR Apache-2.0` | <https://github.com/emilk/egui> |
 | `encoding_rs` | `0.8.42` | `(Apache-2.0 OR MIT) AND BSD-3-Clause` | <https://github.com/hsivonen/encoding_rs> |
+| `fastrand` | `2.5.0` | `Apache-2.0 OR MIT` | <https://github.com/smol-rs/fastrand> |
+| `image` | `0.25.10` | `MIT OR Apache-2.0` | <https://github.com/image-rs/image> |
+| `jpeg-encoder` | `0.7.1` | `MIT OR Apache-2.0 OR IJG` | <https://github.com/vstroebel/jpeg-encoder> |
+| `libwebp-sys` | `0.14.4` (bundles `libwebp 1.6.0`) | `MIT` (bindings) / `BSD-3-Clause` (`libwebp`) | <https://github.com/NoXF/libwebp-sys> / <https://chromium.googlesource.com/webm/libwebp> |
 | `memchr` | `2.8.3` | `Unlicense OR MIT` | <https://github.com/BurntSushi/memchr> |
 | `mime_guess` | `2.0.5` | `MIT` | <https://github.com/abonander/mime_guess> |
 | `percent-encoding` | `2.3.2` | `MIT OR Apache-2.0` | <https://github.com/servo/rust-url/> |
@@ -40,11 +44,14 @@ All direct workspace dependencies have been audited via `cargo metadata` for com
 | `rustix` | `1.0.x` | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | <https://github.com/bytecodealliance/rustix> |
 | `serde` | `1.0.229` | `MIT OR Apache-2.0` | <https://github.com/serde-rs/serde> |
 | `serde_json` | `1.0.154` | `MIT OR Apache-2.0` | <https://github.com/serde-rs/json> |
+| `sha2` *(dev)* | `0.10.9` | `MIT OR Apache-2.0` | <https://github.com/RustCrypto/hashes> |
 | `smallvec` | `1.16.3` | `MIT OR Apache-2.0` | <https://github.com/servo/rust-smallvec> |
 | `softbuffer` *(dev/sandbox)* | `0.4.8` | `MIT OR Apache-2.0` | <https://github.com/rust-windowing/softbuffer> |
+| `tempfile` *(dev)* | `3.27.0` | `MIT OR Apache-2.0` | <https://github.com/Stebalien/tempfile> |
 | `thiserror` | `2.0.x` | `MIT OR Apache-2.0` | <https://github.com/dtolnay/thiserror> |
 | `tiny-skia` | `0.11.4` | `BSD-3-Clause` | <https://github.com/RazrFalcon/tiny-skia> |
 | `toml` | `0.8.23` | `MIT OR Apache-2.0` | <https://github.com/toml-rs/toml> |
+| `toml_edit` | `0.22.27` | `MIT OR Apache-2.0` | <https://github.com/toml-rs/toml> |
 | `tracing` | `0.1.44` | `MIT` | <https://github.com/tokio-rs/tracing> |
 | `tracing-subscriber` | `0.3.23` | `MIT` | <https://github.com/tokio-rs/tracing> |
 | `winit` | `0.30.13` | `Apache-2.0` | <https://github.com/rust-windowing/winit> |
@@ -57,7 +64,8 @@ All direct workspace dependencies have been audited via `cargo metadata` for com
 Across the full Cargo dependency graph (`Cargo.lock`), all transitive crates use permissive or file-level weak-copyleft open-source licenses compatible with binary and source redistribution under `MIT OR Apache-2.0`:
 
 - `MIT`, `Apache-2.0`, `MIT OR Apache-2.0`, `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT`
-- `BSD-2-Clause`, `BSD-3-Clause`
+- `BSD-2-Clause`, `BSD-3-Clause` (including bundled Google `libwebp 1.6.0` via `libwebp-sys`)
+- `IJG` (`jpeg-encoder`, dual-licensed `MIT OR Apache-2.0 OR IJG`)
 - `ISC`, `Zlib`, `0BSD`, `BSL-1.0`, `Unlicense`
 - `Unicode-3.0`, `OFL-1.1`, `Ubuntu-font-1.0`
 - `MPL-2.0` (`resvg`, `usvg`, `svgtypes`, `simplecss`, `roxmltree`, `kurbo`/`peniko` transitive SVG parsing crates — linked unmodified from crates.io)

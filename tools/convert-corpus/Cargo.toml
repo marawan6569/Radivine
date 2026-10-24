@@ -7,7 +7,7 @@ publish = false
 description = "Deterministic synthetic image corpus generator for Radivine conversion testing and benchmarking."
 
 [dependencies]
-radivine-webp = { path = "../../crates/radivine-webp" }
+radivine-webp = { path = "../../ffi/radivine-webp" }
 clap.workspace = true
 image.workspace = true
 jpeg-encoder.workspace = true

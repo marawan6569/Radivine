@@ -122,3 +122,23 @@ Measured in `--release` mode (`apps/radivine/tests/m6_soak_test.rs` and `apps/ra
 | **In-Process Frame Render + Damage Present Latency (`1920 × 1080`)** | p50 **`43 µs`**, p95 **`63 µs`** across `114,974` presented frames (`42.6 GiB` pixel data) | `< 2.5 ms` p50, `< 4.0 ms` p95 | **PASS** |
 | **1-Hour Multi-Scenario Soak Stability (`AC-6.2`, `3,605.44 s`, `66,330` sessions)** | Warm-up `VmRSS` **`20,020 KiB`** (session 750) → Final `VmRSS` **`21,688 KiB`** (session 66,330; **`+1,668 KiB`** / `1.63 MiB` growth; only `+292 KiB` across the final `64,980` sessions / `59.5 min`), **`0` FD leaks** (`9 → 9`), **`0` zombie processes** across `8,844` child spawns | `>= 60 min`, `>= 2,000` sessions, `<= 2,048 KiB` (`<= 2 MB`) RSS growth after warm-up, `0` FD leaks, `0` zombies | **PASS** |
 | **2×10-Minute Continuous Fuzzing (`AC-6.4`, `1,200.01 s`)** | `parse_uri_list` + `BasicContext` + `sniff_bytes`: **`600 s` (`10 min`), `252,196,000` iterations, `0` panics**<br>`XdndTarget` + `SelectionReader` + `parse_actions_toml`: **`600 s` (`10 min`), `239,423,000` iterations, `0` panics** | `>= 10 min` per fuzzer with `0` panics & `0` memory-safety violations (`AC-6.4`) | **PASS** |
+
+---
+
+## 8. Milestone C1 (v0.2.0) — Conversion Core & Built-in Image Backend (`radivine-convert` + `radivine-convert-image`)
+
+Measured on 2026-10-24 on the reference Linux Mint 22.3 desktop (`11th Gen Intel® Core™ i5-11400F`, `46 GiB DDR4`, `Linux 6.8.0-147-generic x86_64`, `rustc 1.95.0`, `--release` profile, 3 warm-up runs + 10 measured runs per case, with isolated child-process `/proc/self/status` `VmHWM` peak RSS sampling):
+
+Command:
+
+```bash
+cargo run --release -p convert-cli -- bench --warmup 3 --runs 10
+```
+
+| Benchmark Case | Dimensions | Source Size | Output Size | Median (`p50`) | `p95` | Peak RSS (`VmHWM`) | Target Budget (`IMPLEMENTATION_PLAN.md` §6) | Status |
+|---|---|---:|---:|---:|---:|---:|---|---|
+| `2 MP JPEG -> WebP q80 m4` | `1920 × 1080` | `642.7 KiB` | `349.7 KiB` | **`208.6 ms`** | `489.2 ms` | **`15.9 MiB`** | Baseline recorded | **PASS** |
+| `12 MP JPEG -> WebP q80 m4` | `4000 × 3000` | `3,677.2 KiB` | `1,864.0 KiB` | **`1,161.2 ms`** (`1.16 s`) | `1,253.9 ms` (`1.25 s`) | **`64.5 MiB`** | `<= 1.5 s` (`1,500 ms`) | **PASS** |
+| `12 MP PNG -> JPEG q82` | `4000 × 3000` | `26,545.5 KiB` | `1,752.7 KiB` | **`230.7 ms`** (`0.23 s`) | `233.0 ms` (`0.23 s`) | **`107.2 MiB`** | `<= 1.0 s` (`1,000 ms`) | **PASS (4.3× under budget)** |
+| `24 MP JPEG -> WebP q80 m4` | `6000 × 4000` | `7,336.1 KiB` | `3,703.1 KiB` | **`2,307.8 ms`** (`2.31 s`) | `2,380.1 ms` (`2.38 s`) | **`124.2 MiB`** | Baseline recorded | **PASS** |
+| `50 MP JPEG -> WebP q80 m4` | `8192 × 6144` | `15,370.7 KiB` | `8,291.5 KiB` | **`4,876.5 ms`** (`4.88 s`) | `4,998.1 ms` (`5.00 s`) | **`265.7 MiB`** | `<= 2.2 × decoded + 30 MiB` (`≈ 470 MiB`) | **PASS (1.77× under RSS budget)** |

@@ -13,7 +13,7 @@ workspace = true
 image = { workspace = true }
 jpeg-encoder = { workspace = true }
 radivine-convert = { path = "../radivine-convert" }
-radivine-webp = { path = "../radivine-webp" }
+radivine-webp = { path = "../../ffi/radivine-webp" }
 
 [dev-dependencies]
 convert-corpus = { path = "../../tools/convert-corpus" }

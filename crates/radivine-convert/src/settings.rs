@@ -739,7 +739,7 @@ fn parse_defaults_table(
                     warnings.push(SettingsWarning {
                         field: "convert.defaults.output_subfolder".to_string(),
                         message: format!(
-                            "unsafe output_subfolder {sub:?}, falling back to same_directory"
+                            "invalid output_subfolder {sub:?}, falling back to same_directory"
                         ),
                         schema_newer_than_supported: false,
                     });
