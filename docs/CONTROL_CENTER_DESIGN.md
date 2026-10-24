@@ -1,7 +1,7 @@
-# Radivine v0.1.1 — Control Center, Service Lifecycle & Settings Design
+# Radivine v0.1.1 / v0.2.0 — Control Center, Service Lifecycle, Conversion & Jobs Design
 
-Status: **Accepted (v0.1.1)** · Last updated: 2026-10-23
-Related: [`ARCHITECTURE.md`](ARCHITECTURE.md) · [`DECISIONS.md`](DECISIONS.md) · [`ACTION_SYSTEM.md`](ACTION_SYSTEM.md) · [`PLATFORM_INTEGRATION.md`](PLATFORM_INTEGRATION.md)
+Status: **Accepted (v0.1.1, extended in v0.2.0 Milestone C4)** · Last updated: 2026-10-24
+Related: [`ARCHITECTURE.md`](ARCHITECTURE.md) · [`DECISIONS.md`](DECISIONS.md) · [`ACTION_SYSTEM.md`](ACTION_SYSTEM.md) · [`PLATFORM_INTEGRATION.md`](PLATFORM_INTEGRATION.md) · [`planning/v0.2.0/CONVERSION_UX.md`](planning/v0.2.0/CONVERSION_UX.md)
 
 ---
 
@@ -23,6 +23,9 @@ To prevent duplicate schemas or competing protocol implementations, `radivine-co
 - **`radivine::config`:** [`AppConfig`](../apps/radivine/src/config.rs), `ScaleSetting`, `ReducedMotionSetting`, and section structs (`TriggerSection`, `WheelSection`, `AppearanceSection`, `PreviewSection`, `InputSection`, `X11Section`).
 - **`radivine::ipc`:** [`IpcRequest`](../apps/radivine/src/ipc.rs), `IpcResponse`, `DaemonStatus`, `default_socket_path`, and `send_request`.
 - **`radivine-actions`:** [`parse_actions_toml`](../crates/radivine-actions/src/custom.rs), `load_actions_file`, `ActionsConfig`, `CustomAction`, `NotifyPolicy`, `CountRange`, `ArgToken`, `ArgPlaceholder`, and `WhenRule`.
+- **`radivine-convert`:** [`ConvertSettings`](../crates/radivine-convert/src/settings.rs), `ConversionOptions`, `Preset`, `PresetOverrides`, `FormatId`, `inspect_file_header`, and `probe_all` (header-only inspection and capability catalog; `radivine-control` intentionally does **not** depend on `radivine-convert-image` so full image pixel decoding never occurs in the Control Center process).
+- **`radivine-jobs`:** [`JobsClient`](../crates/radivine-jobs/src/client.rs), `JobsSettings`, `JobSummary`, `JobItemReport`, `JobUpdate`, `RetryMode`, `Origin`, and `WirePath`.
+- **`radivine-dbus`:** `org.freedesktop.FileManager1.ShowItems` for revealing converted output files in Nemo (`Open folder`).
 - **`radivine-platform`:** [`probe_x11_doctor`](../crates/radivine-platform/src/x11/doctor.rs) and `DoctorReport`.
 
 ### 2.2 Process Independence & Single-Instance Window Activation
@@ -31,8 +34,9 @@ To prevent duplicate schemas or competing protocol implementations, `radivine-co
 - **Single-Instance Guard (`$XDG_RUNTIME_DIR/radivine/control.sock`):**
   - On startup, `radivine-control` attempts to bind a non-blocking Unix domain socket at `$XDG_RUNTIME_DIR/radivine/control.sock` (`0600` permissions).
   - If another `radivine-control` instance is already listening on `control.sock`, the new process sends a `"focus\n"` command over the socket and exits cleanly (`ExitCode::SUCCESS`).
-  - The running `radivine-control` window polls its non-blocking listener, unminimizes/focuses its viewport (`ViewportCommand::Focus`), and optionally switches to a requested page (`--page <dashboard|general|wheel|actions|diagnostics|about>`).
+  - The running `radivine-control` window polls its non-blocking listener, unminimizes/focuses its viewport (`ViewportCommand::Focus`), and optionally switches to a requested page (`--page <dashboard|general|wheel|actions|conversion|jobs|diagnostics|about>`).
   - Stale sockets from terminated processes are detected and replaced automatically.
+  - **Standalone Advanced Convert Bypass (`ADR-C15`):** Invoking `radivine-control convert [--stdin] [PATHS…]` opens a dedicated `640×720` Advanced Convert dialog window (`app_id = "radivine-convert"`) and bypasses `control.sock` so multiple Advanced Convert windows can coexist alongside the main Control Center.
 
 ### 2.3 Non-Blocking Background Worker Architecture
 
@@ -58,14 +62,16 @@ flowchart LR
 
 ### 2.4 Visual Identity & Navigation Layout
 
-- **Brand Palette & Typography:** Uses Radivine's bundled `Inter-Variable.ttf` font, official horizontal/icon logos from `assets/branding/` and `assets/icons/` (loaded read-only), and the established vine/leaf green palette (`#044C3C` vine green, `#00A87C` leaf green, `#0A1A16` dark canvas, `#F4FBF8` light canvas).
-- **Six-Page Sidebar Navigation:**
+- **Brand Palette & Shared Theme Primitives (`ui/theme.rs`):** Uses Radivine's bundled `Inter-Variable.ttf` font, official horizontal/icon logos from `assets/branding/` and `assets/icons/` (loaded read-only), and the established vine/leaf green palette (`#044C3C` vine green, `#00A87C` leaf green, `#0A1A16` dark canvas, `#F4FBF8` light canvas) via shared `BrandPalette`, `section_card`, `kv_cell`, and `apply_palette_visuals` helpers in `apps/radivine-control/src/ui/theme.rs`.
+- **Eight-Page Sidebar Navigation:**
   1. **Dashboard:** Unified daemon health badge (`Running`, `Stopped`, `Starting`, `Stopping`, `Failed`, `Degraded / Unreachable`), `Start` / `Stop` / `Restart` controls with transition verification, runtime telemetry (`PID`, version, uptime, session type, desktop environment, IPC latency, RSS/CPU, startup mode, autostart state), and recent activity/error cards.
   2. **General:** Launch at Login toggle, startup method & conflict resolver, Appearance (`Dark`, `Light`, `Follow System` + UI Scale), Notifications, File Preview defaults (`head_lines`, `tail_lines`), and configuration file management (`Open Config Folder`, `Reload Daemon`, `Restore Defaults`).
   3. **Wheel:** Approved branching radial wheel parameters (`root_inner_radius`, `root_outer_radius`, `child_inner_radius`, `child_outer_radius`, `child_offset_gap`, `hover_dwell_ms`, `submenu_grace_ms`, `leave_grace_ms`, `angular_hysteresis_deg`, `backdrop_dim`, `reduced_motion`, `drag_modifier`, `toggle_off_on_repress`, `hold_to_keep_open`, `min_drag_distance_px`, `passthrough`).
   4. **Actions:** Graphical Custom Actions Manager for `~/.config/radivine/actions.toml` (searchable action list, Create/Edit form with separated executable and argv tokens, whole-element placeholder chips `{path}`, `{paths}`, `{uri}`, `{uris}`, `{dir}`, `{name}`, `when` filters, `per_item`, `wait`, `timeout_ms`, `notify`, enable/disable toggle, menu order/hide overrides, and delete confirmation).
-  5. **Diagnostics:** Structured `radivine doctor` report (desktop session, X11 extensions, compositor, RandR monitors, DPI scale, IPC & service manager status, autostart audit), bounded log viewer (`journalctl --user -u radivine.service` + `~/.local/state/radivine/daemon.log`), and privacy-redacted diagnostic report exporter (`$HOME` → `~`, username/hostname/file-URI redaction).
-  6. **About:** Application version (`v0.1.1`), tagline (*"Branch into action."*), dual license (`MIT OR Apache-2.0`), component overview, and third-party notices summary.
+  5. **Conversion (`v0.2.0` C4):** Conversion Settings editor for `~/.config/radivine/convert.toml` and `config.toml` `[jobs]` (Quick Convert default presets per target format, output destination/suffix/JPEG extension/collision/timestamp policies, EXIF orientation/ICC/EXIF metadata policies with GPS privacy warning banner, built-in and user-defined presets CRUD, resource limits, backend capability matrix, notification policy, and worker concurrency/history retention).
+  6. **Jobs (`v0.2.0` C4):** Durable conversion job monitor and history manager backed by `radivine-worker` over `$XDG_RUNTIME_DIR/radivine/worker.sock` (live progress streaming via `JobsClient::subscribe`, state filters, 200-item-per-page paginated & `ScrollArea::show_rows`-virtualized item details, `Cancel`, linked immutable `Retry failed` / `Retry failed & cancelled` / `Retry all` / `Retry to folder…`, D-Bus `ShowItems` `Open folder`, `Clear history` with confirmation, concurrency selector, staging inspection/cleanup, plus worker-unavailable, empty-history, and newer-DB-schema read-only banners).
+  7. **Diagnostics:** Structured `radivine doctor` report (desktop session, X11 extensions, compositor, RandR monitors, DPI scale, IPC & service manager status, autostart audit), bounded log viewer (`journalctl --user -u radivine.service` + `~/.local/state/radivine/daemon.log`), and privacy-redacted diagnostic report exporter (`$HOME` → `~`, username/hostname/file-URI redaction).
+  8. **About:** Application version, tagline (*"Branch into action."*), dual license (`MIT OR Apache-2.0`), component overview, and third-party notices summary.
 
 ---
 
@@ -134,12 +140,12 @@ When `systemd --user` is unavailable (e.g., non-systemd distributions or isolate
 
 ### 4.1 `toml_edit` Format Preservation & Validation
 
-Both `~/.config/radivine/config.toml` and `~/.config/radivine/actions.toml` are managed through a dedicated persistence layer (`apps/radivine-control/src/persistence.rs`) using `toml_edit::DocumentMut`:
+`~/.config/radivine/config.toml` (including `[jobs]`), `~/.config/radivine/actions.toml`, and `~/.config/radivine/convert.toml` are managed through a dedicated persistence layer (`apps/radivine-control/src/persistence.rs`) using `toml_edit::DocumentMut`:
 1. **Preserve Comments & Unknown Keys:** If the file exists on disk, it is parsed into a `toml_edit::DocumentMut` and only the managed keys/tables are updated in-place, preserving user comments, whitespace, and unknown keys.
-2. **Pre-Write Full Validation:** Before touching the filesystem, the candidate TOML string is validated through `AppConfig::validate_strict` or `parse_actions_toml` (requiring zero parse errors and zero entry validation warnings).
+2. **Pre-Write Full Validation:** Before touching the filesystem, the candidate TOML string is validated through `AppConfig::validate_strict`, `JobsSettings::validate_strict`, `ConvertSettings::validate_strict`, or `parse_actions_toml` (requiring zero parse errors and zero entry validation warnings).
 3. **External Modification Conflict Detection:** When a file is loaded into the Control Center, its modification timestamp and SHA-256/FNV content digest are recorded. If the file on disk has changed externally when the user clicks **Save**, the write is halted with a conflict prompt (`Reload from Disk` or `Back Up to .bak & Overwrite`).
 4. **Same-Filesystem Atomic Replacement:** Writes create a sibling temporary file (`.config.toml.tmp.<pid>`) in `~/.config/radivine/`, copy existing file permissions (or `0644`), flush with `File::sync_all()`, and atomically replace the target via `std::fs::rename()`.
-5. **Non-Disruptive Hot Reload:** If the daemon is running, `IpcRequest::Reload` is sent after saving. In `SessionController::reload_config`, if a radial wheel session is currently active (`!matches!(state, Idle | Armed)`), visual/scale updates are staged and applied as soon as the session returns to `Idle`, guaranteeing an active drag-and-drop is never interrupted.
+5. **Non-Disruptive Hot Reload:** If the daemon is running, `IpcRequest::Reload` is sent after saving `config.toml` or `actions.toml`. After saving `convert.toml` or `[jobs]` settings, `JobsCommand::ReloadWorkerSettings` (`WorkerRequest::ReloadSettings`) is sent to `radivine-worker` if online; if the worker is offline, the new settings take effect automatically on its next on-demand start. The wheel daemon (`apps/radivine`) never loads `convert.toml`.
 
 ---
 

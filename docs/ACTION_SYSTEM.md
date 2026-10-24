@@ -227,6 +227,7 @@ vec![
                     MenuSpec::Action(id("radivine.convert.image.png")),
                     MenuSpec::Action(id("radivine.convert.image.jpeg")),
                     MenuSpec::Action(id("radivine.convert.image.webp")),
+                    MenuSpec::Action(id("radivine.convert.image.advanced")),
                 ],
                 default: None },
         ],
@@ -302,6 +303,7 @@ pub enum JobEvent { Finished { job: JobId, action: ActionId, result: Result<Outc
 | `radivine.convert.image.png` | PNG | `Files`, ≥ 1 local candidate image (`png`, `jpg`/`jpeg`, `webp`), and not a single-item selection already `.png` | ≥ 1 item confirmed convertible via `FileFacts.sniffed_mime` + `CapabilityCatalog`, OR ≥ 1 candidate item uninspected (`> 64` cap or timeout) after pending items finish | Submits a durable `convert.image` job (`target = "png"`) to `radivine-worker` via `radivine-jobs::JobsClient::connect_or_launch` |
 | `radivine.convert.image.jpeg` | JPEG | same (hidden when single item is already `.jpg`/`.jpeg`) | same (`target = "jpeg"`) | Submits a durable `convert.image` job (`target = "jpeg"`) to `radivine-worker` |
 | `radivine.convert.image.webp` | WebP | same (hidden when single item is already `.webp`) | same (`target = "webp"`) | Submits a durable `convert.image` job (`target = "webp"`) to `radivine-worker` |
+| `radivine.convert.image.advanced` | Advanced… | `Files`, ≥ 1 local candidate image (`png`, `jpg`/`jpeg`, `webp`); remains visible even when a single item is already in the target format (supports same-format re-encoding) | ≥ 1 item confirmed convertible via `FileFacts.sniffed_mime` + `CapabilityCatalog`, OR ≥ 1 candidate item uninspected (`> 64` cap or timeout) after pending items finish | Spawns `radivine-control convert` detached (`systemd-run --user --scope --collect` or `process_group(0)` fallback), passing `<= 32` UTF-8 paths via `-- <PATHS…>` or larger/non-UTF-8 selections via `--stdin` (`WirePath` lines) |
 | `radivine.copy` | Copy | `Files`, ≥ 1 item | always | Returns `Effects([SetClipboard(ClipboardRequest { uris, local_paths, op: ClipOp::Copy })])` → paste works in Nemo |
 | `radivine.properties` | Properties | `Files`, ≥ 1 item | always | D-Bus `org.freedesktop.FileManager1.ShowItemProperties(uris, startup_id="")` on the session bus (Nemo implements `org.freedesktop.FileManager1`; verify in M4); error → notification |
 | `custom.<id>` | user | from `when` | file facts if `when.require_text = true` | See §9 |
@@ -324,6 +326,17 @@ Viewer behaviour:
 - **Search** (`Ctrl+F`): streaming `memchr::memmem` over 1 MiB chunks (overlap = pattern length − 1), case-sensitive toggle; results as line numbers via the index; `Enter`/`Shift+Enter` next/previous.
 - **Encodings**: UTF-8 (lossy display), UTF-8 BOM, UTF-16 LE/BE via `encoding_rs` (chunks aligned to 2 bytes); `Unknown8Bit` displayed lossily with a banner. Legacy-encoding detection (`chardetng`) is future work.
 - Read-only. Never writes to the file.
+
+### 8.2 Advanced Convert window process contract (`radivine-control convert`, C4)
+
+```
+radivine-control [--config PATH] [--socket PATH] convert [--stdin] [--] [PATHS...]
+```
+
+- **Binary Resolution:** The wheel action resolves `radivine-control` via `ConvertMenuContext::control_bin`, `RADIVINE_CONTROL_BIN` env override, sibling of `current_exe()`, or `PATH`. If missing, it emits a desktop notification via `radivine-dbus` and returns `ActionError::Spawn` without crashing the daemon.
+- **Process Isolation (`ADR-C14`):** Launched via `systemd-run --user --scope --collect` when `systemd --user` is active, with automatic fallback to `CommandExt::process_group(0)` + `/dev/null` stdio so closing or restarting `radivine.service` never terminates an open Advanced Convert window.
+- **Lossless Path Transport:** For `<= 32` valid UTF-8 paths (total bytes `< 8 KiB`), paths are passed as positional CLI arguments after `--`. For `> 32` paths or any path containing non-UTF-8 Linux filename bytes (`0x80..=0xFF`), `radivine-control convert --stdin` is spawned and newline-delimited `WirePath` (`utf8:` / `hex:`) records are streamed to its `stdin`.
+- **Single-Instance Bypass (`ADR-C15`):** `radivine-control convert` bypasses the main Control Center's `control.sock` single-instance lock so multiple Advanced Convert windows can coexist alongside an open Control Center.
 
 ## 9. Custom actions (`actions.toml`)
 
