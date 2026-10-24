@@ -222,8 +222,9 @@ impl ControlCenterApp {
             egui_ctx.clone(),
         );
         if initial_page == ControlPage::Jobs {
+            let has_db = service_paths.state_dir.join("jobs.sqlite3").is_file();
             let _ = jobs_cmd_tx.send(JobsCommand::RefreshAll {
-                allow_auto_start: true,
+                allow_auto_start: has_db,
             });
         }
 
@@ -420,8 +421,14 @@ impl ControlCenterApp {
             let _ = self.worker_tx.send(WorkerCommand::RefreshDiagnostics);
         }
         if page == ControlPage::Jobs {
+            let has_db = self
+                .service_ctrl
+                .paths()
+                .state_dir
+                .join("jobs.sqlite3")
+                .is_file();
             let _ = self.jobs_cmd_tx.send(JobsCommand::RefreshAll {
-                allow_auto_start: true,
+                allow_auto_start: has_db,
             });
         }
     }

@@ -501,7 +501,8 @@ pub fn reveal_path_in_file_manager(target_path: &Path) -> Result<String, String>
 /// Builds a [`WorkerRuntimePaths`] rooted at `worker_socket_path` and `state_dir`.
 #[must_use]
 pub fn worker_paths_for(worker_socket_path: &Path, state_dir: &Path) -> WorkerRuntimePaths {
-    let mut paths = WorkerRuntimePaths::from_env();
+    let default_env = WorkerRuntimePaths::from_env();
+    let mut paths = default_env.clone();
     if std::env::var("RADIVINE_WORKER_SOCKET").is_err() {
         paths.socket_path = worker_socket_path.to_path_buf();
     }
@@ -518,6 +519,9 @@ pub fn worker_paths_for(worker_socket_path: &Path, state_dir: &Path) -> WorkerRu
     if std::env::var("RADIVINE_WORKER_LOG").is_err() {
         paths.log_path = state_dir.join("worker.log");
     }
+    if paths.socket_path != default_env.socket_path || paths.db_path != default_env.db_path {
+        paths.launch_mode = radivine_jobs::WorkerLaunchMode::Spawn;
+    }
     paths
 }
 
@@ -527,26 +531,31 @@ pub fn spawn_jobs_bridge(
     state_dir: PathBuf,
     egui_ctx: Option<egui::Context>,
 ) -> (Sender<JobsCommand>, Receiver<UiJobsEvent>) {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
     let (cmd_tx, cmd_rx) = mpsc::channel::<JobsCommand>();
     let (ev_tx, ev_rx) = mpsc::channel::<UiJobsEvent>();
+    let shutdown = Arc::new(AtomicBool::new(false));
 
     // Lightweight live-event subscriber thread that connects whenever the worker socket exists.
     let sub_sock = worker_socket_path.clone();
     let sub_ev_tx = ev_tx.clone();
     let sub_ctx = egui_ctx.clone();
+    let sub_shutdown = Arc::clone(&shutdown);
     let _ = thread::Builder::new()
         .name("radivine-control-jobs-sub".to_string())
         .spawn(move || {
-            loop {
+            while !sub_shutdown.load(Ordering::Relaxed) {
                 if !sub_sock.exists() {
-                    thread::sleep(Duration::from_millis(200));
+                    thread::sleep(Duration::from_millis(100));
                     continue;
                 }
                 if let Ok(client) = JobsClient::connect(&sub_sock)
                     && let Ok((_active, mut sub)) = client.subscribe(None)
                 {
-                    let _ = sub.set_read_timeout(Some(Duration::from_millis(400)));
-                    loop {
+                    let _ = sub.set_read_timeout(Some(Duration::from_millis(200)));
+                    while !sub_shutdown.load(Ordering::Relaxed) {
                         match sub.next_event() {
                             Ok(Some(update)) => {
                                 if sub_ev_tx
@@ -578,7 +587,7 @@ pub fn spawn_jobs_bridge(
                         }
                     }
                 }
-                thread::sleep(Duration::from_millis(200));
+                thread::sleep(Duration::from_millis(100));
             }
         });
 
@@ -844,6 +853,7 @@ pub fn spawn_jobs_bridge(
                     ctx.request_repaint();
                 }
             }
+            shutdown.store(true, Ordering::Relaxed);
         });
 
     (cmd_tx, ev_rx)
