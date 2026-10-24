@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use smallvec::SmallVec;
 
 use radivine_actions::{
-    call_desktop_notify, load_actions_file, registry_from_actions_and_preview_config,
+    ConvertMenuContext, call_desktop_notify, load_actions_file, registry_from_options,
 };
 use radivine_core::{
     ActionId, ActionIndex, ActionRegistry, BasicContext, ClipOp, ClipboardRequest, Context,
@@ -111,6 +111,7 @@ pub struct SessionController {
     wheel_session: Option<WheelSession>,
     action_index: ActionIndex,
     registry: Arc<ActionRegistry>,
+    convert_ctx: ConvertMenuContext,
     enricher: Enricher,
     enrich_session_seq: u64,
     active_enrich_session_id: u64,
@@ -259,6 +260,7 @@ impl SessionController {
             wheel_session: None,
             action_index: ActionIndex::default(),
             registry,
+            convert_ctx: ConvertMenuContext::default(),
             enricher,
             enrich_session_seq: 0,
             active_enrich_session_id: 0,
@@ -388,6 +390,11 @@ impl SessionController {
         );
     }
 
+    /// Sets the shared [`ConvertMenuContext`] used when reloading `actions.toml`.
+    pub fn set_convert_menu_context(&mut self, convert_ctx: ConvertMenuContext) {
+        self.convert_ctx = convert_ctx;
+    }
+
     /// Loads or reloads `actions.toml` from `actions_path`.
     ///
     /// If `actions_path` is invalid or fails validation, logs and notifies the error with line
@@ -397,7 +404,7 @@ impl SessionController {
         let notify_warn = self.config.notifications.notify_on_config_warning;
         match load_actions_file(actions_path) {
             Ok(actions_cfg) => {
-                match registry_from_actions_and_preview_config(&actions_cfg, &preview_settings) {
+                match registry_from_options(&actions_cfg, &preview_settings, &self.convert_ctx) {
                     Ok(new_reg) => {
                         self.registry = Arc::new(new_reg);
                         self.custom_action_count = actions_cfg

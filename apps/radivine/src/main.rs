@@ -2,6 +2,7 @@
 
 use radivine::{config, ipc, session};
 
+use std::ffi::OsString;
 use std::fs;
 use std::io::ErrorKind;
 use std::os::fd::{AsFd, BorrowedFd, RawFd};
@@ -16,7 +17,9 @@ use calloop::{EventLoop, Interest, Mode, PostAction};
 use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
 
-use radivine_actions::builtin_registry;
+use radivine_actions::{
+    ActionsConfig, ConvertMenuContext, builtin_registry, registry_from_options,
+};
 use radivine_core::normalize_cli_arg_to_uri;
 use radivine_platform::x11::doctor::probe_x11_doctor;
 use radivine_platform::{PhysPoint, connect_with_config};
@@ -56,9 +59,9 @@ enum Commands {
     Daemon,
     /// Summon the radial wheel at the cursor in Invoke mode.
     Invoke {
-        /// File paths or `file://` URIs to act upon.
+        /// File paths or `file://` URIs to act upon (supports arbitrary non-UTF-8 Linux paths).
         #[arg(value_name = "PATHS")]
-        paths: Vec<String>,
+        paths: Vec<OsString>,
 
         /// Optional explicit root pixel coordinates `X,Y` (e.g. `960,540`).
         #[arg(long, value_name = "X,Y")]
@@ -248,10 +251,19 @@ fn run_daemon(config_path: Option<PathBuf>, sock_path: &Path) -> anyhow::Result<
     install_emergency_panic_hook(overlay_win_id);
 
     let renderer = Renderer::new(config.resolve_theme(), AssetSource::Embedded)?;
-    let registry = Arc::new(builtin_registry());
+    let convert_ctx = ConvertMenuContext::default();
+    let registry = Arc::new(
+        registry_from_options(
+            &ActionsConfig::default(),
+            &config.to_preview_settings(),
+            &convert_ctx,
+        )
+        .unwrap_or_else(|_| builtin_registry()),
+    );
 
     let x11_fd = platform.poll_fd();
     let mut controller = SessionController::new(platform, renderer, registry, config);
+    controller.set_convert_menu_context(convert_ctx);
     let actions_path = AppConfig::actions_path_for(config_path.as_deref());
     controller.load_actions_from_path(&actions_path);
     check_and_emit_wayland_first_run_notice(&mut controller);
@@ -490,7 +502,7 @@ fn handle_ipc_client(stream: &mut std::os::unix::net::UnixStream, state: &mut Da
     }
 }
 
-fn normalize_cli_paths(raw_args: &[String]) -> Vec<String> {
+fn normalize_cli_paths(raw_args: &[OsString]) -> Vec<String> {
     let base_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
     let mut out = Vec::with_capacity(raw_args.len());
     for raw in raw_args {
