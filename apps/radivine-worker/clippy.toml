@@ -1,0 +1,3 @@
+disallowed-methods = [
+    { path = "std::fs::rename", reason = "Use radivine_convert::output::commit_no_replace to prevent silent target overwrite (ADR-034)" },
+]

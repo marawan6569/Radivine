@@ -117,6 +117,7 @@ Deliberately **not** used: `keyframe` (stale; our animation needs are ~100 lines
 | Comment-Preserving TOML Editing | `toml_edit` 0.22.27 | Used in `radivine-convert` and `radivine-control` to save `convert.toml` without stripping user comments |
 | Cryptographic Digest (Tests & Verification) | `sha2` 0.10.9 | Byte-for-byte ICC profile and source-immutability verification |
 | CSPRNG / Staging Suffices | `fastrand` 2.5.0 | Collision-free `.rvstage-<job>-<rand16>` and `item-<idx>-<rand16>.part` names |
+| Durable Job Store (Milestone C2) | `rusqlite` 0.32 (`features = ["bundled"]`) | SQLite WAL persistence and `C0a`–`C6` crash-recovery journal in `apps/radivine-worker` (`ADR-032`) |
 
 ## 3. Final recommended stack
 

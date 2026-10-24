@@ -822,11 +822,17 @@ impl PendingOutput {
             ) {
                 Ok(rung) => {
                     self.committed = true;
-                    let _ = cleanup_staging_dir_if_empty(
-                        &self.stage_dir_path,
-                        self.stage_dir_dev,
-                        self.stage_dir_ino,
-                    );
+                    if std::env::var("RADIVINE_WORKER_TEST_CRASH_AT")
+                        .ok()
+                        .as_deref()
+                        != Some("C5")
+                    {
+                        let _ = cleanup_staging_dir_if_empty(
+                            &self.stage_dir_path,
+                            self.stage_dir_dev,
+                            self.stage_dir_ino,
+                        );
+                    }
                     return Ok(Some((candidate_path, rung, attempt)));
                 }
                 Err(CommitAttemptError::DestinationExists) => match output_policy.collision {

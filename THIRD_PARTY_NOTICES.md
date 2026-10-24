@@ -41,10 +41,12 @@ All direct workspace dependencies have been audited via `cargo metadata` for com
 | `percent-encoding` | `2.3.2` | `MIT OR Apache-2.0` | <https://github.com/servo/rust-url/> |
 | `proptest` *(dev)* | `1.12.0` | `MIT OR Apache-2.0` | <https://github.com/proptest-rs/proptest> |
 | `resvg` | `0.44.0` | `MPL-2.0` | <https://github.com/RazrFalcon/resvg> |
+| `rusqlite` | `0.32.1` (bundles `SQLite 3.x` via `libsqlite3-sys`) | `MIT` (bindings) / `Public Domain` (`SQLite`) | <https://github.com/rusqlite/rusqlite> / <https://www.sqlite.org> |
 | `rustix` | `1.0.x` | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | <https://github.com/bytecodealliance/rustix> |
 | `serde` | `1.0.229` | `MIT OR Apache-2.0` | <https://github.com/serde-rs/serde> |
 | `serde_json` | `1.0.154` | `MIT OR Apache-2.0` | <https://github.com/serde-rs/json> |
 | `sha2` *(dev)* | `0.10.9` | `MIT OR Apache-2.0` | <https://github.com/RustCrypto/hashes> |
+| `signal-hook` | `0.3.18` | `Apache-2.0 OR MIT` | <https://github.com/vorner/signal-hook> |
 | `smallvec` | `1.16.3` | `MIT OR Apache-2.0` | <https://github.com/servo/rust-smallvec> |
 | `softbuffer` *(dev/sandbox)* | `0.4.8` | `MIT OR Apache-2.0` | <https://github.com/rust-windowing/softbuffer> |
 | `tempfile` *(dev)* | `3.27.0` | `MIT OR Apache-2.0` | <https://github.com/Stebalien/tempfile> |

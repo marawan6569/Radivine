@@ -1,0 +1,37 @@
+[package]
+name = "radivine-worker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Durable on-demand background job worker and CLI for Radivine."
+
+[[bin]]
+name = "radivine-worker"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+fastrand.workspace = true
+radivine-convert = { path = "../../crates/radivine-convert" }
+radivine-convert-image = { path = "../../crates/radivine-convert-image" }
+radivine-dbus = { path = "../../crates/radivine-dbus" }
+radivine-jobs = { path = "../../crates/radivine-jobs" }
+rusqlite.workspace = true
+rustix = { workspace = true, features = ["fs", "process", "net"] }
+serde.workspace = true
+serde_json.workspace = true
+signal-hook.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+image.workspace = true
+proptest.workspace = true
+sha2.workspace = true
+tempfile.workspace = true

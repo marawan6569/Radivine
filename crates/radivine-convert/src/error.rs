@@ -25,6 +25,23 @@ pub enum ErrorClass {
     Internal,
 }
 
+impl ErrorClass {
+    /// Returns the snake_case string representation of this [`ErrorClass`].
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            ErrorClass::UserInput => "user_input",
+            ErrorClass::Unsupported => "unsupported",
+            ErrorClass::CorruptInput => "corrupt_input",
+            ErrorClass::ResourceLimit => "resource_limit",
+            ErrorClass::OutputConflict => "output_conflict",
+            ErrorClass::Io => "io",
+            ErrorClass::Cancelled => "cancelled",
+            ErrorClass::Internal => "internal",
+        }
+    }
+}
+
 /// Filesystem operation stage where an I/O failure occurred.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
