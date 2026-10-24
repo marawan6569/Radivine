@@ -60,7 +60,21 @@ impl EventHub {
 
     #[must_use]
     pub fn subscriber_count(&self) -> usize {
-        self.subscribers.lock().unwrap().len()
+        use std::io::Read;
+        let mut subs = self.subscribers.lock().unwrap();
+        subs.retain_mut(|sub| {
+            let _ = sub.stream.set_nonblocking(true);
+            let mut buf = [0u8; 1];
+            let alive = match sub.stream.read(&mut buf) {
+                Ok(0) => false, // EOF: client closed connection
+                Ok(_) => true,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => true,
+                Err(_) => false,
+            };
+            let _ = sub.stream.set_nonblocking(false);
+            alive
+        });
+        subs.len()
     }
 
     /// Broadcasts a [`JobUpdate`] to all matching subscribers, evicting any slow or disconnected stream.
@@ -760,7 +774,7 @@ impl JobScheduler {
             slot.job_id,
             slot.item_id,
             &FailedOutcome {
-                error_code: "timeout",
+                error_code: "timed_out",
                 error_class: "limit_exceeded",
                 error_message: "Conversion exceeded the per-file time limit",
                 retryable: false,

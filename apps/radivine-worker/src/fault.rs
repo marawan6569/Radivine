@@ -77,12 +77,16 @@ pub fn maybe_crash_at(point: CrashPoint) {
 #[derive(Debug, Default)]
 pub struct WorkerFsOps {
     inner: RealFsOps,
+    published_output: AtomicBool,
 }
 
 impl WorkerFsOps {
     #[must_use]
     pub fn new() -> Self {
-        Self { inner: RealFsOps }
+        Self {
+            inner: RealFsOps,
+            published_output: AtomicBool::new(false),
+        }
     }
 
     fn force_rung_b() -> bool {
@@ -104,8 +108,13 @@ impl FsOps for WorkerFsOps {
         if Self::force_rung_b() {
             return Err(rustix::io::Errno::INVAL);
         }
-        self.inner
-            .rename_noreplace(stage_dir, temp_name, dest_dir, dest_name)
+        let res = self
+            .inner
+            .rename_noreplace(stage_dir, temp_name, dest_dir, dest_name);
+        if res.is_ok() {
+            self.published_output.store(true, Ordering::SeqCst);
+        }
+        res
     }
 
     fn hardlink(
@@ -122,15 +131,20 @@ impl FsOps for WorkerFsOps {
     fn unlink_in_dir(&self, dir: &File, name: &OsStr) -> Result<(), rustix::io::Errno> {
         // In Rung B, hardlink + sync_dir(DestDir) have just completed before unlink_in_dir(stage_dir, temp_name).
         maybe_crash_at(CrashPoint::C3);
-        self.inner.unlink_in_dir(dir, name)
+        let res = self.inner.unlink_in_dir(dir, name);
+        if res.is_ok() {
+            self.published_output.store(true, Ordering::SeqCst);
+        }
+        res
     }
 
     fn sync_dir(&self, dir: &File, role: DirSyncRole) -> io::Result<()> {
         self.inner.sync_dir(dir, role)?;
-        // In Rung A, DestDir is synced last inside commit_no_replace.
-        // In Rung B, StageDir is synced last inside commit_no_replace (after unlink_in_dir).
-        if (role == DirSyncRole::DestDir && !Self::force_rung_b())
-            || (role == DirSyncRole::StageDir && Self::force_rung_b())
+        // In Rung A, DestDir is synced last inside commit_no_replace after rename_noreplace.
+        // In Rung B, StageDir is synced last inside commit_no_replace after unlink_in_dir.
+        if self.published_output.load(Ordering::SeqCst)
+            && ((role == DirSyncRole::DestDir && !Self::force_rung_b())
+                || (role == DirSyncRole::StageDir && Self::force_rung_b()))
         {
             maybe_crash_at(CrashPoint::C4);
         }

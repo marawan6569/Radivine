@@ -14,6 +14,8 @@ radivine-platform = { path = "../crates/radivine-platform" }
 radivine-actions = { path = "../crates/radivine-actions" }
 radivine-convert = { path = "../crates/radivine-convert" }
 radivine-convert-image = { path = "../crates/radivine-convert-image" }
+radivine-jobs = { path = "../crates/radivine-jobs" }
+serde_json = "1.0"
 tempfile = "3.27"
 
 [[bin]]
@@ -75,6 +77,20 @@ bench = false
 [[bin]]
 name = "convert_toml_parse"
 path = "fuzz_targets/convert_toml_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "worker_protocol_parse"
+path = "fuzz_targets/worker_protocol_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "wirepath_roundtrip"
+path = "fuzz_targets/wirepath_roundtrip.rs"
 test = false
 doc = false
 bench = false

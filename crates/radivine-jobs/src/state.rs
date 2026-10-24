@@ -383,20 +383,14 @@ pub const fn compute_terminal_job_state(
     job_was_cancelled: bool,
 ) -> JobState {
     let bad_items = failed_items + interrupted_items;
-    if job_was_cancelled && succeeded_items == 0 && bad_items == 0 {
+    if job_was_cancelled || cancelled_items > 0 {
         return JobState::Cancelled;
     }
-    if bad_items == 0 && cancelled_items == 0 {
+    if bad_items == 0 {
         return JobState::Completed;
     }
-    if succeeded_items > 0 || (skipped_items > 0 && (bad_items > 0 || cancelled_items > 0)) {
-        if job_was_cancelled && bad_items == 0 && succeeded_items == 0 {
-            return JobState::Cancelled;
-        }
+    if succeeded_items > 0 || skipped_items > 0 {
         return JobState::CompletedWithErrors;
-    }
-    if job_was_cancelled && bad_items == 0 {
-        return JobState::Cancelled;
     }
     let _ = total_items;
     JobState::Failed

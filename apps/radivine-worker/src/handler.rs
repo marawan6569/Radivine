@@ -323,7 +323,7 @@ impl JobHandler for ConvertImageHandler {
                 }
                 if slot.phase() == crate::fence::ItemPhase::TimedOut {
                     return ItemExecutionOutcome::Failed {
-                        error_code: "timeout".to_string(),
+                        error_code: "timed_out".to_string(),
                         error_class: "limit_exceeded".to_string(),
                         error_message: "Conversion exceeded the per-file time limit".to_string(),
                         retryable: false,
@@ -482,6 +482,8 @@ fn plan_single_item(
     let (dest_dir, stem, ext) =
         resolve_output_destination_os(&claimed.source_path, validated.target(), &validated.output)?;
     let tentative_output_path = dest_dir.join(derive_suffixed_filename_os(&stem, &ext, 0));
+    let _ = stage_dir_name;
+    let item_stage_dir_name = format!(".rvstage-{}-{}", claimed.job_id.0, random_hex16());
 
     Ok(PlanSingleOutcome::Ready(
         PlannedItem {
@@ -493,7 +495,7 @@ fn plan_single_item(
             backend: backend_id,
             tentative_output_path,
             estimated_source_bytes: identity.size,
-            stage_dir_name: stage_dir_name.to_string(),
+            stage_dir_name: item_stage_dir_name,
         },
         dest_dir,
     ))

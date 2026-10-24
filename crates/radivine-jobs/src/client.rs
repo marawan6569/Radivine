@@ -69,6 +69,12 @@ pub enum WorkerLaunchMode {
 impl WorkerLaunchMode {
     #[must_use]
     pub fn from_env() -> Self {
+        if env::var("RADIVINE_DISABLE_SYSTEMD_USER_SPAWN")
+            .ok()
+            .is_some_and(|v| v.trim() == "1" || v.eq_ignore_ascii_case("true"))
+        {
+            return Self::Spawn;
+        }
         match env::var("RADIVINE_WORKER_LAUNCH")
             .ok()
             .as_deref()
@@ -225,7 +231,7 @@ impl WorkerLauncher {
                 Self::launch_via_detached_spawn(paths)?;
             }
             WorkerLaunchMode::Auto => {
-                if Self::launch_via_systemd(paths, false, &mut detail).is_err() {
+                if Self::launch_via_systemd(paths, true, &mut detail).is_err() {
                     Self::launch_via_detached_spawn(paths)?;
                 }
             }
@@ -282,21 +288,24 @@ impl WorkerLauncher {
 
         if allow_transient_unit {
             let bin = paths.resolve_worker_binary();
-            let unit_name = format!("radivine-worker-transient-{:016x}", fastrand::u64(..));
+            let unit_name = env::var("RADIVINE_WORKER_SYSTEMD_UNIT")
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| format!("radivine-worker-transient-{:016x}", fastrand::u64(..)));
             let mut cmd = Command::new("systemd-run");
             cmd.args(["--user", "--collect", &format!("--unit={unit_name}")]);
-            if let Ok(idle_ms) = env::var("RADIVINE_WORKER_IDLE_TIMEOUT_MS") {
-                cmd.arg(format!(
-                    "--setenv=RADIVINE_WORKER_IDLE_TIMEOUT_MS={idle_ms}"
-                ));
-            }
-            if let Ok(suppress) = env::var("RADIVINE_SUPPRESS_DESKTOP_NOTIFY") {
-                cmd.arg(format!(
-                    "--setenv=RADIVINE_SUPPRESS_DESKTOP_NOTIFY={suppress}"
-                ));
-            }
-            if let Ok(cfg) = env::var("XDG_CONFIG_HOME") {
-                cmd.arg(format!("--setenv=XDG_CONFIG_HOME={cfg}"));
+            for var_name in [
+                "RADIVINE_WORKER_IDLE_TIMEOUT_MS",
+                "RADIVINE_SUPPRESS_DESKTOP_NOTIFY",
+                "RADIVINE_WORKER_TEST_ITEM_SLEEP_MS",
+                "RADIVINE_WORKER_ITEM_TIMEOUT_MS",
+                "XDG_CONFIG_HOME",
+                "XDG_RUNTIME_DIR",
+                "XDG_STATE_HOME",
+            ] {
+                if let Ok(val) = env::var(var_name) {
+                    cmd.arg(format!("--setenv={var_name}={val}"));
+                }
             }
             cmd.arg(&bin)
                 .arg("serve")
@@ -380,6 +389,8 @@ fn rotate_log_if_needed(log_path: &Path) {
 
 /// Synchronous JSON-lines client for `radivine-worker`.
 pub struct JobsClient {
+    socket_path: PathBuf,
+    timeout: Duration,
     reader: BufReader<UnixStream>,
     writer: UnixStream,
 }
@@ -403,6 +414,8 @@ impl JobsClient {
         let _ = stream.set_write_timeout(Some(timeout));
         let writer = stream.try_clone()?;
         Ok(Self {
+            socket_path: socket_path.to_path_buf(),
+            timeout,
             reader: BufReader::new(stream),
             writer,
         })
@@ -420,14 +433,33 @@ impl JobsClient {
         Self::connect(&paths.socket_path)
     }
 
+    fn send_and_read_once(&mut self, line_bytes: &[u8]) -> Result<String, ClientError> {
+        self.writer.write_all(line_bytes)?;
+        self.writer.flush()?;
+        Ok(read_bounded_line(
+            &mut self.reader,
+            MAX_RESPONSE_LINE_BYTES,
+        )?)
+    }
+
     /// Sends a [`WorkerRequest`] and reads the corresponding [`WorkerResponse`].
     pub fn request(&mut self, req: &WorkerRequest) -> Result<WorkerResponse, ClientError> {
         let mut line = serde_json::to_string(req)?;
         line.push('\n');
-        self.writer.write_all(line.as_bytes())?;
-        self.writer.flush()?;
-
-        let raw_resp = read_bounded_line(&mut self.reader, MAX_RESPONSE_LINE_BYTES)?;
+        let raw_resp = match self.send_and_read_once(line.as_bytes()) {
+            Ok(s) => s,
+            Err(
+                ClientError::Io(_)
+                | ClientError::Frame(FrameReadError::Eof | FrameReadError::Io(_)),
+            ) if !matches!(req, WorkerRequest::Ping { .. }) => {
+                // Reconnect once if the server closed an idle keep-alive connection between calls
+                let fresh = Self::connect_with_timeout(&self.socket_path, self.timeout)?;
+                self.reader = fresh.reader;
+                self.writer = fresh.writer;
+                self.send_and_read_once(line.as_bytes())?
+            }
+            Err(e) => return Err(e),
+        };
         let resp: WorkerResponse = serde_json::from_str(&raw_resp)?;
         if let WorkerResponse::Error { code, message, .. } = resp {
             return Err(ClientError::WorkerError { code, message });

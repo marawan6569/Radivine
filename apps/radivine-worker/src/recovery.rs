@@ -203,13 +203,20 @@ fn recover_inspecting_or_running(
         report.recovered_c1 += 1;
     }
 
+    let err_code = if report.reboot_detected {
+        "system_reboot"
+    } else if report.dirty_previous_shutdown {
+        "worker_crashed"
+    } else {
+        "worker_restarted"
+    };
     let warnings_json = serde_json::to_string(warnings).unwrap_or_else(|_| "[]".to_string());
     store.apply_recovery_item_update(
         row.item_id,
         ItemState::Interrupted,
         None,
         None,
-        Some("interrupted"),
+        Some(err_code),
         Some("interrupted"),
         Some("Worker crashed or restarted while item was running"),
         true,
@@ -324,13 +331,20 @@ fn recover_committing(
         let _ = cleanup_staging_dir_if_empty(stage_dir_path, s_dev, s_ino);
     }
 
+    let err_code = if report.reboot_detected {
+        "system_reboot"
+    } else if report.dirty_previous_shutdown {
+        "worker_crashed"
+    } else {
+        "worker_restarted"
+    };
     let warnings_json = serde_json::to_string(warnings).unwrap_or_else(|_| "[]".to_string());
     store.apply_recovery_item_update(
         row.item_id,
         ItemState::Interrupted,
         None,
         None,
-        Some("interrupted"),
+        Some(err_code),
         Some("interrupted"),
         Some("Worker crashed before output publication completed (C2)"),
         true,
