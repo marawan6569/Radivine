@@ -85,11 +85,46 @@ pub struct TempCreatedJournal<'a> {
 /// Pre-commit request presented to [`crate::engine::ItemControl::acquire_commit_permit`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CommitRequest<'a> {
+    pub attempt: u32,
     pub stage_dir_path: &'a Path,
     pub temp_path: &'a Path,
     pub temp_dev: u64,
     pub temp_ino: u64,
     pub final_output_path: &'a Path,
+}
+
+impl<'a> CommitRequest<'a> {
+    /// Returns the 0-based collision probe attempt number.
+    #[must_use]
+    pub const fn attempt(&self) -> u32 {
+        self.attempt
+    }
+
+    /// Returns the candidate output filename (`final_name`) in `dest_dir`.
+    #[must_use]
+    pub fn candidate(&self) -> &'a OsStr {
+        self.final_output_path
+            .file_name()
+            .unwrap_or(self.final_output_path.as_os_str())
+    }
+
+    /// Returns the device ID of the staged temporary `.part` file.
+    #[must_use]
+    pub const fn temp_dev(&self) -> u64 {
+        self.temp_dev
+    }
+
+    /// Returns the inode number of the staged temporary `.part` file.
+    #[must_use]
+    pub const fn temp_ino(&self) -> u64 {
+        self.temp_ino
+    }
+
+    /// Authorizes this request and issues a lifetime-scoped [`CommitPermit`].
+    #[must_use]
+    pub fn authorize(&self) -> CommitPermit<'a> {
+        CommitPermit::issue(self)
+    }
 }
 
 /// Linear, non-`Send`, non-`Sync`, lifetime-scoped token proving pre-commit journaling succeeded.
@@ -363,12 +398,31 @@ pub fn is_canonical_temp_part_name(name: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
-/// Resolves the target directory and base filename `(dest_dir, stem, ext)` for `source_path`.
-pub fn resolve_output_destination(
+/// Validates whether a directory name matches the canonical staging directory pattern
+/// `.rvstage-{job_id}-{rand16}` (`^\.rvstage-[0-9]+-[0-9a-f]{16}$`).
+#[must_use]
+pub fn is_canonical_stage_dir_name(name: &str) -> bool {
+    let Some(rest) = name.strip_prefix(".rvstage-") else {
+        return false;
+    };
+    let Some((job_str, rand_str)) = rest.rsplit_once('-') else {
+        return false;
+    };
+    !job_str.is_empty()
+        && job_str.bytes().all(|b| b.is_ascii_digit())
+        && rand_str.len() == 16
+        && rand_str
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+/// Resolves the target directory and base filename `(dest_dir, stem, ext)` for `source_path`,
+/// preserving arbitrary non-UTF-8 `OsStr` bytes in the stem (`AC-C2.16`).
+pub fn resolve_output_destination_os(
     source_path: &Path,
     target_format: FormatId,
     output_policy: &OutputPolicy,
-) -> Result<(PathBuf, String, String), ConversionError> {
+) -> Result<(PathBuf, OsString, String), ConversionError> {
     let source_parent = source_path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -410,16 +464,17 @@ pub fn resolve_output_destination(
         }
     };
 
-    let raw_stem = source_path
+    let raw_stem: &OsStr = source_path
         .file_stem()
-        .and_then(OsStr::to_str)
         .filter(|s| !s.is_empty())
-        .unwrap_or("converted");
+        .unwrap_or_else(|| OsStr::new("converted"));
 
     let (stem, jpeg_ext) = match &output_policy.naming {
-        NamingPolicy::PreserveStem { jpeg_ext } => (raw_stem.to_string(), *jpeg_ext),
+        NamingPolicy::PreserveStem { jpeg_ext } => (raw_stem.to_os_string(), *jpeg_ext),
         NamingPolicy::AppendSuffix { suffix, jpeg_ext } => {
-            (format!("{raw_stem}{suffix}"), *jpeg_ext)
+            let mut s = raw_stem.to_os_string();
+            s.push(suffix);
+            (s, *jpeg_ext)
         }
     };
 
@@ -429,6 +484,32 @@ pub fn resolve_output_destination(
     };
 
     Ok((dest_dir, stem, ext))
+}
+
+/// Resolves the target directory and base filename `(dest_dir, stem, ext)` for `source_path`.
+pub fn resolve_output_destination(
+    source_path: &Path,
+    target_format: FormatId,
+    output_policy: &OutputPolicy,
+) -> Result<(PathBuf, String, String), ConversionError> {
+    let (dest_dir, stem_os, ext) =
+        resolve_output_destination_os(source_path, target_format, output_policy)?;
+    let stem = stem_os.to_str().unwrap_or("converted").to_string();
+    Ok((dest_dir, stem, ext))
+}
+
+/// Formats a candidate output filename for attempt `attempt` (`0` -> `{stem}.{ext}`, `n >= 1` -> `{stem} ({n}).{ext}`),
+/// preserving arbitrary non-UTF-8 `OsStr` bytes in `stem`.
+#[must_use]
+pub fn derive_suffixed_filename_os(stem: &OsStr, ext: &str, attempt: u32) -> OsString {
+    let mut out = stem.to_os_string();
+    if attempt == 0 {
+        out.push(".");
+        out.push(ext);
+    } else {
+        out.push(format!(" ({attempt}).{ext}"));
+    }
+    out
 }
 
 /// Formats a candidate output filename for attempt `attempt` (`0` -> `{stem}.{ext}`, `n >= 1` -> `{stem} ({n}).{ext}`).
@@ -680,25 +761,32 @@ impl PendingOutput {
         Ok(len)
     }
 
+    /// Disarms automatic `.part` deletion on `Drop` (used when an item times out so cleanup is
+    /// deferred to startup crash recovery after worker recycling per `SECURITY_AND_FILE_SAFETY.md` §3.6).
+    pub fn disarm_drop_cleanup(&mut self) {
+        self.committed = true;
+    }
+
     /// Atomically publishes the validated `.part` file into `dest_dir_path` according to `output_policy`,
-    /// acquiring a fresh [`CommitPermit`] from `ctrl` immediately before each `commit_no_replace` call.
+    /// preserving arbitrary non-UTF-8 `OsStr` bytes in `stem` and acquiring a fresh [`CommitPermit`]
+    /// from `ctrl` immediately before each `commit_no_replace` call.
     ///
-    /// Returns `Ok(Some((final_path, rung)))` if published, or `Ok(None)` if `CollisionPolicy::Skip`
+    /// Returns `Ok(Some((final_path, rung, attempt)))` if published, or `Ok(None)` if `CollisionPolicy::Skip`
     /// skipped an existing destination file.
-    pub fn commit_with_policy(
+    pub fn commit_with_policy_os(
         mut self,
-        stem: &str,
+        stem: &OsStr,
         ext: &str,
         output_policy: &OutputPolicy,
         ctrl: &mut dyn crate::engine::ItemControl,
-    ) -> Result<Option<(PathBuf, CommitRung)>, ConversionError> {
+    ) -> Result<Option<(PathBuf, CommitRung, u32)>, ConversionError> {
         let max_probes = match output_policy.collision {
             CollisionPolicy::Suffix => output_policy.max_collision_probes.max(1),
             CollisionPolicy::Skip | CollisionPolicy::Fail => 0,
         };
 
         for attempt in 0..=max_probes {
-            let candidate_name = derive_suffixed_filename(stem, ext, attempt);
+            let candidate_name = derive_suffixed_filename_os(stem, ext, attempt);
             let candidate_path = self.dest_dir_path.join(&candidate_name);
 
             let req = CommitRequest {
@@ -707,14 +795,28 @@ impl PendingOutput {
                 temp_dev: self.temp_dev,
                 temp_ino: self.temp_ino,
                 final_output_path: &candidate_path,
+                attempt,
             };
-            let permit = ctrl.acquire_commit_permit(&req)?;
+            let permit = match ctrl.acquire_commit_permit(&req) {
+                Ok(p) => p,
+                Err(e) => {
+                    if matches!(
+                        e,
+                        ConversionError::LimitExceeded {
+                            limit: crate::error::Limit::Timeout { .. }
+                        }
+                    ) {
+                        self.disarm_drop_cleanup();
+                    }
+                    return Err(e);
+                }
+            };
 
             match commit_no_replace(
                 &self.stage_dir_fd,
                 &self.temp_name,
                 &self.dest_dir_fd,
-                OsStr::new(&candidate_name),
+                &candidate_name,
                 permit,
                 self.fs_ops.as_ref(),
             ) {
@@ -725,7 +827,7 @@ impl PendingOutput {
                         self.stage_dir_dev,
                         self.stage_dir_ino,
                     );
-                    return Ok(Some((candidate_path, rung)));
+                    return Ok(Some((candidate_path, rung, attempt)));
                 }
                 Err(CommitAttemptError::DestinationExists) => match output_policy.collision {
                     CollisionPolicy::Suffix => continue,
@@ -756,11 +858,27 @@ impl PendingOutput {
 
         let base = self
             .dest_dir_path
-            .join(derive_suffixed_filename(stem, ext, 0));
+            .join(derive_suffixed_filename_os(stem, ext, 0));
         Err(ConversionError::CollisionExhausted {
             base,
             attempts: max_probes,
         })
+    }
+
+    /// Atomically publishes the validated `.part` file into `dest_dir_path` according to `output_policy`,
+    /// acquiring a fresh [`CommitPermit`] from `ctrl` immediately before each `commit_no_replace` call.
+    ///
+    /// Returns `Ok(Some((final_path, rung)))` if published, or `Ok(None)` if `CollisionPolicy::Skip`
+    /// skipped an existing destination file.
+    pub fn commit_with_policy(
+        self,
+        stem: &str,
+        ext: &str,
+        output_policy: &OutputPolicy,
+        ctrl: &mut dyn crate::engine::ItemControl,
+    ) -> Result<Option<(PathBuf, CommitRung)>, ConversionError> {
+        self.commit_with_policy_os(OsStr::new(stem), ext, output_policy, ctrl)
+            .map(|opt| opt.map(|(path, rung, _attempt)| (path, rung)))
     }
 }
 
@@ -890,6 +1008,27 @@ mod tests {
         assert!(!is_canonical_temp_part_name("item-0-short.part"));
         assert!(!is_canonical_temp_part_name("item-0-0123456789ABCDEF.part"));
         assert!(!is_canonical_temp_part_name("photo.webp"));
+
+        assert!(is_canonical_stage_dir_name(".rvstage-0-0123456789abcdef"));
+        assert!(is_canonical_stage_dir_name(".rvstage-42-deadbeefcafebabe"));
+        assert!(!is_canonical_stage_dir_name(
+            ".rvstage-plan-0123456789abcdef"
+        ));
+        assert!(!is_canonical_stage_dir_name(".rvstage-42-short"));
+        assert!(!is_canonical_stage_dir_name(".rvstage-42-0123456789ABCDEF"));
+
+        use std::os::unix::ffi::OsStrExt;
+        let raw_path = Path::new(OsStr::from_bytes(b"/tmp/dir\x80/photo\xffname.png"));
+        let (dest, stem, ext) =
+            resolve_output_destination_os(raw_path, FormatId::WebP, &OutputPolicy::default())
+                .unwrap();
+        assert_eq!(dest.as_os_str().as_bytes(), b"/tmp/dir\x80");
+        assert_eq!(stem.as_bytes(), b"photo\xffname");
+        assert_eq!(ext, "webp");
+        let cand0 = derive_suffixed_filename_os(&stem, &ext, 0);
+        assert_eq!(cand0.as_bytes(), b"photo\xffname.webp");
+        let cand1 = derive_suffixed_filename_os(&stem, &ext, 1);
+        assert_eq!(cand1.as_bytes(), b"photo\xffname (1).webp");
     }
 
     /// `T-COMMIT-NO-PARTIAL` & `T-STAGE-DIR-FSYNC`:

@@ -13,15 +13,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::backend::{BackendId, CapabilityCatalog};
 use crate::error::{ConversionError, FsOp, Limit, UnsupportedFeature};
-use crate::format::{FormatId, sniff_format};
+use crate::format::{FormatId, format_from_extension, sniff_format};
 use crate::options::{
     ChromaSubsampling, CollisionPolicy, OptionIssue, ResizeSpec, Rgb8, SameFormatPolicy,
     ValidatedOptions,
 };
 use crate::output::{
     CommitPermit, CommitRequest, FileIdentity, FsOps, PendingOutput, RealFsOps,
-    StageCreatedJournal, StageIntentJournal, TempCreatedJournal, derive_suffixed_filename,
-    random_hex16, resolve_output_destination,
+    StageCreatedJournal, StageIntentJournal, TempCreatedJournal, derive_suffixed_filename_os,
+    random_hex16, resolve_output_destination_os,
 };
 use crate::settings::ResourceLimitsConfig;
 
@@ -139,6 +139,9 @@ pub enum Warning {
     },
     ExifStrippedByPolicy,
     IccStrippedByPolicy,
+    IccNotPreserved {
+        reason: String,
+    },
     LosslessClampedForJpeg,
     KeptOriginalSize {
         width: u32,
@@ -146,6 +149,20 @@ pub enum Warning {
         requested: ResizeSpec,
     },
     SubsamplingApplied(ChromaSubsampling),
+    RenamedDueToCollision {
+        chosen_name: String,
+    },
+    ExtensionMismatch {
+        extension: String,
+        detected: FormatId,
+    },
+    OrphanedTempPreserved {
+        stage_dir: String,
+        reason: String,
+    },
+    RecoveredAfterInterruption {
+        recovery_stage: String,
+    },
 }
 
 /// Summary returned by [`ConversionBackend::convert`].
@@ -385,7 +402,7 @@ impl ConversionEngine {
         let mut items = Vec::with_capacity(sources.len());
         let mut skipped = Vec::new();
         let warnings = Vec::new();
-        let stage_dir_name = format!(".rvstage-plan-{}", random_hex16());
+        let stage_dir_name = format!(".rvstage-0-{}", random_hex16());
 
         for (idx, spec) in sources.iter().enumerate() {
             let file = match open_source_nofollow(&spec.path) {
@@ -466,7 +483,7 @@ impl ConversionEngine {
                 };
 
             let Ok((dest_dir, stem, ext)) =
-                resolve_output_destination(&spec.path, opts.target(), &opts.output)
+                resolve_output_destination_os(&spec.path, opts.target(), &opts.output)
             else {
                 skipped.push((
                     spec.path.clone(),
@@ -478,7 +495,7 @@ impl ConversionEngine {
                 continue;
             };
 
-            let base_output = dest_dir.join(derive_suffixed_filename(&stem, &ext, 0));
+            let base_output = dest_dir.join(derive_suffixed_filename_os(&stem, &ext, 0));
             if opts.output.collision == CollisionPolicy::Skip && base_output.exists() {
                 skipped.push((
                     spec.path.clone(),
@@ -688,8 +705,8 @@ impl ConversionEngine {
 
         // 6. Resolve destination directory and guard against OutputEqualsSource when not using Suffix collision policy
         let (dest_dir, stem, ext) =
-            resolve_output_destination(&item.source_path, opts.target(), &opts.output)?;
-        let base_candidate = dest_dir.join(derive_suffixed_filename(&stem, &ext, 0));
+            resolve_output_destination_os(&item.source_path, opts.target(), &opts.output)?;
+        let base_candidate = dest_dir.join(derive_suffixed_filename_os(&stem, &ext, 0));
 
         if opts.output.collision != CollisionPolicy::Suffix {
             if base_candidate == item.source_path {
@@ -754,19 +771,46 @@ impl ConversionEngine {
             })?;
 
         let temp_path_clone = pending.temp_path().to_path_buf();
-        let backend_out = {
+        let backend_res = {
             let mut src_reader = SourceReader::new(&mut buf_reader);
             let mut sink = OutputSink::new(pending.file_mut());
-            let out = backend.convert(&mut src_reader, &probe, opts, &mut sink, ctrl)?;
-            sink.flush_inner().map_err(|source| ConversionError::Io {
-                op: FsOp::WriteTemp,
-                path: temp_path_clone,
-                source,
-            })?;
-            out
+            backend
+                .convert(&mut src_reader, &probe, opts, &mut sink, ctrl)
+                .and_then(|out| {
+                    sink.flush_inner().map_err(|source| ConversionError::Io {
+                        op: FsOp::WriteTemp,
+                        path: temp_path_clone,
+                        source,
+                    })?;
+                    Ok(out)
+                })
+        };
+        let backend_out = match backend_res {
+            Ok(out) => out,
+            Err(e) => {
+                if matches!(
+                    e,
+                    ConversionError::LimitExceeded {
+                        limit: Limit::Timeout { .. }
+                    }
+                ) {
+                    pending.disarm_drop_cleanup();
+                }
+                return Err(e);
+            }
         };
 
-        ctrl.check_cancelled()?;
+        if let Err(e) = ctrl.check_cancelled() {
+            if matches!(
+                e,
+                ConversionError::LimitExceeded {
+                    limit: Limit::Timeout { .. }
+                }
+            ) {
+                pending.disarm_drop_cleanup();
+            }
+            return Err(e);
+        }
         ctrl.on_stage(Stage::ValidatingOutput);
 
         // 9. Flush, fsync .part file, verify non-empty, and rewind open O_RDWR fd to offset 0
@@ -839,9 +883,9 @@ impl ConversionEngine {
 
         // 12. Commit output via two-rung atomic protocol (acquires CommitPermit immediately prior)
         ctrl.on_stage(Stage::Committing);
-        let commit_res = pending.commit_with_policy(&stem, &ext, &opts.output, ctrl)?;
+        let commit_res = pending.commit_with_policy_os(&stem, &ext, &opts.output, ctrl)?;
 
-        let Some((final_output_path, _rung)) = commit_res else {
+        let Some((final_output_path, _rung, attempt)) = commit_res else {
             return Ok(ConvertedItem {
                 source_path: item.source_path.clone(),
                 output_path: None,
@@ -887,6 +931,23 @@ impl ConversionEngine {
             && !warnings.contains(&Warning::LosslessClampedForJpeg)
         {
             warnings.push(Warning::LosslessClampedForJpeg);
+        }
+        if attempt > 0
+            && let Some(file_name) = final_output_path.file_name()
+        {
+            warnings.push(Warning::RenamedDueToCollision {
+                chosen_name: file_name.to_string_lossy().into_owned(),
+            });
+        }
+        if let Some(ext_os) = item.source_path.extension()
+            && let Some(ext_str) = ext_os.to_str()
+            && let Some(ext_fmt) = format_from_extension(ext_str)
+            && ext_fmt != sniffed
+        {
+            warnings.push(Warning::ExtensionMismatch {
+                extension: ext_str.to_string(),
+                detected: sniffed,
+            });
         }
 
         Ok(ConvertedItem {
@@ -980,6 +1041,7 @@ mod tests {
             temp_dev: 1,
             temp_ino: 3,
             final_output_path: &out_path,
+            attempt: 0,
         };
         let _permit = ctrl.acquire_commit_permit(&req).unwrap();
     }

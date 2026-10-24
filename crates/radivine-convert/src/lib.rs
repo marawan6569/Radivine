@@ -43,7 +43,8 @@ pub use output::{
     CommitAttemptError, CommitPermit, CommitRequest, CommitRung, DirSyncRole, FileIdentity, FsOps,
     PendingOutput, RealFsOps, StageCreatedJournal, StageIntentJournal, TempCreatedJournal,
     cleanup_staging_dir_if_empty, cleanup_temp_safely, commit_no_replace, derive_suffixed_filename,
-    is_canonical_temp_part_name, resolve_output_destination,
+    derive_suffixed_filename_os, is_canonical_stage_dir_name, is_canonical_temp_part_name,
+    random_hex16, resolve_output_destination, resolve_output_destination_os,
 };
 pub use settings::{
     CURRENT_CONVERT_SCHEMA_VERSION, ConvertSettings, Preset, PresetOverrides, PresetRef,

@@ -172,11 +172,19 @@ impl ImageBackend {
         Self { limits }
     }
 
-    fn image_limits(&self) -> Limits {
+    fn image_limits(&self, probe: &SourceProbe, opts: &ValidatedOptions) -> Limits {
         let mut lim = Limits::default();
         lim.max_image_width = Some(self.limits.max_dimension);
         lim.max_image_height = Some(self.limits.max_dimension);
-        lim.max_alloc = Some(self.limits.max_alloc_bytes);
+        let est = self.estimate_resources(probe, opts).peak_ram_bytes;
+        let max_alloc = if self.limits.max_alloc_bytes >= 256 * 1024 * 1024 {
+            self.limits
+                .max_alloc_bytes
+                .max(est.min(self.limits.worker_memory_max_bytes))
+        } else {
+            self.limits.max_alloc_bytes
+        };
+        lim.max_alloc = Some(max_alloc);
         lim
     }
 }
@@ -400,7 +408,7 @@ impl ConversionBackend for ImageBackend {
                 detail: format!("failed to rewind source stream: {e}"),
             })?;
 
-        let (mut img, raw_icc, raw_exif) = self.decode_with_metadata(source, probe.format)?;
+        let (mut img, raw_icc, raw_exif) = self.decode_with_metadata(source, probe, opts)?;
         ctrl.check_cancelled()?;
         ctrl.on_stage(Stage::Transforming);
 
@@ -555,10 +563,11 @@ impl ImageBackend {
     fn decode_with_metadata(
         &self,
         source: &mut SourceReader<'_>,
-        format: FormatId,
+        probe: &SourceProbe,
+        opts: &ValidatedOptions,
     ) -> Result<DecodedWithMetadata, ConversionError> {
-        let limits = self.image_limits();
-        match format {
+        let limits = self.image_limits(probe, opts);
+        match probe.format {
             FormatId::Png => {
                 let mut dec = PngDecoder::new(source)
                     .map_err(|e| map_image_error(e, FormatId::Png, &self.limits))?;

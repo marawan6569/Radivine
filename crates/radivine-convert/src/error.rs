@@ -210,7 +210,44 @@ impl ConversionError {
         }
     }
 
-    /// Whether retrying the item with identical settings could plausibly succeed.
+    /// Stable machine-readable error code persisted in the job store (`JOB_SYSTEM_DESIGN.md` §4.3, §5).
+    #[must_use]
+    pub fn code(&self) -> &'static str {
+        match self {
+            ConversionError::UnknownInputFormat { .. } => "unsupported_format",
+            ConversionError::NoRoute(_) => "no_route",
+            ConversionError::UnsupportedFeature { .. } => "unsupported_feature",
+            ConversionError::InvalidOptions { .. } => "invalid_options",
+            ConversionError::CorruptInput { .. } => "corrupt_input",
+            ConversionError::LimitExceeded {
+                limit: Limit::Timeout { .. },
+            } => "timed_out",
+            ConversionError::LimitExceeded { .. } => "limit_exceeded",
+            ConversionError::SourceModifiedDuringConversion { .. } => "source_changed",
+            ConversionError::OutputExists { .. } => "output_exists",
+            ConversionError::CollisionExhausted { .. } => "collision_exhausted",
+            ConversionError::OutputEqualsSource { .. } => "output_equals_source",
+            ConversionError::FilesystemUnsupported { .. } => "filesystem_unsupported",
+            ConversionError::Io { source, .. } => match source.raw_os_error() {
+                Some(raw) if raw == rustix::io::Errno::NOSPC.raw_os_error() => "no_space",
+                Some(raw)
+                    if raw == rustix::io::Errno::ACCESS.raw_os_error()
+                        || raw == rustix::io::Errno::PERM.raw_os_error()
+                        || raw == rustix::io::Errno::ROFS.raw_os_error() =>
+                {
+                    "permission_denied"
+                }
+                Some(raw) if raw == rustix::io::Errno::NOENT.raw_os_error() => "source_not_found",
+                _ => "io_error",
+            },
+            ConversionError::BackendFailure { .. } => "backend_failure",
+            ConversionError::OutputValidationFailed { .. } => "output_validation_failed",
+            ConversionError::Cancelled => "cancelled",
+        }
+    }
+
+    /// Whether retrying the item with identical settings (or after freeing disk space / fixing permissions)
+    /// could plausibly succeed (`CONVERSION_PRODUCT_SPEC.md` §12).
     #[must_use]
     pub fn is_retryable(&self) -> bool {
         match self {
@@ -220,12 +257,25 @@ impl ConversionError {
             ConversionError::LimitExceeded {
                 limit: Limit::Timeout { .. },
             } => true,
-            ConversionError::Io { source, .. } => matches!(
-                source.kind(),
-                std::io::ErrorKind::Interrupted
-                    | std::io::ErrorKind::TimedOut
-                    | std::io::ErrorKind::WouldBlock
-            ),
+            ConversionError::Io { source, .. } => {
+                if matches!(
+                    source.kind(),
+                    std::io::ErrorKind::Interrupted
+                        | std::io::ErrorKind::TimedOut
+                        | std::io::ErrorKind::WouldBlock
+                        | std::io::ErrorKind::PermissionDenied
+                ) {
+                    return true;
+                }
+                matches!(
+                    source.raw_os_error(),
+                    Some(raw)
+                        if raw == rustix::io::Errno::NOSPC.raw_os_error()
+                            || raw == rustix::io::Errno::ACCESS.raw_os_error()
+                            || raw == rustix::io::Errno::PERM.raw_os_error()
+                            || raw == rustix::io::Errno::ROFS.raw_os_error()
+                )
+            }
             _ => false,
         }
     }
