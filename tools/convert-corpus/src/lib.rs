@@ -42,21 +42,28 @@ impl DetRng {
 #[must_use]
 pub fn generate_photo_rgb(width: u32, height: u32, seed: u64) -> RgbImage {
     let mut rng = DetRng::new(seed);
+    let seed_bias = rng.next_u8() & 0x1F;
     let mut buf = vec![0u8; (width as usize) * (height as usize) * 3];
     let w_max = width.max(1) as u64;
     let h_max = height.max(1) as u64;
 
     for y in 0..height {
-        let gy = ((u64::from(y) * 220) / h_max) as u8;
+        let gy = ((u64::from(y) * 200) / h_max) as u8;
+        let by = y >> 4;
         let row_offset = (y as usize) * (width as usize) * 3;
         for x in 0..width {
-            let gx = ((u64::from(x) * 220) / w_max) as u8;
-            let wave = (((x.wrapping_mul(7).wrapping_add(y.wrapping_mul(13))) & 0x3F) as u8) / 2;
-            let noise = rng.next_u8() & 0x1F;
+            let gx = ((u64::from(x) * 200) / w_max) as u8;
+            let bx = x >> 4;
+            let patch = (((bx.wrapping_mul(11).wrapping_add(by.wrapping_mul(17))) & 0x1F) as u8)
+                .wrapping_add(seed_bias)
+                & 0x1F;
+            let fine_grain = (((x ^ y).wrapping_add(bx)) & 0x03) as u8;
             let idx = row_offset + (x as usize) * 3;
-            buf[idx] = gx.saturating_add(noise);
-            buf[idx + 1] = gy.saturating_add(wave);
-            buf[idx + 2] = (220u8.saturating_sub(gx / 2)).saturating_add(noise / 2);
+            buf[idx] = gx.saturating_add(patch).saturating_add(fine_grain);
+            buf[idx + 1] = gy.saturating_add(patch / 2).saturating_add(fine_grain);
+            buf[idx + 2] = (210u8.saturating_sub(gx / 2))
+                .saturating_add(patch / 3)
+                .saturating_add(fine_grain);
         }
     }
 

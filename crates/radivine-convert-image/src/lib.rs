@@ -868,13 +868,18 @@ impl ImageBackend {
                 },
             })?;
 
-        let final_webp = riff::mux_webp_metadata(&webp_raw, width, height, icc, exif)?;
-        sink.write_all(&final_webp)
-            .map_err(|source| ConversionError::Io {
-                op: FsOp::WriteTemp,
-                path: std::path::PathBuf::from("<temp.part>"),
-                source,
-            })
+        let has_meta = icc.is_some_and(|b| !b.is_empty()) || exif.is_some_and(|b| !b.is_empty());
+        if has_meta {
+            let final_webp = riff::mux_webp_metadata(&webp_raw, width, height, icc, exif)?;
+            sink.write_all(&final_webp)
+        } else {
+            sink.write_all(&webp_raw)
+        }
+        .map_err(|source| ConversionError::Io {
+            op: FsOp::WriteTemp,
+            path: std::path::PathBuf::from("<temp.part>"),
+            source,
+        })
     }
 }
 

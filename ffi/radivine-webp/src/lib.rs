@@ -234,6 +234,7 @@ pub fn encode_lossy(
     webp_cfg.quality = f32::from(cfg.quality);
     webp_cfg.alpha_quality = i32::from(cfg.alpha_quality);
     webp_cfg.method = i32::from(cfg.method);
+    webp_cfg.thread_level = 1;
 
     // SAFETY: `webp_cfg` is fully initialized.
     if unsafe { WebPValidateConfig(&webp_cfg) } == 0 {
