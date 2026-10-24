@@ -1,0 +1,11 @@
+[package]
+name = "radivine-webp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Minimal, audited, encode-only safe wrapper around libwebp-sys for Radivine."
+
+[dependencies]
+libwebp-sys = { workspace = true }
+thiserror = { workspace = true }

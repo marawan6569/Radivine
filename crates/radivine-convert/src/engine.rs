@@ -686,22 +686,24 @@ impl ConversionEngine {
         }
         let _reservation = ctrl.reserve(estimate)?;
 
-        // 6. Resolve destination directory and guard against OutputEqualsSource
+        // 6. Resolve destination directory and guard against OutputEqualsSource when not using Suffix collision policy
         let (dest_dir, stem, ext) =
             resolve_output_destination(&item.source_path, opts.target(), &opts.output)?;
         let base_candidate = dest_dir.join(derive_suffixed_filename(&stem, &ext, 0));
 
-        if base_candidate == item.source_path {
-            return Err(ConversionError::OutputEqualsSource {
-                path: item.source_path.clone(),
-            });
-        }
-        if let Ok(dest_meta) = fs::metadata(&base_candidate) {
-            let dest_id = FileIdentity::from_metadata(&dest_meta);
-            if dest_id.dev == initial_identity.dev && dest_id.ino == initial_identity.ino {
+        if opts.output.collision != CollisionPolicy::Suffix {
+            if base_candidate == item.source_path {
                 return Err(ConversionError::OutputEqualsSource {
                     path: item.source_path.clone(),
                 });
+            }
+            if let Ok(dest_meta) = fs::metadata(&base_candidate) {
+                let dest_id = FileIdentity::from_metadata(&dest_meta);
+                if dest_id.dev == initial_identity.dev && dest_id.ino == initial_identity.ino {
+                    return Err(ConversionError::OutputEqualsSource {
+                        path: item.source_path.clone(),
+                    });
+                }
             }
         }
 

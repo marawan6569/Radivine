@@ -1,0 +1,21 @@
+[package]
+name = "radivine-convert-image"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Memory-safe built-in PNG, JPEG, and WebP conversion backend for Radivine."
+
+[lints]
+workspace = true
+
+[dependencies]
+image = { workspace = true }
+jpeg-encoder = { workspace = true }
+radivine-convert = { path = "../radivine-convert" }
+radivine-webp = { path = "../radivine-webp" }
+
+[dev-dependencies]
+proptest = { workspace = true }
+sha2 = { workspace = true }
+tempfile = { workspace = true }
