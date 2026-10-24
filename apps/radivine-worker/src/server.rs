@@ -22,7 +22,7 @@ use tracing::{debug, info, warn};
 
 use crate::governor::ResourceGovernor;
 use crate::handler::{ConvertImageHandler, JobHandler};
-use crate::recovery::{read_current_boot_id, run_startup_recovery};
+use crate::recovery::{cleanup_verified_staging, read_current_boot_id, run_startup_recovery};
 use crate::scheduler::{EventHub, JobScheduler};
 use crate::store::{CURRENT_SCHEMA_VERSION, JobStore, StoreError};
 
@@ -133,18 +133,34 @@ pub fn run_server(cfg: WorkerServerConfig) -> anyhow::Result<()> {
     let _ = signal_hook::flag::register(signal_hook::consts::SIGINT, term_flag.clone());
 
     // 3. Open SQLite WAL JobStore and execute C0a-C6 startup crash recovery BEFORE binding socket
-    let store = Arc::new(JobStore::open(&cfg.db_path)?);
-    let boot_id = read_current_boot_id();
-    let _recovery = run_startup_recovery(&store, &boot_id)?;
+    let (store, db_schema_version) = match JobStore::open(&cfg.db_path) {
+        Ok(st) => {
+            let boot_id = read_current_boot_id();
+            let _recovery = run_startup_recovery(&st, &boot_id)?;
+            (Arc::new(st), CURRENT_SCHEMA_VERSION)
+        }
+        Err(StoreError::UnsupportedSchemaVersion { found, supported }) => {
+            warn!(
+                found,
+                supported,
+                "jobs.sqlite3 schema_version is newer than supported; opening in read-only mode"
+            );
+            let (ro_store, ver) = JobStore::open_read_only_any_schema(&cfg.db_path)?;
+            (Arc::new(ro_store), ver)
+        }
+        Err(e) => return Err(e.into()),
+    };
 
-    // 4. Load [jobs] and convert.toml settings and run retention pruning
+    // 4. Load [jobs] and convert.toml settings and run retention pruning (only if writable schema)
     let (jobs_settings, _) = JobsSettings::load_lenient(&JobsSettings::default_config_path());
     let (convert_settings, _) =
         ConvertSettings::load_or_default(&ConvertImageHandler::resolve_convert_toml_path());
-    let _ = store.prune_retention(
-        jobs_settings.retention_max_jobs,
-        jobs_settings.retention_days,
-    );
+    if db_schema_version <= CURRENT_SCHEMA_VERSION {
+        let _ = store.prune_retention(
+            jobs_settings.retention_max_jobs,
+            jobs_settings.retention_days,
+        );
+    }
 
     let max_parallel = if let Ok(mp_str) = env::var("RADIVINE_WORKER_MAX_PARALLEL")
         && let Ok(mp) = mp_str.trim().parse::<usize>()
@@ -236,8 +252,9 @@ pub fn run_server(cfg: WorkerServerConfig) -> anyhow::Result<()> {
                     let sched_c = scheduler.clone();
                     let active_c = active_clients.clone();
                     let shutdown_c = explicit_shutdown_requested.clone();
+                    let schema_v = db_schema_version;
                     thread::spawn(move || {
-                        handle_client_connection(stream, &store_c, &sched_c, &shutdown_c);
+                        handle_client_connection(stream, &store_c, &sched_c, &shutdown_c, schema_v);
                         active_c.fetch_sub(1, Ordering::SeqCst);
                         sched_c.touch_activity();
                     });
@@ -275,6 +292,7 @@ pub fn run_server(cfg: WorkerServerConfig) -> anyhow::Result<()> {
                             &store,
                             &scheduler,
                             &explicit_shutdown_requested,
+                            db_schema_version,
                         );
                     }
                 }
@@ -294,11 +312,13 @@ pub fn run_server(cfg: WorkerServerConfig) -> anyhow::Result<()> {
 
                 // 3. Cleanly stop worker threads, checkpoint WAL, and exit 0.
                 scheduler.shutdown_gracefully(Duration::from_secs(2));
-                let _ = store.prune_retention(
-                    jobs_settings.retention_max_jobs,
-                    jobs_settings.retention_days,
-                );
-                let _ = store.finish_clean_shutdown();
+                if db_schema_version <= CURRENT_SCHEMA_VERSION {
+                    let _ = store.prune_retention(
+                        jobs_settings.retention_max_jobs,
+                        jobs_settings.retention_days,
+                    );
+                    let _ = store.finish_clean_shutdown();
+                }
                 info!("radivine-worker exiting cleanly on idle");
                 return Ok(());
             } else {
@@ -316,6 +336,7 @@ fn handle_client_connection(
     store: &Arc<JobStore>,
     scheduler: &Arc<JobScheduler>,
     explicit_shutdown_requested: &Arc<AtomicBool>,
+    db_schema_version: u32,
 ) {
     let _ = stream.set_nonblocking(false);
     let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
@@ -389,6 +410,29 @@ fn handle_client_connection(
             continue;
         }
 
+        if db_schema_version > CURRENT_SCHEMA_VERSION
+            && matches!(
+                req,
+                WorkerRequest::Submit { .. }
+                    | WorkerRequest::Cancel { .. }
+                    | WorkerRequest::Retry { .. }
+                    | WorkerRequest::ClearHistory { .. }
+                    | WorkerRequest::CleanupStaging { .. }
+            )
+        {
+            let _ = write_response(
+                &mut writer,
+                &WorkerResponse::Error {
+                    v: PROTOCOL_VERSION,
+                    code: WorkerErrorCode::InvalidJobState,
+                    message: format!(
+                        "Job history was created by a newer Radivine version (schema_version={db_schema_version}) and is read-only."
+                    ),
+                },
+            );
+            continue;
+        }
+
         match req {
             WorkerRequest::Ping { .. } => {
                 let (active_jobs, queued_items) = store.active_counts().unwrap_or((0, 0));
@@ -400,7 +444,7 @@ fn handle_client_connection(
                         version: env!("CARGO_PKG_VERSION").to_string(),
                         active_jobs,
                         queued_items,
-                        schema_version: CURRENT_SCHEMA_VERSION,
+                        schema_version: db_schema_version,
                     },
                 )
                 .is_err()
@@ -516,6 +560,68 @@ fn handle_client_connection(
                         v: PROTOCOL_VERSION,
                         jobs,
                     },
+                    Err(e) => map_store_error(e),
+                };
+                if write_response(&mut writer, &resp).is_err() {
+                    return;
+                }
+            }
+            WorkerRequest::ClearHistory {
+                states,
+                older_than_ms,
+                ..
+            } => {
+                let resp = match store.clear_terminal_history(states.as_deref(), older_than_ms) {
+                    Ok(deleted_jobs) => WorkerResponse::HistoryCleared {
+                        v: PROTOCOL_VERSION,
+                        deleted_jobs,
+                    },
+                    Err(e) => map_store_error(e),
+                };
+                if write_response(&mut writer, &resp).is_err() {
+                    return;
+                }
+            }
+            WorkerRequest::ReloadSettings { .. } => {
+                let (max_parallel, memory_budget_mb) = reload_worker_settings(store, scheduler);
+                let resp = WorkerResponse::SettingsReloaded {
+                    v: PROTOCOL_VERSION,
+                    max_parallel,
+                    memory_budget_mb,
+                };
+                if write_response(&mut writer, &resp).is_err() {
+                    return;
+                }
+            }
+            WorkerRequest::InspectStaging { job_id, .. } => {
+                let resp = match store.inspect_staging_and_orphans(job_id) {
+                    Ok((pending_journals, preserved_orphans)) => WorkerResponse::StagingReport {
+                        v: PROTOCOL_VERSION,
+                        cleaned_files: 0,
+                        cleaned_dirs: 0,
+                        pending_journals,
+                        preserved_orphans,
+                    },
+                    Err(e) => map_store_error(e),
+                };
+                if write_response(&mut writer, &resp).is_err() {
+                    return;
+                }
+            }
+            WorkerRequest::CleanupStaging { job_id, .. } => {
+                let resp = match cleanup_verified_staging(store, job_id) {
+                    Ok((cleaned_files, cleaned_dirs, preserved_orphans)) => {
+                        let (pending_journals, _) = store
+                            .inspect_staging_and_orphans(job_id)
+                            .unwrap_or((0, Vec::new()));
+                        WorkerResponse::StagingReport {
+                            v: PROTOCOL_VERSION,
+                            cleaned_files,
+                            cleaned_dirs,
+                            pending_journals,
+                            preserved_orphans,
+                        }
+                    }
                     Err(e) => map_store_error(e),
                 };
                 if write_response(&mut writer, &resp).is_err() {
@@ -652,6 +758,39 @@ fn map_store_error(err: StoreError) -> WorkerResponse {
             message: other.to_string(),
         },
     }
+}
+
+fn reload_worker_settings(store: &Arc<JobStore>, scheduler: &Arc<JobScheduler>) -> (usize, u64) {
+    let (jobs_settings, _) = JobsSettings::load_lenient(&JobsSettings::default_config_path());
+    let (convert_settings, _) =
+        ConvertSettings::load_or_default(&ConvertImageHandler::resolve_convert_toml_path());
+    let _ = store.prune_retention(
+        jobs_settings.retention_max_jobs,
+        jobs_settings.retention_days,
+    );
+
+    let max_parallel = if let Ok(mp_str) = env::var("RADIVINE_WORKER_MAX_PARALLEL")
+        && let Ok(mp) = mp_str.trim().parse::<usize>()
+    {
+        mp.clamp(1, 16)
+    } else {
+        jobs_settings.max_parallel.resolve()
+    };
+
+    let memory_budget_bytes = if let Ok(mb_str) = env::var("RADIVINE_WORKER_MEMORY_BUDGET_MB")
+        && let Ok(mb) = mb_str.trim().parse::<u64>()
+    {
+        mb.clamp(16, 4096) * 1024 * 1024
+    } else {
+        jobs_settings.memory_budget_mb.resolve_bytes()
+    };
+    let worker_memory_max_bytes = convert_settings
+        .limits
+        .worker_memory_max_bytes
+        .max(memory_budget_bytes);
+
+    scheduler.reload_settings(max_parallel, memory_budget_bytes, worker_memory_max_bytes);
+    (max_parallel, memory_budget_bytes / (1024 * 1024))
 }
 
 fn write_response(writer: &mut UnixStream, resp: &WorkerResponse) -> io::Result<()> {

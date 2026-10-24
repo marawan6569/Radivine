@@ -76,6 +76,7 @@ pub enum Origin {
     Wheel,
     Cli,
     ControlCenter,
+    Advanced,
     Retry,
     Test,
 }
@@ -87,6 +88,7 @@ impl Origin {
             Self::Wheel => "wheel",
             Self::Cli => "cli",
             Self::ControlCenter => "control_center",
+            Self::Advanced => "advanced",
             Self::Retry => "retry",
             Self::Test => "test",
         }
@@ -107,6 +109,7 @@ impl FromStr for Origin {
             "wheel" => Ok(Self::Wheel),
             "cli" => Ok(Self::Cli),
             "control_center" => Ok(Self::ControlCenter),
+            "advanced" => Ok(Self::Advanced),
             "retry" => Ok(Self::Retry),
             "test" => Ok(Self::Test),
             other => Err(format!("unknown job origin '{other}'")),

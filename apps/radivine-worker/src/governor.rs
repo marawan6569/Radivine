@@ -12,6 +12,9 @@ use radivine_convert::{ConversionError, FsOp, Limit, Reservation, ResourceEstima
 
 #[derive(Debug)]
 struct GovernorState {
+    memory_budget_bytes: u64,
+    worker_memory_max_bytes: u64,
+    max_concurrent_items: usize,
     in_use_bytes: u64,
     max_observed_in_use_bytes: u64,
     max_observed_concurrent_normal: usize,
@@ -26,8 +29,6 @@ struct GovernorState {
 /// Memory-budgeted concurrency governor shared across worker threads.
 #[derive(Debug, Clone)]
 pub struct ResourceGovernor {
-    memory_budget_bytes: u64,
-    worker_memory_max_bytes: u64,
     inner: Arc<(Mutex<GovernorState>, Condvar)>,
 }
 
@@ -56,10 +57,11 @@ impl ResourceGovernor {
     #[must_use]
     pub fn new(memory_budget_bytes: u64, worker_memory_max_bytes: u64) -> Self {
         Self {
-            memory_budget_bytes,
-            worker_memory_max_bytes,
             inner: Arc::new((
                 Mutex::new(GovernorState {
+                    memory_budget_bytes,
+                    worker_memory_max_bytes,
+                    max_concurrent_items: usize::MAX,
                     in_use_bytes: 0,
                     max_observed_in_use_bytes: 0,
                     max_observed_concurrent_normal: 0,
@@ -76,13 +78,28 @@ impl ResourceGovernor {
     }
 
     #[must_use]
-    pub const fn memory_budget_bytes(&self) -> u64 {
-        self.memory_budget_bytes
+    pub fn memory_budget_bytes(&self) -> u64 {
+        self.inner.0.lock().unwrap().memory_budget_bytes
     }
 
     #[must_use]
-    pub const fn worker_memory_max_bytes(&self) -> u64 {
-        self.worker_memory_max_bytes
+    pub fn worker_memory_max_bytes(&self) -> u64 {
+        self.inner.0.lock().unwrap().worker_memory_max_bytes
+    }
+
+    /// Dynamically updates the governor's memory budget, hard worker ceiling, and concurrency cap.
+    pub fn update_limits(
+        &self,
+        memory_budget_bytes: u64,
+        worker_memory_max_bytes: u64,
+        max_concurrent_items: usize,
+    ) {
+        let (lock, cvar) = &*self.inner;
+        let mut st = lock.lock().unwrap();
+        st.memory_budget_bytes = memory_budget_bytes;
+        st.worker_memory_max_bytes = worker_memory_max_bytes.max(memory_budget_bytes);
+        st.max_concurrent_items = max_concurrent_items.max(1);
+        cvar.notify_all();
     }
 
     /// Transitions the governor into drain mode: wakes all waiting threads and causes all
@@ -129,18 +146,17 @@ impl ResourceGovernor {
         check_timeout: &dyn Fn() -> Option<Duration>,
     ) -> Result<Reservation, ConversionError> {
         let needed = estimate.peak_ram_bytes;
-        if needed > self.worker_memory_max_bytes {
+        let (lock, cvar) = &*self.inner;
+        let mut st = lock.lock().unwrap();
+
+        if needed > st.worker_memory_max_bytes {
             return Err(ConversionError::LimitExceeded {
                 limit: Limit::MemoryBytes {
                     needed,
-                    max: self.worker_memory_max_bytes,
+                    max: st.worker_memory_max_bytes,
                 },
             });
         }
-
-        let requires_exclusive = needed > self.memory_budget_bytes;
-        let (lock, cvar) = &*self.inner;
-        let mut st = lock.lock().unwrap();
 
         if st.draining || cancel_flag.load(Ordering::Relaxed) {
             return Err(ConversionError::Cancelled);
@@ -169,13 +185,26 @@ impl ResourceGovernor {
                 });
             }
 
+            if needed > st.worker_memory_max_bytes {
+                st.waiters.retain(|&t| t != ticket);
+                cvar.notify_all();
+                return Err(ConversionError::LimitExceeded {
+                    limit: Limit::MemoryBytes {
+                        needed,
+                        max: st.worker_memory_max_bytes,
+                    },
+                });
+            }
+
+            let requires_exclusive = needed > st.memory_budget_bytes;
             let is_head = st.waiters.front() == Some(&ticket);
             if is_head {
                 let can_admit = if requires_exclusive {
                     st.active_items == 0 && !st.exclusive_active
                 } else {
                     !st.exclusive_active
-                        && st.in_use_bytes.saturating_add(needed) <= self.memory_budget_bytes
+                        && st.active_items < st.max_concurrent_items
+                        && st.in_use_bytes.saturating_add(needed) <= st.memory_budget_bytes
                 };
 
                 if can_admit {

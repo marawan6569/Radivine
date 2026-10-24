@@ -15,6 +15,7 @@ pub mod backend;
 pub mod engine;
 pub mod error;
 pub mod format;
+pub mod header_probe;
 pub mod options;
 pub mod output;
 pub mod settings;
@@ -32,6 +33,10 @@ pub use error::{ConversionError, ErrorClass, FsOp, Limit, UnsupportedFeature};
 pub use format::{
     FormatDescriptor, FormatId, FormatTraits, MediaKind, format, format_from_extension,
     format_from_mime, formats, sniff_format,
+};
+pub use header_probe::{
+    header_inspection_count, inspect_file_header, inspect_reader_header, parse_exif_orientation,
+    pixel_decode_count, reset_header_inspection_count,
 };
 pub use options::{
     AlphaPolicy, ChromaSubsampling, CollisionPolicy, ConversionOptions, ExifPolicy, FormatQuality,

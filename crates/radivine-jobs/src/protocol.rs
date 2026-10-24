@@ -120,6 +120,15 @@ pub struct JobItemReport {
     pub warnings: Vec<serde_json::Value>,
 }
 
+/// Preserved orphaned staging entry reported by `inspect_staging` / `cleanup_staging` (`CONVERSION_UX.md` §4.7).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OrphanedStageEntry {
+    pub job_id: JobId,
+    pub item_index: u32,
+    pub stage_dir: String,
+    pub reason: String,
+}
+
 /// Client-to-worker request frame (`JOB_SYSTEM_DESIGN.md` §5.3).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -167,6 +176,30 @@ pub enum WorkerRequest {
         #[serde(default = "default_true")]
         include_terminal: bool,
     },
+    ClearHistory {
+        #[serde(default = "default_protocol_v")]
+        v: u32,
+        #[serde(default)]
+        states: Option<Vec<JobState>>,
+        #[serde(default)]
+        older_than_ms: Option<i64>,
+    },
+    ReloadSettings {
+        #[serde(default = "default_protocol_v")]
+        v: u32,
+    },
+    InspectStaging {
+        #[serde(default = "default_protocol_v")]
+        v: u32,
+        #[serde(default)]
+        job_id: Option<JobId>,
+    },
+    CleanupStaging {
+        #[serde(default = "default_protocol_v")]
+        v: u32,
+        #[serde(default)]
+        job_id: Option<JobId>,
+    },
     Subscribe {
         #[serde(default = "default_protocol_v")]
         v: u32,
@@ -201,6 +234,10 @@ impl WorkerRequest {
             | Self::Retry { v, .. }
             | Self::GetJob { v, .. }
             | Self::ListJobs { v, .. }
+            | Self::ClearHistory { v, .. }
+            | Self::ReloadSettings { v }
+            | Self::InspectStaging { v, .. }
+            | Self::CleanupStaging { v, .. }
             | Self::Subscribe { v, .. }
             | Self::Ping { v }
             | Self::ShutdownIfIdle { v } => *v,
@@ -248,6 +285,27 @@ pub enum WorkerResponse {
         reset_items: u32,
         #[serde(default)]
         deduplicated: bool,
+    },
+    HistoryCleared {
+        #[serde(default = "default_protocol_v")]
+        v: u32,
+        deleted_jobs: u32,
+    },
+    SettingsReloaded {
+        #[serde(default = "default_protocol_v")]
+        v: u32,
+        max_parallel: usize,
+        memory_budget_mb: u64,
+    },
+    StagingReport {
+        #[serde(default = "default_protocol_v")]
+        v: u32,
+        cleaned_files: u32,
+        cleaned_dirs: u32,
+        #[serde(default)]
+        pending_journals: u32,
+        #[serde(default)]
+        preserved_orphans: Vec<OrphanedStageEntry>,
     },
     Subscribed {
         #[serde(default = "default_protocol_v")]

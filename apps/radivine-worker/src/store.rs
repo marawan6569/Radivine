@@ -10,10 +10,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use radivine_jobs::{
     ItemState, JobId, JobItemReport, JobProgressCounts, JobState, JobSummary, MAX_ACTIVE_JOBS,
-    MAX_ITEMS_PER_JOB, MAX_PENDING_ITEMS_TOTAL, Origin, RequestId, RetryMode, WirePath,
-    WorkerErrorCode, compute_terminal_job_state,
+    MAX_ITEMS_PER_JOB, MAX_PENDING_ITEMS_TOTAL, Origin, OrphanedStageEntry, RequestId, RetryMode,
+    WirePath, WorkerErrorCode, compute_terminal_job_state,
 };
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use thiserror::Error;
 
 use crate::fault::{CrashPoint, maybe_crash_at};
@@ -123,6 +123,52 @@ impl JobStore {
             db_path: db_path.to_path_buf(),
             conn: Mutex::new(conn),
         })
+    }
+
+    /// Reads the `meta.schema_version` of an existing SQLite database without modifying it (`AC-C4.6`).
+    pub fn inspect_db_schema_version(db_path: &Path) -> Result<Option<u32>, StoreError> {
+        if !db_path.is_file() {
+            return Ok(None);
+        }
+        let conn = Connection::open_with_flags(
+            db_path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        let _ = conn.busy_timeout(std::time::Duration::from_millis(2000));
+        let ver_str: Option<String> = conn
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'schema_version'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(ver_str.and_then(|s| s.parse::<u32>().ok()))
+    }
+
+    /// Opens an existing SQLite database in read-only mode regardless of `schema_version` (`AC-C4.6`).
+    pub fn open_read_only_any_schema(db_path: &Path) -> Result<(Self, u32), StoreError> {
+        let conn = Connection::open_with_flags(
+            db_path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        let _ = conn.busy_timeout(std::time::Duration::from_millis(2000));
+        let ver_str: Option<String> = conn
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'schema_version'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let found = ver_str
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(CURRENT_SCHEMA_VERSION);
+        Ok((
+            Self {
+                db_path: db_path.to_path_buf(),
+                conn: Mutex::new(conn),
+            },
+            found,
+        ))
     }
 
     fn enforce_db_file_permissions(db_path: &Path) {
@@ -1689,6 +1735,111 @@ impl JobStore {
         )?;
 
         Ok(deleted_age + deleted_cap)
+    }
+
+    /// Deletes terminal jobs (`completed`, `completed_with_errors`, `failed`, `cancelled`) matching
+    /// optional `states` and `older_than_ms` filters without ever deleting active jobs or touching
+    /// converted output files on disk (`AC-C4.3`).
+    pub fn clear_terminal_history(
+        &self,
+        states: Option<&[JobState]>,
+        older_than_ms: Option<i64>,
+    ) -> Result<u32, StoreError> {
+        let allowed_terminal: Vec<&'static str> = match states {
+            Some(list) if !list.is_empty() => list
+                .iter()
+                .copied()
+                .filter(|s| s.is_terminal())
+                .map(JobState::as_str)
+                .collect(),
+            _ => vec!["completed", "completed_with_errors", "failed", "cancelled"],
+        };
+        if allowed_terminal.is_empty() {
+            return Ok(0);
+        }
+
+        let quoted: Vec<String> = allowed_terminal.iter().map(|s| format!("'{s}'")).collect();
+        let in_clause = quoted.join(", ");
+
+        let conn = self.conn.lock().unwrap();
+        let deleted = if let Some(cutoff) = older_than_ms {
+            let sql = format!(
+                "DELETE FROM jobs
+                 WHERE state IN ({in_clause})
+                   AND COALESCE(finished_at_ms, updated_at_ms) < ?1"
+            );
+            conn.execute(&sql, params![cutoff])?
+        } else {
+            let sql = format!("DELETE FROM jobs WHERE state IN ({in_clause})");
+            conn.execute(&sql, [])?
+        };
+        Ok(deleted as u32)
+    }
+
+    /// Inspects terminal items with remaining staging journals (`pending_journals`) and any
+    /// items with `OrphanedTempPreserved` warnings (`CONVERSION_UX.md` §4.7).
+    pub fn inspect_staging_and_orphans(
+        &self,
+        job_filter: Option<JobId>,
+    ) -> Result<(u32, Vec<OrphanedStageEntry>), StoreError> {
+        let conn = self.conn.lock().unwrap();
+        let pending_journals: i64 = if let Some(jid) = job_filter {
+            conn.query_row(
+                "SELECT COUNT(*) FROM job_items
+                 WHERE job_id = ?1
+                   AND state IN ('succeeded', 'skipped', 'failed', 'cancelled', 'interrupted')
+                   AND (stage_dir_path IS NOT NULL OR temp_path IS NOT NULL)",
+                params![jid.0 as i64],
+                |r| r.get(0),
+            )?
+        } else {
+            conn.query_row(
+                "SELECT COUNT(*) FROM job_items
+                 WHERE state IN ('succeeded', 'skipped', 'failed', 'cancelled', 'interrupted')
+                   AND (stage_dir_path IS NOT NULL OR temp_path IS NOT NULL)",
+                [],
+                |r| r.get(0),
+            )?
+        };
+
+        let sql = if job_filter.is_some() {
+            "SELECT job_id, item_index, warnings FROM job_items WHERE job_id = ?1 AND warnings != '[]' ORDER BY job_id DESC, item_index ASC"
+        } else {
+            "SELECT job_id, item_index, warnings FROM job_items WHERE warnings != '[]' ORDER BY job_id DESC, item_index ASC"
+        };
+
+        let mut stmt = conn.prepare(sql)?;
+        let rows: Vec<(i64, i64, String)> = if let Some(jid) = job_filter {
+            stmt.query_map(params![jid.0 as i64], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?
+        } else {
+            stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+
+        let mut orphans = Vec::new();
+        for (jid_raw, item_idx, warnings_json) in rows {
+            if let Ok(warnings) =
+                serde_json::from_str::<Vec<radivine_convert::Warning>>(&warnings_json)
+            {
+                for w in warnings {
+                    if let radivine_convert::Warning::OrphanedTempPreserved { stage_dir, reason } =
+                        w
+                    {
+                        orphans.push(OrphanedStageEntry {
+                            job_id: JobId(jid_raw as u64),
+                            item_index: item_idx as u32,
+                            stage_dir,
+                            reason,
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok((pending_journals as u32, orphans))
     }
 
     fn recompute_and_update_job_locked(

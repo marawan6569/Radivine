@@ -13,8 +13,8 @@ use thiserror::Error;
 
 use crate::protocol::{
     FrameReadError, JobItemReport, JobSummary, JobUpdate, MAX_EVENT_LINE_BYTES,
-    MAX_RESPONSE_LINE_BYTES, PROTOCOL_VERSION, WorkerErrorCode, WorkerRequest, WorkerResponse,
-    read_bounded_line,
+    MAX_RESPONSE_LINE_BYTES, OrphanedStageEntry, PROTOCOL_VERSION, WorkerErrorCode, WorkerRequest,
+    WorkerResponse, read_bounded_line,
 };
 use crate::state::{JobId, JobState, Origin, RequestId, RetryMode};
 use crate::wire_path::WirePath;
@@ -684,6 +684,77 @@ impl JobsClient {
         })?;
         match resp {
             WorkerResponse::JobList { jobs, .. } => Ok(jobs),
+            other => Err(ClientError::UnexpectedResponse(format!("{other:?}"))),
+        }
+    }
+
+    /// Clears terminal job history from the worker database without deleting converted output files.
+    pub fn clear_history(
+        &mut self,
+        states: Option<Vec<JobState>>,
+        older_than_ms: Option<i64>,
+    ) -> Result<u32, ClientError> {
+        let resp = self.request(&WorkerRequest::ClearHistory {
+            v: PROTOCOL_VERSION,
+            states,
+            older_than_ms,
+        })?;
+        match resp {
+            WorkerResponse::HistoryCleared { deleted_jobs, .. } => Ok(deleted_jobs),
+            other => Err(ClientError::UnexpectedResponse(format!("{other:?}"))),
+        }
+    }
+
+    /// Requests the running worker to reload `convert.toml` and `config.toml [jobs]` settings.
+    pub fn reload_settings(&mut self) -> Result<(usize, u64), ClientError> {
+        let resp = self.request(&WorkerRequest::ReloadSettings {
+            v: PROTOCOL_VERSION,
+        })?;
+        match resp {
+            WorkerResponse::SettingsReloaded {
+                max_parallel,
+                memory_budget_mb,
+                ..
+            } => Ok((max_parallel, memory_budget_mb)),
+            other => Err(ClientError::UnexpectedResponse(format!("{other:?}"))),
+        }
+    }
+
+    /// Inspects pending staging journals and preserved orphan entries through validated worker records.
+    pub fn inspect_staging(
+        &mut self,
+        job_id: Option<JobId>,
+    ) -> Result<(u32, Vec<OrphanedStageEntry>), ClientError> {
+        let resp = self.request(&WorkerRequest::InspectStaging {
+            v: PROTOCOL_VERSION,
+            job_id,
+        })?;
+        match resp {
+            WorkerResponse::StagingReport {
+                pending_journals,
+                preserved_orphans,
+                ..
+            } => Ok((pending_journals, preserved_orphans)),
+            other => Err(ClientError::UnexpectedResponse(format!("{other:?}"))),
+        }
+    }
+
+    /// Cleans verified staging files for terminal jobs using existing recovery/journal contracts.
+    pub fn cleanup_staging(
+        &mut self,
+        job_id: Option<JobId>,
+    ) -> Result<(u32, u32, Vec<OrphanedStageEntry>), ClientError> {
+        let resp = self.request(&WorkerRequest::CleanupStaging {
+            v: PROTOCOL_VERSION,
+            job_id,
+        })?;
+        match resp {
+            WorkerResponse::StagingReport {
+                cleaned_files,
+                cleaned_dirs,
+                preserved_orphans,
+                ..
+            } => Ok((cleaned_files, cleaned_dirs, preserved_orphans)),
             other => Err(ClientError::UnexpectedResponse(format!("{other:?}"))),
         }
     }

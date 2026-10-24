@@ -76,6 +76,63 @@ pub fn run_startup_recovery(
     Ok(report)
 }
 
+/// Cleans verified staging files for terminal items (`C5` journals) using existing `(dev, ino)`
+/// and canonical-name checks (`CONVERSION_UX.md` §4.7). Never performs wildcard directory scans.
+pub fn cleanup_verified_staging(
+    store: &JobStore,
+    job_filter: Option<radivine_jobs::JobId>,
+) -> Result<(u32, u32, Vec<radivine_jobs::OrphanedStageEntry>), StoreError> {
+    let rows = store.load_recovery_items()?;
+    let mut report = RecoveryReport::default();
+    let mut cleaned_files = 0u32;
+    let mut cleaned_dirs = 0u32;
+
+    for row in rows {
+        if !row.state.is_terminal() {
+            continue;
+        }
+        if let Some(jid) = job_filter
+            && row.job_id != jid
+        {
+            continue;
+        }
+        let had_temp = row
+            .temp_path
+            .as_deref()
+            .is_some_and(|p| fs::symlink_metadata(p).is_ok());
+        let had_stage = row
+            .stage_dir_path
+            .as_deref()
+            .is_some_and(|p| fs::symlink_metadata(p).is_ok());
+
+        let mut warnings: Vec<serde_json::Value> =
+            serde_json::from_str(&row.warnings_json).unwrap_or_default();
+        clean_up_staged_artifacts_for_row(&row, &mut warnings, &mut report);
+        let warnings_json = serde_json::to_string(&warnings).unwrap_or_else(|_| "[]".to_string());
+        store.clear_terminal_item_staging_journal(row.item_id, &warnings_json)?;
+
+        if had_temp
+            && row
+                .temp_path
+                .as_deref()
+                .is_some_and(|p| fs::symlink_metadata(p).is_err())
+        {
+            cleaned_files += 1;
+        }
+        if had_stage
+            && row
+                .stage_dir_path
+                .as_deref()
+                .is_some_and(|p| fs::symlink_metadata(p).is_err())
+        {
+            cleaned_dirs += 1;
+        }
+    }
+
+    let (_pending, orphans) = store.inspect_staging_and_orphans(job_filter)?;
+    Ok((cleaned_files, cleaned_dirs, orphans))
+}
+
 fn recover_single_item(
     store: &JobStore,
     row: &RecoveryItemRow,

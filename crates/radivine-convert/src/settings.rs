@@ -233,6 +233,8 @@ pub struct ConvertSettings {
     pub schema_version: u32,
     pub quick_convert_target: FormatId,
     pub default_preset: String,
+    #[serde(default)]
+    pub quick_convert_presets: BTreeMap<FormatId, String>,
     pub defaults: ConversionOptions,
     pub limits: ResourceLimitsConfig,
     pub backends: BackendPrefs,
@@ -245,6 +247,7 @@ impl Default for ConvertSettings {
             schema_version: CURRENT_CONVERT_SCHEMA_VERSION,
             quick_convert_target: FormatId::WebP,
             default_preset: "builtin.web-webp".to_string(),
+            quick_convert_presets: BTreeMap::new(),
             defaults: ConversionOptions::default(),
             limits: ResourceLimitsConfig::default(),
             backends: BackendPrefs::default(),
@@ -254,6 +257,38 @@ impl Default for ConvertSettings {
 }
 
 impl ConvertSettings {
+    /// Returns the default built-in preset ID for `fmt`.
+    #[must_use]
+    pub const fn default_quick_convert_preset_id(fmt: FormatId) -> &'static str {
+        match fmt {
+            FormatId::Png => "builtin.lossless-png",
+            FormatId::Jpeg => "builtin.smaller-jpeg",
+            FormatId::WebP => "builtin.web-webp",
+        }
+    }
+
+    /// Returns the active Quick Convert preset ID for `fmt` (falling back to the canonical built-in preset).
+    #[must_use]
+    pub fn quick_convert_preset_for(&self, fmt: FormatId) -> String {
+        if let Some(id) = self.quick_convert_presets.get(&fmt)
+            && let Some(p) = self.find_preset(id)
+            && p.target == fmt
+        {
+            return id.clone();
+        }
+        Self::default_quick_convert_preset_id(fmt).to_string()
+    }
+
+    /// Sets the Quick Convert preset ID for `fmt`.
+    pub fn set_quick_convert_preset(&mut self, fmt: FormatId, preset_id: impl Into<String>) {
+        let id = preset_id.into();
+        if id == Self::default_quick_convert_preset_id(fmt) {
+            self.quick_convert_presets.remove(&fmt);
+        } else {
+            self.quick_convert_presets.insert(fmt, id);
+        }
+    }
+
     /// Returns all available presets (built-in presets followed by `user_presets`).
     #[must_use]
     pub fn all_presets(&self) -> Vec<Preset> {
@@ -296,7 +331,12 @@ impl ConvertSettings {
             }
             PresetRef::Target(fmt) => {
                 opts.target = *fmt;
-                if let QualitySetting::PerFormat(fq) = opts.quality
+                if let Some(id) = self.quick_convert_presets.get(fmt)
+                    && let Some(preset) = self.find_preset(id)
+                    && preset.target == *fmt
+                {
+                    preset.overrides.apply_to(&mut opts);
+                } else if let QualitySetting::PerFormat(fq) = opts.quality
                     && fq.format_id() != *fmt
                 {
                     opts.quality = QualitySetting::Intent(QualityIntent::Balanced);
@@ -413,6 +453,26 @@ impl ConvertSettings {
             }
         }
 
+        if let Some(qcp_tbl) = conv_table
+            .get("quick_convert_presets")
+            .and_then(toml::Value::as_table)
+        {
+            for (k, v) in qcp_tbl {
+                if let (Ok(fmt), Some(pid)) = (k.parse::<FormatId>(), v.as_str()) {
+                    let pid = pid.trim();
+                    if !pid.is_empty() {
+                        settings.quick_convert_presets.insert(fmt, pid.to_string());
+                    }
+                } else {
+                    warnings.push(SettingsWarning {
+                        field: format!("convert.quick_convert_presets.{k}"),
+                        message: "invalid format or preset id in quick_convert_presets".to_string(),
+                        schema_newer_than_supported: false,
+                    });
+                }
+            }
+        }
+
         if let Some(defs) = conv_table.get("defaults").and_then(toml::Value::as_table) {
             parse_defaults_table(defs, &mut settings.defaults, &mut warnings);
         }
@@ -446,6 +506,34 @@ impl ConvertSettings {
                 schema_newer_than_supported: false,
             });
             settings.default_preset = "builtin.web-webp".to_string();
+        }
+
+        // Validate quick_convert_presets entries exist and match their format
+        let qcp_keys: Vec<(FormatId, String)> = settings
+            .quick_convert_presets
+            .iter()
+            .map(|(k, v)| (*k, v.clone()))
+            .collect();
+        for (fmt, pid) in qcp_keys {
+            match settings.find_preset(&pid) {
+                Some(p) if p.target == fmt => {}
+                Some(p) => {
+                    warnings.push(SettingsWarning {
+                        field: format!("convert.quick_convert_presets.{fmt}"),
+                        message: format!("preset {pid:?} targets {}, not {fmt}", p.target),
+                        schema_newer_than_supported: false,
+                    });
+                    settings.quick_convert_presets.remove(&fmt);
+                }
+                None => {
+                    warnings.push(SettingsWarning {
+                        field: format!("convert.quick_convert_presets.{fmt}"),
+                        message: format!("unknown preset {pid:?}"),
+                        schema_newer_than_supported: false,
+                    });
+                    settings.quick_convert_presets.remove(&fmt);
+                }
+            }
         }
 
         Ok((settings, warnings))
@@ -494,6 +582,20 @@ impl ConvertSettings {
         conv["quick_convert_target"] = value(self.quick_convert_target.as_str());
         conv["default_preset"] = value(self.default_preset.as_str());
 
+        if self.quick_convert_presets.is_empty() {
+            conv.remove("quick_convert_presets");
+        } else {
+            if !conv.contains_key("quick_convert_presets") {
+                conv["quick_convert_presets"] = Item::Table(Table::new());
+            }
+            if let Some(qcp_tbl) = conv["quick_convert_presets"].as_table_mut() {
+                qcp_tbl.clear();
+                for (fmt, pid) in &self.quick_convert_presets {
+                    qcp_tbl[fmt.as_str()] = value(pid.as_str());
+                }
+            }
+        }
+
         // [convert.defaults]
         if !conv.contains_key("defaults") {
             conv["defaults"] = Item::Table(Table::new());
@@ -530,17 +632,30 @@ impl ConvertSettings {
             match &self.defaults.output.location {
                 OutputLocation::SameDirectory => {
                     defs["output_location"] = value("same_directory");
+                    defs.remove("output_subfolder");
+                    defs.remove("output_directory");
                 }
                 OutputLocation::Subfolder(sub) => {
                     defs["output_location"] = value("subfolder");
                     defs["output_subfolder"] = value(sub.as_str());
+                    defs.remove("output_directory");
                 }
                 OutputLocation::Directory(dir) => {
                     defs["output_location"] = value("directory");
                     defs["output_directory"] = value(dir.to_string_lossy().as_ref());
+                    defs.remove("output_subfolder");
                 }
             }
-            defs["jpeg_extension"] = value(self.defaults.output.naming.jpeg_ext().as_str());
+            match &self.defaults.output.naming {
+                NamingPolicy::PreserveStem { jpeg_ext } => {
+                    defs["jpeg_extension"] = value(jpeg_ext.as_str());
+                    defs.remove("filename_suffix");
+                }
+                NamingPolicy::AppendSuffix { suffix, jpeg_ext } => {
+                    defs["jpeg_extension"] = value(jpeg_ext.as_str());
+                    defs["filename_suffix"] = value(suffix.as_str());
+                }
+            }
             defs["collision"] = value(match self.defaults.output.collision {
                 CollisionPolicy::Suffix => "suffix",
                 CollisionPolicy::Skip => "skip",
@@ -587,7 +702,9 @@ impl ConvertSettings {
         }
 
         // [[convert.presets]]
-        if !self.user_presets.is_empty() {
+        if self.user_presets.is_empty() {
+            conv.remove("presets");
+        } else {
             let mut aot = ArrayOfTables::new();
             for p in &self.user_presets {
                 let mut t = Table::new();
@@ -595,17 +712,7 @@ impl ConvertSettings {
                 t["name"] = value(p.name.as_str());
                 t["description"] = value(p.description.as_str());
                 t["target"] = value(p.target.as_str());
-                if let Some(QualitySetting::Intent(intent)) = p.overrides.quality {
-                    let s = match intent {
-                        QualityIntent::Lossless => "lossless".to_string(),
-                        QualityIntent::Maximum => "maximum".to_string(),
-                        QualityIntent::High => "high".to_string(),
-                        QualityIntent::Balanced => "balanced".to_string(),
-                        QualityIntent::Compact => "compact".to_string(),
-                        QualityIntent::Custom(q) => format!("custom:{q}"),
-                    };
-                    t["quality_intent"] = value(s);
-                }
+                serialize_preset_overrides_into_table(&p.overrides, &mut t);
                 aot.push(t);
             }
             conv["presets"] = Item::ArrayOfTables(aot);
@@ -775,23 +882,54 @@ fn parse_defaults_table(
         }
     }
 
+    let mut jpeg_ext = out.output.naming.jpeg_ext();
     if let Some(jext) = defs.get("jpeg_extension") {
         match jext.as_str() {
             Some("jpg") => {
-                out.output.naming = NamingPolicy::PreserveStem {
-                    jpeg_ext: JpegExt::Jpg,
-                }
+                jpeg_ext = JpegExt::Jpg;
+                out.output.naming = NamingPolicy::PreserveStem { jpeg_ext };
             }
             Some("jpeg") => {
-                out.output.naming = NamingPolicy::PreserveStem {
-                    jpeg_ext: JpegExt::Jpeg,
-                }
+                jpeg_ext = JpegExt::Jpeg;
+                out.output.naming = NamingPolicy::PreserveStem { jpeg_ext };
             }
             _ => warnings.push(SettingsWarning {
                 field: "convert.defaults.jpeg_extension".to_string(),
                 message: format!("invalid jpeg_extension {jext:?}, using jpg"),
                 schema_newer_than_supported: false,
             }),
+        }
+    }
+
+    if let Some(suf_val) = defs.get("filename_suffix") {
+        if let Some(suf) = suf_val.as_str() {
+            let trimmed = suf.trim();
+            if trimmed.is_empty() {
+                out.output.naming = NamingPolicy::PreserveStem { jpeg_ext };
+            } else if trimmed.contains('/')
+                || trimmed.contains('\\')
+                || trimmed.contains('\0')
+                || trimmed.contains("..")
+            {
+                warnings.push(SettingsWarning {
+                    field: "convert.defaults.filename_suffix".to_string(),
+                    message: format!(
+                        "invalid filename_suffix {trimmed:?} (must not contain path separators or '..')"
+                    ),
+                    schema_newer_than_supported: false,
+                });
+            } else {
+                out.output.naming = NamingPolicy::AppendSuffix {
+                    suffix: trimmed.to_string(),
+                    jpeg_ext,
+                };
+            }
+        } else {
+            warnings.push(SettingsWarning {
+                field: "convert.defaults.filename_suffix".to_string(),
+                message: "filename_suffix must be a string".to_string(),
+                schema_newer_than_supported: false,
+            });
         }
     }
 
@@ -817,6 +955,116 @@ fn parse_defaults_table(
                 schema_newer_than_supported: false,
             }),
         }
+    }
+}
+
+fn serialize_preset_overrides_into_table(ov: &PresetOverrides, t: &mut Table) {
+    if let Some(q) = ov.quality {
+        match q {
+            QualitySetting::Intent(intent) => {
+                let s = match intent {
+                    QualityIntent::Lossless => "lossless".to_string(),
+                    QualityIntent::Maximum => "maximum".to_string(),
+                    QualityIntent::High => "high".to_string(),
+                    QualityIntent::Balanced => "balanced".to_string(),
+                    QualityIntent::Compact => "compact".to_string(),
+                    QualityIntent::Custom(q) => format!("custom:{q}"),
+                };
+                t["quality_intent"] = value(s);
+            }
+            QualitySetting::PerFormat(FormatQuality::Jpeg {
+                quality,
+                progressive,
+                optimize_coding,
+                subsampling,
+            }) => {
+                t["jpeg_quality"] = value(i64::from(quality));
+                t["jpeg_progressive"] = value(progressive);
+                t["jpeg_optimize_coding"] = value(optimize_coding);
+                t["jpeg_subsampling"] = value(match subsampling {
+                    ChromaSubsampling::Auto => "auto",
+                    ChromaSubsampling::Cs444 => "444",
+                    ChromaSubsampling::Cs422 => "422",
+                    ChromaSubsampling::Cs420 => "420",
+                });
+            }
+            QualitySetting::PerFormat(FormatQuality::WebP {
+                mode,
+                quality,
+                alpha_quality,
+                method,
+            }) => {
+                t["webp_mode"] = value(match mode {
+                    WebPMode::Lossy => "lossy",
+                    WebPMode::Lossless => "lossless",
+                });
+                t["webp_quality"] = value(i64::from(quality));
+                t["webp_alpha_quality"] = value(i64::from(alpha_quality));
+                t["webp_method"] = value(i64::from(method));
+            }
+            QualitySetting::PerFormat(FormatQuality::Png { compression }) => {
+                t["png_compression"] = value(match compression {
+                    PngCompression::Fast => "fast",
+                    PngCompression::Default => "default",
+                    PngCompression::Best => "best",
+                });
+            }
+        }
+    }
+    if let Some(resize) = ov.resize {
+        match resize {
+            ResizeSpec::Original => {
+                t["resize_mode"] = value("original");
+            }
+            ResizeSpec::Width { px, allow_upscale } => {
+                t["resize_mode"] = value("width");
+                t["resize_width"] = value(i64::from(px.get()));
+                t["allow_upscale"] = value(allow_upscale);
+            }
+            ResizeSpec::Height { px, allow_upscale } => {
+                t["resize_mode"] = value("height");
+                t["resize_height"] = value(i64::from(px.get()));
+                t["allow_upscale"] = value(allow_upscale);
+            }
+            ResizeSpec::Fit {
+                width,
+                height,
+                allow_upscale,
+            } => {
+                t["resize_mode"] = value("fit");
+                t["resize_width"] = value(i64::from(width.get()));
+                t["resize_height"] = value(i64::from(height.get()));
+                t["allow_upscale"] = value(allow_upscale);
+            }
+        }
+    }
+    if let Some(bg) = ov.alpha_background {
+        t["alpha_background"] = value(bg.to_hex());
+    }
+    if let Some(or_pol) = ov.orientation {
+        t["orientation"] = value(match or_pol {
+            OrientationPolicy::AutoOrient => "auto_orient",
+            OrientationPolicy::PreserveRaw => "preserve_raw",
+        });
+    }
+    if let Some(icc_pol) = ov.icc {
+        t["icc"] = value(match icc_pol {
+            IccPolicy::Preserve => "preserve",
+            IccPolicy::Strip => "strip",
+        });
+    }
+    if let Some(exif_pol) = ov.exif {
+        t["exif"] = value(match exif_pol {
+            ExifPolicy::Strip => "strip",
+            ExifPolicy::KeepSafe => "keep_safe",
+            ExifPolicy::PreserveAll => "preserve_all",
+        });
+    }
+    if let Some(sf) = ov.same_format {
+        t["same_format"] = value(match sf {
+            SameFormatPolicy::Skip => "skip",
+            SameFormatPolicy::Reencode => "reencode",
+        });
     }
 }
 
@@ -995,16 +1243,151 @@ fn parse_user_preset_table(
     };
 
     let mut overrides = PresetOverrides::default();
-    if let Some(qi) = tbl.get("quality_intent").and_then(toml::Value::as_str)
-        && let Some(intent) = parse_quality_intent_str(qi)
-    {
-        overrides.quality = Some(QualitySetting::Intent(intent));
+    if let Some(qi) = tbl.get("quality_intent").and_then(toml::Value::as_str) {
+        match parse_quality_intent_str(qi) {
+            Some(intent) => overrides.quality = Some(QualitySetting::Intent(intent)),
+            None => warnings.push(SettingsWarning {
+                field: format!("convert.presets[{idx}].quality_intent"),
+                message: format!("invalid quality_intent {qi:?}"),
+                schema_newer_than_supported: false,
+            }),
+        }
     }
     if let Some(q_num) = tbl.get("quality").and_then(toml::Value::as_integer)
         && let Ok(q_u8) = u8::try_from(q_num)
         && (1..=100).contains(&q_u8)
     {
         overrides.quality = Some(QualitySetting::Intent(QualityIntent::Custom(q_u8)));
+    }
+    if let Some(jq) = tbl.get("jpeg_quality").and_then(toml::Value::as_integer)
+        && let Ok(q_u8) = u8::try_from(jq)
+        && (1..=100).contains(&q_u8)
+    {
+        let progressive = tbl
+            .get("jpeg_progressive")
+            .and_then(toml::Value::as_bool)
+            .unwrap_or(true);
+        let optimize_coding = tbl
+            .get("jpeg_optimize_coding")
+            .and_then(toml::Value::as_bool)
+            .unwrap_or(true);
+        let subsampling = match tbl.get("jpeg_subsampling").and_then(toml::Value::as_str) {
+            Some("444") => ChromaSubsampling::Cs444,
+            Some("422") => ChromaSubsampling::Cs422,
+            Some("420") => ChromaSubsampling::Cs420,
+            _ => ChromaSubsampling::Auto,
+        };
+        overrides.quality = Some(QualitySetting::PerFormat(FormatQuality::Jpeg {
+            quality: q_u8,
+            progressive,
+            optimize_coding,
+            subsampling,
+        }));
+    }
+    if let Some(wm) = tbl.get("webp_mode").and_then(toml::Value::as_str) {
+        let mode = if wm.eq_ignore_ascii_case("lossless") {
+            WebPMode::Lossless
+        } else {
+            WebPMode::Lossy
+        };
+        let quality = tbl
+            .get("webp_quality")
+            .and_then(toml::Value::as_integer)
+            .and_then(|v| u8::try_from(v).ok())
+            .unwrap_or(80)
+            .min(100);
+        let alpha_quality = tbl
+            .get("webp_alpha_quality")
+            .and_then(toml::Value::as_integer)
+            .and_then(|v| u8::try_from(v).ok())
+            .unwrap_or(100)
+            .min(100);
+        let method = tbl
+            .get("webp_method")
+            .and_then(toml::Value::as_integer)
+            .and_then(|v| u8::try_from(v).ok())
+            .unwrap_or(4)
+            .min(6);
+        overrides.quality = Some(QualitySetting::PerFormat(FormatQuality::WebP {
+            mode,
+            quality,
+            alpha_quality,
+            method,
+        }));
+    }
+    if let Some(pc) = tbl.get("png_compression").and_then(toml::Value::as_str) {
+        let compression = match pc {
+            "fast" => PngCompression::Fast,
+            "best" => PngCompression::Best,
+            _ => PngCompression::Default,
+        };
+        overrides.quality = Some(QualitySetting::PerFormat(FormatQuality::Png {
+            compression,
+        }));
+    }
+
+    if let Some(rm) = tbl.get("resize_mode").and_then(toml::Value::as_str) {
+        let allow_upscale = tbl
+            .get("allow_upscale")
+            .and_then(toml::Value::as_bool)
+            .unwrap_or(false);
+        let w = tbl
+            .get("resize_width")
+            .and_then(toml::Value::as_integer)
+            .and_then(|v| u32::try_from(v).ok())
+            .and_then(NonZeroU32::new);
+        let h = tbl
+            .get("resize_height")
+            .and_then(toml::Value::as_integer)
+            .and_then(|v| u32::try_from(v).ok())
+            .and_then(NonZeroU32::new);
+        overrides.resize = match rm {
+            "original" => Some(ResizeSpec::Original),
+            "width" => w.map(|px| ResizeSpec::Width { px, allow_upscale }),
+            "height" => h.map(|px| ResizeSpec::Height { px, allow_upscale }),
+            "fit" => w.zip(h).map(|(width, height)| ResizeSpec::Fit {
+                width,
+                height,
+                allow_upscale,
+            }),
+            _ => None,
+        };
+    }
+    if let Some(bg) = tbl
+        .get("alpha_background")
+        .and_then(toml::Value::as_str)
+        .and_then(|s| s.parse::<Rgb8>().ok())
+    {
+        overrides.alpha_background = Some(bg);
+    }
+    if let Some(or_str) = tbl.get("orientation").and_then(toml::Value::as_str) {
+        overrides.orientation = match or_str {
+            "auto_orient" => Some(OrientationPolicy::AutoOrient),
+            "preserve_raw" => Some(OrientationPolicy::PreserveRaw),
+            _ => None,
+        };
+    }
+    if let Some(icc_str) = tbl.get("icc").and_then(toml::Value::as_str) {
+        overrides.icc = match icc_str {
+            "preserve" => Some(IccPolicy::Preserve),
+            "strip" => Some(IccPolicy::Strip),
+            _ => None,
+        };
+    }
+    if let Some(exif_str) = tbl.get("exif").and_then(toml::Value::as_str) {
+        overrides.exif = match exif_str {
+            "strip" => Some(ExifPolicy::Strip),
+            "keep_safe" => Some(ExifPolicy::KeepSafe),
+            "preserve_all" => Some(ExifPolicy::PreserveAll),
+            _ => None,
+        };
+    }
+    if let Some(sf_str) = tbl.get("same_format").and_then(toml::Value::as_str) {
+        overrides.same_format = match sf_str {
+            "skip" => Some(SameFormatPolicy::Skip),
+            "reencode" => Some(SameFormatPolicy::Reencode),
+            _ => None,
+        };
     }
 
     Some(Preset {

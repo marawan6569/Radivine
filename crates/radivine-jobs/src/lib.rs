@@ -17,8 +17,8 @@ pub use client::{
 pub use protocol::{
     FrameReadError, JobItemReport, JobProgressCounts, JobSummary, JobUpdate, MAX_ACTIVE_JOBS,
     MAX_EVENT_LINE_BYTES, MAX_ITEMS_PER_JOB, MAX_NON_SUBMIT_LINE_BYTES, MAX_PENDING_ITEMS_TOTAL,
-    MAX_RESPONSE_LINE_BYTES, MAX_SUBMIT_LINE_BYTES, PROTOCOL_VERSION, WorkerErrorCode,
-    WorkerRequest, WorkerResponse, read_bounded_line, read_worker_request,
+    MAX_RESPONSE_LINE_BYTES, MAX_SUBMIT_LINE_BYTES, OrphanedStageEntry, PROTOCOL_VERSION,
+    WorkerErrorCode, WorkerRequest, WorkerResponse, read_bounded_line, read_worker_request,
 };
 pub use settings::{JobsNotifyPolicy, JobsSettings, MaxParallelSetting, MemoryBudgetSetting};
 pub use state::{

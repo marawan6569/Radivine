@@ -192,6 +192,12 @@ impl JobScheduler {
             watchdog_thread: Mutex::new(None),
         });
 
+        sched.governor.update_limits(
+            sched.governor.memory_budget_bytes(),
+            sched.governor.worker_memory_max_bytes(),
+            max_parallel.max(1),
+        );
+
         let mut threads = Vec::with_capacity(max_parallel.max(1));
         for idx in 0..max_parallel.max(1) {
             let s = sched.clone();
@@ -211,6 +217,37 @@ impl JobScheduler {
         *sched.watchdog_thread.lock().unwrap() = Some(wd_handle);
 
         sched
+    }
+
+    /// Dynamically updates worker concurrency and memory limits after `reload_settings` (`AC-C4.4`).
+    pub fn reload_settings(
+        self: &Arc<Self>,
+        max_parallel: usize,
+        memory_budget_bytes: u64,
+        worker_memory_max_bytes: u64,
+    ) {
+        let clamped_parallel = max_parallel.clamp(1, 16);
+        self.governor.update_limits(
+            memory_budget_bytes,
+            worker_memory_max_bytes,
+            clamped_parallel,
+        );
+        {
+            let mut threads = self.worker_threads.lock().unwrap();
+            let current_len = threads.len();
+            if clamped_parallel > current_len {
+                for idx in current_len..clamped_parallel {
+                    let s = self.clone();
+                    if let Ok(handle) = thread::Builder::new()
+                        .name(format!("radivine-worker-{idx}"))
+                        .spawn(move || s.worker_loop())
+                    {
+                        threads.push(handle);
+                    }
+                }
+            }
+        }
+        self.notify_work_available();
     }
 
     #[must_use]
