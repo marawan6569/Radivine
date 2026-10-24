@@ -115,7 +115,15 @@ impl BrandPalette {
     }
 }
 
-/// Installs the embedded `Inter` font family into an `egui::Context`.
+static SYSTEM_FONT_PROVIDER: std::sync::LazyLock<Arc<dyn egui::FontProvider>> =
+    std::sync::LazyLock::new(|| Arc::new(egui_system_font_provider::SystemFontProvider::new()));
+
+/// Installs the embedded `Inter` primary font family and the native system-font fallback
+/// provider (`egui_system_font_provider::SystemFontProvider`) into an `egui::Context`.
+///
+/// `Inter` remains at index 0 of [`FontFamily::Proportional`] so all Latin/English UI
+/// typography is unchanged, while non-Latin scripts (such as Arabic, CJK, Hebrew, and
+/// Devanagari) are resolved on demand from installed system fonts via Fontconfig/fontique.
 pub fn install_inter_font(ctx: &egui::Context) {
     let mut fonts = FontDefinitions::default();
     fonts.font_data.insert(
@@ -126,6 +134,7 @@ pub fn install_inter_font(ctx: &egui::Context) {
         prop.insert(0, "Inter".to_owned());
     }
     ctx.set_fonts(fonts);
+    ctx.set_font_providers(vec![Arc::clone(&*SYSTEM_FONT_PROVIDER)]);
 }
 
 /// Applies the `BrandPalette` visual styling to an `egui::Context`.

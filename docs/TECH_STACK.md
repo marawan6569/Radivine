@@ -71,7 +71,7 @@ Concurrency model: **one UI thread** (X11 I/O, wheel engine, rendering, presenta
 
 | Option | Version | Verdict |
 |--------|---------|---------|
-| **eframe/egui** | 0.37.0 | ✅ **Selected** for `radivine-viewer` and `radivine-control` (`features = ["clipboard", "default_fonts", "glow", "x11", "wayland"]`): immediate mode, `ScrollArea::show_rows` virtualised rendering of huge line counts, native OS clipboard interoperability (`egui-winit/clipboard` via `arboard` on X11 and `smithay-clipboard` on Wayland), cross-platform, mature |
+| **eframe/egui** | 0.37.0 | ✅ **Selected** for `radivine-viewer` and `radivine-control` (`features = ["clipboard", "default_fonts", "glow", "system_fonts", "x11", "wayland"]`): immediate mode, `ScrollArea::show_rows` virtualised rendering of huge line counts, native OS clipboard interoperability (`egui-winit/clipboard` via `arboard` on X11 and `smithay-clipboard` on Wayland), on-demand native system-font fallback (`egui_system_font_provider` via `fontique`/Fontconfig for Arabic, CJK, and other non-Latin scripts), cross-platform, mature |
 | iced | 0.14.0 | ⚠️ capable; virtualised text of multi-GB files needs more custom work |
 | Slint | 1.18.1 | ⚠️ capable; DSL + licensing (GPL/royalty-free/commercial) considerations |
 | GTK4 | 0.11.5 | ⚠️ most native look on Cinnamon; heavier dependency; not portable to Windows/macOS cleanly |
