@@ -39,11 +39,15 @@ jobs:
             desktop-file-utils \
             dpkg-dev \
             lintian \
+            pkg-config \
             python3-pil \
             xvfb
 
       - name: Check formatting (cargo fmt)
         run: cargo fmt --all --check
+
+      - name: Verify architecture dependency-graph boundaries
+        run: ./scripts/check-dep-graph.sh
 
       - name: Run Clippy lints (cargo clippy -D warnings)
         run: DISPLAY="" cargo clippy --workspace --all-targets -- -D warnings
@@ -57,10 +61,28 @@ jobs:
       - name: Verify headless screenshot export
         run: DISPLAY="" cargo run -p radivine-control -- --export-screenshots /tmp/radivine-ci-screenshots
 
-      - name: Build and verify Debian package (radivine_0.1.1_amd64.deb)
+      - name: Build and verify Debian package (radivine_0.2.0_amd64.deb)
         run: |
           ./scripts/build-deb.sh
-          lintian --tag-display-limit 0 target/debian/radivine_0.1.1_amd64.deb
+          lintian --tag-display-limit 0 target/debian/radivine_0.2.0_amd64.deb
+
+      - name: Report release binary and Debian package sizes
+        run: |
+          echo "### Radivine v0.2.0 Release Artifact Sizes" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Artifact | Size (bytes) | Size (human) | SHA-256 |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|----------|-------------:|-------------:|---------|" >> "$GITHUB_STEP_SUMMARY"
+          for bin in radivine radivine-viewer radivine-control radivine-worker; do
+            p="target/release/$bin"
+            sz_b=$(stat -c%s "$p")
+            sz_h=$(ls -lh "$p" | awk '{print $5}')
+            sha=$(sha256sum "$p" | awk '{print $1}')
+            echo "| \`$bin\` | $sz_b | $sz_h | \`$sha\` |" >> "$GITHUB_STEP_SUMMARY"
+          done
+          deb="target/debian/radivine_0.2.0_amd64.deb"
+          deb_b=$(stat -c%s "$deb")
+          deb_h=$(ls -lh "$deb" | awk '{print $5}')
+          deb_sha=$(sha256sum "$deb" | awk '{print $1}')
+          echo "| \`radivine_0.2.0_amd64.deb\` | $deb_b | $deb_h | \`$deb_sha\` |" >> "$GITHUB_STEP_SUMMARY"
 
   supply-chain:
     name: Supply-Chain & License Audit (cargo-deny)
