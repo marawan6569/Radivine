@@ -1,4 +1,6 @@
-//! `eframe`/`egui` graphical Control Center interface (`apps/radivine-control/src/ui.rs`).
+//! `eframe`/`egui` graphical Control Center interface (`apps/radivine-control/src/ui/mod.rs`).
+
+pub mod theme;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -8,8 +10,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use eframe::egui::{
-    self, Align, Color32, ColorImage, CornerRadius, FontData, FontDefinitions, FontFamily, FontId,
-    Layout, Margin, RichText, ScrollArea, Stroke, TextureHandle, TextureOptions, Vec2,
+    self, Align, Color32, CornerRadius, FontFamily, FontId, Layout, Margin, RichText, ScrollArea,
+    Stroke, TextureHandle, TextureOptions, Vec2,
 };
 
 use radivine::config::{AppConfig, ReducedMotionSetting, ScaleSetting};
@@ -31,10 +33,13 @@ use crate::service::{
 };
 use crate::single_instance::ControlInstanceLock;
 
-const EMBEDDED_INTER_TTF: &[u8] = include_bytes!("../../../assets/fonts/Inter-Variable.ttf");
-const EMBEDDED_APP_ICON_PNG: &[u8] = include_bytes!("../../../assets/icons/app-icon.png");
-const EMBEDDED_LOGO_HORIZONTAL_PNG: &[u8] =
-    include_bytes!("../../../assets/branding/logo-horizontal.png");
+pub use self::theme::{
+    BrandPalette, apply_palette_visuals, health_colors, install_inter_font, kv_cell, section_card,
+};
+use self::theme::{
+    EMBEDDED_APP_ICON_PNG, EMBEDDED_LOGO_HORIZONTAL_PNG, decode_png_to_color_image,
+    decode_png_to_icon_data,
+};
 
 const AVAILABLE_ICONS: &[(&str, &str)] = &[
     ("lucide:sparkles", "Sparkles (Custom)"),
@@ -61,76 +66,6 @@ const PLACEHOLDER_CHIPS: &[(&str, &str)] = &[
     ("{dir}", "Parent folder path"),
     ("{name}", "Filename only"),
 ];
-
-#[derive(Clone, Copy)]
-struct BrandPalette {
-    bg_canvas: Color32,
-    bg_sidebar: Color32,
-    bg_card: Color32,
-    bg_elevated: Color32,
-    fg_primary: Color32,
-    fg_secondary: Color32,
-    fg_muted: Color32,
-    vine_green: Color32,
-    leaf_green: Color32,
-    accent_bg: Color32,
-    fg_on_accent: Color32,
-    border: Color32,
-    ok_fg: Color32,
-    ok_bg: Color32,
-    warn_fg: Color32,
-    warn_bg: Color32,
-    err_fg: Color32,
-    err_bg: Color32,
-}
-
-impl BrandPalette {
-    const fn dark() -> Self {
-        Self {
-            bg_canvas: Color32::from_rgb(0x0A, 0x1A, 0x16),
-            bg_sidebar: Color32::from_rgb(0x07, 0x13, 0x10),
-            bg_card: Color32::from_rgb(0x10, 0x26, 0x20),
-            bg_elevated: Color32::from_rgb(0x16, 0x33, 0x2B),
-            fg_primary: Color32::from_rgb(0xE8, 0xF5, 0xF0),
-            fg_secondary: Color32::from_rgb(0x9F, 0xC9, 0xBC),
-            fg_muted: Color32::from_rgb(0x64, 0x8C, 0x80),
-            vine_green: Color32::from_rgb(0x04, 0x4C, 0x3C),
-            leaf_green: Color32::from_rgb(0x00, 0xA8, 0x7C),
-            accent_bg: Color32::from_rgb(0x0E, 0x42, 0x35),
-            fg_on_accent: Color32::from_rgb(0x04, 0x24, 0x1C),
-            border: Color32::from_rgb(0x1E, 0x4D, 0x42),
-            ok_fg: Color32::from_rgb(0x34, 0xD3, 0x99),
-            ok_bg: Color32::from_rgb(0x0A, 0x36, 0x29),
-            warn_fg: Color32::from_rgb(0xFB, 0xBF, 0x24),
-            warn_bg: Color32::from_rgb(0x3B, 0x2A, 0x10),
-            err_fg: Color32::from_rgb(0xFB, 0x71, 0x85),
-            err_bg: Color32::from_rgb(0x3B, 0x12, 0x19),
-        }
-    }
-
-    const fn light() -> Self {
-        Self {
-            bg_canvas: Color32::from_rgb(0xF4, 0xFB, 0xF8),
-            bg_sidebar: Color32::from_rgb(0xE6, 0xF4, 0xEE),
-            bg_card: Color32::from_rgb(0xFF, 0xFF, 0xFF),
-            bg_elevated: Color32::from_rgb(0xEB, 0xF7, 0xF2),
-            fg_primary: Color32::from_rgb(0x07, 0x3B, 0x30),
-            fg_secondary: Color32::from_rgb(0x2B, 0x63, 0x56),
-            fg_muted: Color32::from_rgb(0x5F, 0x8A, 0x7E),
-            vine_green: Color32::from_rgb(0x04, 0x4C, 0x3C),
-            leaf_green: Color32::from_rgb(0x00, 0x8F, 0x68),
-            accent_bg: Color32::from_rgb(0xD1, 0xF2, 0xE6),
-            fg_on_accent: Color32::from_rgb(0xFF, 0xFF, 0xFF),
-            border: Color32::from_rgb(0xB8, 0xDC, 0xD1),
-            ok_fg: Color32::from_rgb(0x04, 0x78, 0x57),
-            ok_bg: Color32::from_rgb(0xD1, 0xFA, 0xE5),
-            warn_fg: Color32::from_rgb(0xB4, 0x53, 0x09),
-            warn_bg: Color32::from_rgb(0xFE, 0xF3, 0xC7),
-            err_fg: Color32::from_rgb(0xBE, 0x12, 0x3C),
-            err_bg: Color32::from_rgb(0xFF, 0xE4, 0xE6),
-        }
-    }
-}
 
 enum WorkerCommand {
     RefreshStatus,
@@ -570,15 +505,7 @@ impl ControlCenterApp {
 
     fn ensure_fonts_and_textures(&mut self, ctx: &egui::Context) {
         if !self.fonts_installed {
-            let mut fonts = FontDefinitions::default();
-            fonts.font_data.insert(
-                "Inter".to_owned(),
-                Arc::new(FontData::from_static(EMBEDDED_INTER_TTF)),
-            );
-            if let Some(prop) = fonts.families.get_mut(&FontFamily::Proportional) {
-                prop.insert(0, "Inter".to_owned());
-            }
-            ctx.set_fonts(fonts);
+            install_inter_font(ctx);
             self.fonts_installed = true;
         }
         if self.app_icon_tex.is_none()
@@ -608,32 +535,7 @@ impl ControlCenterApp {
     }
 
     fn apply_visuals(&self, ctx: &egui::Context, pal: &BrandPalette) {
-        let mut visuals = if self.is_dark_theme() {
-            egui::Visuals::dark()
-        } else {
-            egui::Visuals::light()
-        };
-        visuals.panel_fill = pal.bg_canvas;
-        visuals.window_fill = pal.bg_card;
-        visuals.extreme_bg_color = pal.bg_sidebar;
-        visuals.faint_bg_color = pal.bg_elevated;
-        visuals.override_text_color = Some(pal.fg_primary);
-        visuals.widgets.noninteractive.bg_fill = pal.bg_card;
-        visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0, pal.border);
-        visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0, pal.fg_primary);
-        visuals.widgets.inactive.bg_fill = pal.bg_elevated;
-        visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, pal.border);
-        visuals.widgets.inactive.fg_stroke = Stroke::new(1.0, pal.fg_primary);
-        visuals.widgets.hovered.bg_fill = pal.accent_bg;
-        visuals.widgets.hovered.bg_stroke = Stroke::new(1.5, pal.leaf_green);
-        visuals.widgets.hovered.fg_stroke = Stroke::new(1.0, pal.fg_primary);
-        visuals.widgets.open.bg_fill = pal.bg_elevated;
-        visuals.widgets.open.fg_stroke = Stroke::new(1.0, pal.fg_primary);
-        visuals.widgets.active.bg_fill = pal.leaf_green;
-        visuals.widgets.active.fg_stroke = Stroke::new(1.5, pal.fg_on_accent);
-        visuals.selection.bg_fill = pal.leaf_green;
-        visuals.selection.stroke = Stroke::new(1.0, pal.fg_on_accent);
-        ctx.set_visuals(visuals);
+        apply_palette_visuals(ctx, self.is_dark_theme(), pal);
     }
 
     /// Renders the complete Control Center frame into `ui`.
@@ -2661,54 +2563,6 @@ pub fn run_control_window(
     .map_err(|e| e.to_string())
 }
 
-fn section_card<F>(ui: &mut egui::Ui, pal: &BrandPalette, title: &str, body: F)
-where
-    F: FnOnce(&mut egui::Ui),
-{
-    let inner_w = (ui.available_width() - 36.0).max(200.0);
-    egui::Frame::NONE
-        .fill(pal.bg_card)
-        .corner_radius(CornerRadius::same(8))
-        .inner_margin(Margin::symmetric(16, 14))
-        .stroke(Stroke::new(1.0, pal.border))
-        .show(ui, |ui| {
-            ui.set_min_width(inner_w);
-            ui.set_max_width(inner_w);
-            ui.label(
-                RichText::new(title)
-                    .font(FontId::new(15.0, FontFamily::Proportional))
-                    .strong()
-                    .color(pal.fg_primary),
-            );
-            ui.add_space(8.0);
-            body(ui);
-        });
-}
-
-fn kv_cell(ui: &mut egui::Ui, pal: &BrandPalette, label: &str, value: &str) {
-    ui.label(RichText::new(label).color(pal.fg_secondary).size(12.5));
-    ui.label(
-        RichText::new(value)
-            .color(pal.fg_primary)
-            .size(12.5)
-            .strong(),
-    );
-}
-
-fn health_colors(
-    health: DaemonHealthState,
-    pal: &BrandPalette,
-) -> (Color32, Color32, &'static str) {
-    match health {
-        DaemonHealthState::Running => (pal.ok_fg, pal.ok_bg, "●"),
-        DaemonHealthState::Starting | DaemonHealthState::Stopping => {
-            (pal.warn_fg, pal.warn_bg, "◐")
-        }
-        DaemonHealthState::Failed | DaemonHealthState::Unreachable => (pal.err_fg, pal.err_bg, "▲"),
-        DaemonHealthState::Stopped => (pal.fg_muted, pal.bg_elevated, "○"),
-    }
-}
-
 fn format_uptime(secs: u64) -> String {
     let hrs = secs / 3600;
     let mins = (secs % 3600) / 60;
@@ -2720,63 +2574,4 @@ fn format_uptime(secs: u64) -> String {
     } else {
         format!("{rem}s")
     }
-}
-
-fn decode_scaled_pixmap(png_bytes: &[u8], max_dim: u32) -> Option<tiny_skia::Pixmap> {
-    let src = tiny_skia::Pixmap::decode_png(png_bytes).ok()?;
-    let sw = src.width();
-    let sh = src.height();
-    if sw <= max_dim && sh <= max_dim {
-        return Some(src);
-    }
-    let scale = (max_dim as f32 / sw.max(sh) as f32).clamp(0.05, 1.0);
-    let dw = ((sw as f32 * scale).round() as u32).max(1);
-    let dh = ((sh as f32 * scale).round() as u32).max(1);
-    let mut dst = tiny_skia::Pixmap::new(dw, dh)?;
-    let paint = tiny_skia::PixmapPaint {
-        quality: tiny_skia::FilterQuality::Bicubic,
-        ..Default::default()
-    };
-    dst.draw_pixmap(
-        0,
-        0,
-        src.as_ref(),
-        &paint,
-        tiny_skia::Transform::from_scale(dw as f32 / sw as f32, dh as f32 / sh as f32),
-        None,
-    );
-    Some(dst)
-}
-
-fn decode_png_to_color_image(png_bytes: &[u8], max_dim: u32) -> Option<ColorImage> {
-    let pm = decode_scaled_pixmap(png_bytes, max_dim)?;
-    let w = pm.width() as usize;
-    let h = pm.height() as usize;
-    let data = pm.data();
-    let mut pixels = Vec::with_capacity(w * h);
-    for px in data.chunks_exact(4) {
-        // `tiny_skia::Pixmap` stores premultiplied RGBA8, matching `Color32::from_rgba_premultiplied`
-        pixels.push(Color32::from_rgba_premultiplied(px[0], px[1], px[2], px[3]));
-    }
-    Some(ColorImage {
-        size: [w, h],
-        pixels,
-        source_size: Vec2::new(w as f32, h as f32),
-    })
-}
-
-fn decode_png_to_icon_data(png_bytes: &[u8]) -> Option<egui::IconData> {
-    let pm = decode_scaled_pixmap(png_bytes, 128)?;
-    let width = pm.width();
-    let height = pm.height();
-    let mut rgba = Vec::with_capacity(pm.data().len());
-    for px in pm.pixels() {
-        let c = px.demultiply();
-        rgba.extend_from_slice(&[c.red(), c.green(), c.blue(), c.alpha()]);
-    }
-    Some(egui::IconData {
-        rgba,
-        width,
-        height,
-    })
 }
