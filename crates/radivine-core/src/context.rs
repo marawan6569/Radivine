@@ -1,12 +1,20 @@
 //! Context model and RFC 2483 `text/uri-list` parsing (`ACTION_SYSTEM.md` §4).
 
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
-use percent_encoding::{AsciiSet, CONTROLS, percent_decode_str, utf8_percent_encode};
+use percent_encoding::{AsciiSet, CONTROLS, percent_decode_str, percent_encode};
 
 /// Maximum number of items retained in a single [`BasicContext`] (`ACTION_SYSTEM.md` §4).
 pub const MAX_CONTEXT_ITEMS: usize = 10_000;
+
+/// Reason string recorded on [`FileFacts::error`] when an item's index exceeds
+/// [`MAX_ENRICHED_ITEMS`](crate::MAX_ENRICHED_ITEMS) (`64`).
+pub const CAP_EXCEEDED_REASON: &str = "Too many items to inspect";
+
+/// Reason string recorded on [`FileFacts::error`] when background enrichment
+/// exceeds the per-session deadline before inspecting the item.
+pub const ENRICH_TIMEOUT_REASON: &str = "Couldn't inspect the file";
 
 /// Character set percent-encoded in `file://` URI path segments (RFC 3986 / RFC 8089).
 const PATH_ENCODE_SET: &AsciiSet = &CONTROLS
@@ -17,8 +25,13 @@ const PATH_ENCODE_SET: &AsciiSet = &CONTROLS
     .add(b'<')
     .add(b'>')
     .add(b'?')
+    .add(b'[')
+    .add(b'\\')
+    .add(b']')
+    .add(b'^')
     .add(b'`')
     .add(b'{')
+    .add(b'|')
     .add(b'}');
 
 /// High-level kind of context payload (`ACTION_SYSTEM.md` §4).
@@ -202,7 +215,20 @@ impl FileFacts {
             readable: false,
             text: TextVerdict::Unknown,
             sniffed_mime: None,
-            error: Some("Couldn't inspect the file".to_string()),
+            error: Some(ENRICH_TIMEOUT_REASON.to_string()),
+        }
+    }
+
+    /// Facts recorded when an item's index is `>= MAX_ENRICHED_ITEMS` (`64`).
+    #[must_use]
+    pub fn cap_exceeded() -> Self {
+        Self {
+            kind: FileKind::Other,
+            size: None,
+            readable: false,
+            text: TextVerdict::Unknown,
+            sniffed_mime: None,
+            error: Some(CAP_EXCEEDED_REASON.to_string()),
         }
     }
 
@@ -215,6 +241,26 @@ impl FileFacts {
             && self.text == TextVerdict::Unknown
             && self.sniffed_mime.is_none()
             && self.error.is_none()
+    }
+
+    /// Returns `true` if this item was never inspected because its index exceeded
+    /// [`MAX_ENRICHED_ITEMS`](crate::MAX_ENRICHED_ITEMS) (`"Too many items to inspect"`)
+    /// or because enrichment timed out (`"Couldn't inspect the file"`).
+    ///
+    /// Actions that execute in an out-of-process worker (such as `ConvertAction`)
+    /// treat uninspected items as optimistically eligible rather than hard-failed,
+    /// letting the worker inspect and report per-item results at execution time.
+    #[must_use]
+    pub fn is_uninspected(&self) -> bool {
+        self.kind == FileKind::Other
+            && self.size.is_none()
+            && !self.readable
+            && self.text == TextVerdict::Unknown
+            && self.sniffed_mime.is_none()
+            && matches!(
+                self.error.as_deref(),
+                Some(CAP_EXCEEDED_REASON | ENRICH_TIMEOUT_REASON)
+            )
     }
 }
 
@@ -327,25 +373,102 @@ pub fn parse_uri_list(input: &str) -> Vec<String> {
     out
 }
 
+/// Conversion trait for CLI path or URI arguments (`&str`, `&OsStr`, `&Path`, `&Cow<'_, str>`, etc.).
+pub trait CliArg {
+    /// Borrows the argument as an [`OsStr`].
+    fn as_cli_os_str(&self) -> &OsStr;
+}
+
+impl CliArg for str {
+    fn as_cli_os_str(&self) -> &OsStr {
+        OsStr::new(self)
+    }
+}
+
+impl CliArg for String {
+    fn as_cli_os_str(&self) -> &OsStr {
+        OsStr::new(self.as_str())
+    }
+}
+
+impl CliArg for OsStr {
+    fn as_cli_os_str(&self) -> &OsStr {
+        self
+    }
+}
+
+impl CliArg for OsString {
+    fn as_cli_os_str(&self) -> &OsStr {
+        self.as_os_str()
+    }
+}
+
+impl CliArg for Path {
+    fn as_cli_os_str(&self) -> &OsStr {
+        self.as_os_str()
+    }
+}
+
+impl CliArg for PathBuf {
+    fn as_cli_os_str(&self) -> &OsStr {
+        self.as_os_str()
+    }
+}
+
+impl CliArg for std::borrow::Cow<'_, str> {
+    fn as_cli_os_str(&self) -> &OsStr {
+        OsStr::new(self.as_ref())
+    }
+}
+
+impl CliArg for std::borrow::Cow<'_, OsStr> {
+    fn as_cli_os_str(&self) -> &OsStr {
+        self.as_ref()
+    }
+}
+
 /// Converts a CLI path or URI argument into a canonical `file://` (or existing scheme) URI (`ACTION_SYSTEM.md` §4.1).
 ///
 /// Relative paths are resolved against `base_dir` without following symlinks (`std::fs::canonicalize`
 /// is intentionally avoided so symlinks preserve their link path and broken symlinks can still be invoked).
-pub fn normalize_cli_arg_to_uri(arg: &str, base_dir: &Path) -> Result<String, String> {
-    let trimmed = arg.trim();
-    if trimmed.is_empty() {
+/// Supports arbitrary non-UTF-8 Linux [`OsStr`] paths losslessly via percent-encoding.
+pub fn normalize_cli_arg_to_uri<A: CliArg + ?Sized>(
+    arg: &A,
+    base_dir: &Path,
+) -> Result<String, String> {
+    let os = arg.as_cli_os_str();
+    if os.is_empty() {
         return Err("empty path or URI argument".to_string());
     }
-    if let Some((scheme, _rest)) = trimmed.split_once("://")
-        && !scheme.is_empty()
-        && scheme
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'-' | b'.'))
-    {
-        return Ok(trimmed.to_string());
+    if let Some(s) = os.to_str() {
+        let trimmed = s.trim();
+        if trimmed.is_empty() {
+            return Err("empty path or URI argument".to_string());
+        }
+        if let Some((scheme, _rest)) = trimmed.split_once("://")
+            && !scheme.is_empty()
+            && scheme
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'-' | b'.'))
+        {
+            if trimmed.starts_with("file://")
+                && let Some(local) = parse_file_uri_to_local_path(trimmed)
+            {
+                return Ok(local_path_to_file_uri(&local));
+            }
+            return Ok(trimmed.to_string());
+        }
+
+        let raw_path = Path::new(trimmed);
+        let abs_path = if raw_path.is_absolute() {
+            clean_lexical_path(raw_path)
+        } else {
+            clean_lexical_path(&base_dir.join(raw_path))
+        };
+        return Ok(local_path_to_file_uri(&abs_path));
     }
 
-    let raw_path = Path::new(trimmed);
+    let raw_path = Path::new(os);
     let abs_path = if raw_path.is_absolute() {
         clean_lexical_path(raw_path)
     } else {
@@ -355,16 +478,27 @@ pub fn normalize_cli_arg_to_uri(arg: &str, base_dir: &Path) -> Result<String, St
     Ok(local_path_to_file_uri(&abs_path))
 }
 
-/// Encodes an absolute local [`Path`] into a `file:///...` URI.
+/// Encodes an absolute local [`Path`] into a `file:///...` URI (RFC 8089),
+/// losslessly percent-encoding raw [`OsStr`] bytes on Unix so non-UTF-8 filenames
+/// round-trip through [`Item::from_uri`] without `U+FFFD` substitution.
 #[must_use]
 pub fn local_path_to_file_uri(path: &Path) -> String {
-    let mut uri = String::from("file://");
+    #[cfg(unix)]
+    let raw: &[u8] = std::os::unix::ffi::OsStrExt::as_bytes(path.as_os_str());
+    #[cfg(not(unix))]
     let lossy = path.to_string_lossy();
-    for (i, seg) in lossy.split('/').enumerate() {
+    #[cfg(not(unix))]
+    let raw: &[u8] = lossy.as_bytes();
+
+    let mut uri = String::with_capacity(raw.len() + 16);
+    uri.push_str("file://");
+    for (i, seg) in raw.split(|&b| b == b'/').enumerate() {
         if i > 0 {
             uri.push('/');
         }
-        uri.push_str(&utf8_percent_encode(seg, PATH_ENCODE_SET).to_string());
+        if !seg.is_empty() {
+            uri.push_str(&percent_encode(seg, PATH_ENCODE_SET).to_string());
+        }
     }
     if !uri.starts_with("file:///") {
         uri = format!("file:///{}", uri.trim_start_matches("file://"));

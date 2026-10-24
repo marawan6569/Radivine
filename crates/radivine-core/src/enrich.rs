@@ -127,14 +127,7 @@ impl Enricher {
             if idx < MAX_ENRICHED_ITEMS {
                 initial_facts.push(FileFacts::pending());
             } else {
-                initial_facts.push(FileFacts {
-                    kind: FileKind::Other,
-                    size: None,
-                    readable: false,
-                    text: TextVerdict::Unknown,
-                    sniffed_mime: None,
-                    error: Some("Too many items to inspect".to_string()),
-                });
+                initial_facts.push(FileFacts::cap_exceeded());
             }
         }
         initial_ctx.facts = Some(initial_facts);
@@ -298,14 +291,7 @@ pub fn enrich_context_sync(basic: BasicContext) -> Context {
             symlink[idx] = is_link;
             facts.push(item_facts);
         } else {
-            facts.push(FileFacts {
-                kind: FileKind::Other,
-                size: None,
-                readable: false,
-                text: TextVerdict::Unknown,
-                sniffed_mime: None,
-                error: Some("Too many items to inspect".to_string()),
-            });
+            facts.push(FileFacts::cap_exceeded());
         }
     }
 

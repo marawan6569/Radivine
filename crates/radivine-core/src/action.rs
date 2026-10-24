@@ -188,6 +188,18 @@ pub trait Action: Send + Sync + 'static {
     /// **MUST NOT perform I/O.** Called synchronously on the UI thread.
     fn is_visible(&self, ctx: &BasicContext) -> bool;
 
+    /// Returns the per-session description/caption for this action given `ctx`.
+    ///
+    /// **MUST NOT perform I/O** — computed purely from [`BasicContext`].
+    /// Called once by [`ActionRegistry::build_menu`](crate::ActionRegistry::build_menu)
+    /// when constructing the menu tree for a session.
+    ///
+    /// The default implementation returns `self.meta().description` borrowed, so
+    /// existing `Action` implementations require no changes.
+    fn description_for(&self, _ctx: &BasicContext) -> Option<Cow<'_, str>> {
+        self.meta().description.as_deref().map(Cow::Borrowed)
+    }
+
     /// Determines whether this action is enabled for `ctx`.
     ///
     /// **MUST NOT perform I/O.** Called on the UI thread.

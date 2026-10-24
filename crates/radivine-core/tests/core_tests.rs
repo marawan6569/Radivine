@@ -502,3 +502,149 @@ fn test_enricher_hung_stat_times_out_to_couldnt_inspect_file_ac_4_2() {
 fn unreachable_or_ignored() -> (bool, radivine_core::FileFacts) {
     (false, radivine_core::FileFacts::timed_out())
 }
+
+struct DynamicDescriptionAction {
+    meta: ActionMeta,
+}
+
+impl Action for DynamicDescriptionAction {
+    fn meta(&self) -> &ActionMeta {
+        &self.meta
+    }
+
+    fn is_visible(&self, _ctx: &BasicContext) -> bool {
+        true
+    }
+
+    fn description_for(&self, ctx: &BasicContext) -> Option<std::borrow::Cow<'_, str>> {
+        Some(std::borrow::Cow::Owned(format!(
+            "Convert {} item(s)",
+            ctx.items.len()
+        )))
+    }
+
+    fn run(&self, _ctx: &Context, _job: &JobHandle) -> Result<Outcome, ActionError> {
+        Ok(Outcome::Done)
+    }
+}
+
+#[test]
+fn test_e1_dynamic_action_description_for_populates_menu_node() {
+    let mut reg = ActionRegistry::new();
+    reg.register(Arc::new(DynamicDescriptionAction {
+        meta: ActionMeta {
+            id: ActionId::from("test.dynamic"),
+            label: "Dynamic".to_string(),
+            icon: None,
+            description: Some("Static fallback".to_string()),
+            kinds: &[ContextKind::Files],
+        },
+    }))
+    .unwrap();
+    reg.set_menu(
+        vec![MenuSpec::Action(ActionId::from("test.dynamic"))],
+        MenuOverrides::default(),
+    );
+
+    let ctx = Context::from_basic(BasicContext::from_uris(
+        [
+            "file:///tmp/a.png",
+            "file:///tmp/b.png",
+            "file:///tmp/c.png",
+        ],
+        InvocationMode::Drag,
+        SourceInfo::default(),
+    ));
+    let (tree, _) = reg.build_menu(&ctx, MenuLimits::default()).unwrap();
+    let leaf = &tree.root.children().unwrap()[0];
+    assert_eq!(leaf.description.as_deref(), Some("Convert 3 item(s)"));
+}
+
+#[test]
+fn test_e2_file_facts_is_uninspected_vs_pending_and_inspected() {
+    use radivine_core::{
+        CAP_EXCEEDED_REASON, ENRICH_TIMEOUT_REASON, FileFacts, MAX_ENRICHED_ITEMS,
+    };
+
+    let pending = FileFacts::pending();
+    assert!(pending.is_pending());
+    assert!(!pending.is_uninspected());
+
+    let timed_out = FileFacts::timed_out();
+    assert!(!timed_out.is_pending());
+    assert!(timed_out.is_uninspected());
+    assert_eq!(timed_out.error.as_deref(), Some(ENRICH_TIMEOUT_REASON));
+
+    let cap_exceeded = FileFacts::cap_exceeded();
+    assert!(!cap_exceeded.is_pending());
+    assert!(cap_exceeded.is_uninspected());
+    assert_eq!(cap_exceeded.error.as_deref(), Some(CAP_EXCEEDED_REASON));
+
+    // Inspected regular file or real error must NOT be treated as uninspected
+    let regular_ok = FileFacts {
+        kind: FileKind::Regular,
+        size: Some(42),
+        readable: true,
+        text: TextVerdict::Binary,
+        sniffed_mime: Some("image/png"),
+        error: None,
+    };
+    assert!(!regular_ok.is_uninspected());
+
+    let no_perm = FileFacts {
+        kind: FileKind::Regular,
+        size: Some(42),
+        readable: false,
+        text: TextVerdict::Unknown,
+        sniffed_mime: None,
+        error: Some("No permission to read".to_string()),
+    };
+    assert!(!no_perm.is_uninspected());
+
+    // Enriching 70 items marks items 64..70 as cap_exceeded -> is_uninspected() == true
+    let uris: Vec<String> = (0..70)
+        .map(|i| format!("file:///tmp/nonexistent_item_{i}.png"))
+        .collect();
+    let ctx = enrich_context_sync(BasicContext::from_uris(
+        uris,
+        InvocationMode::Drag,
+        SourceInfo::default(),
+    ));
+    let facts = ctx.facts.unwrap();
+    assert_eq!(facts.len(), 70);
+    for f in &facts[..MAX_ENRICHED_ITEMS] {
+        assert_eq!(f.kind, FileKind::Missing);
+        assert!(!f.is_uninspected());
+    }
+    for f in &facts[MAX_ENRICHED_ITEMS..] {
+        assert!(f.is_uninspected());
+        assert_eq!(f.error.as_deref(), Some(CAP_EXCEEDED_REASON));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn test_e8_lossless_non_utf8_path_to_file_uri_and_cli_normalization() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let raw_rel = OsStr::from_bytes(b"sub dir/photo_\x80\xff_raw.PNG");
+    let base = Path::new("/tmp/radivine_e8");
+    let uri = normalize_cli_arg_to_uri(raw_rel, base).unwrap();
+    assert_eq!(
+        uri,
+        "file:///tmp/radivine_e8/sub%20dir/photo_%80%FF_raw.PNG"
+    );
+
+    let item = Item::from_uri(&uri);
+    let expected_abs = PathBuf::from(OsStr::from_bytes(
+        b"/tmp/radivine_e8/sub dir/photo_\x80\xff_raw.PNG",
+    ));
+    assert_eq!(item.local_path.as_ref(), Some(&expected_abs));
+    assert_eq!(
+        item.local_path.as_ref().unwrap().as_os_str().as_bytes(),
+        expected_abs.as_os_str().as_bytes()
+    );
+    assert_eq!(item.ext.as_deref(), Some("png"));
+    assert_eq!(item.guessed_mime, Some("image/png"));
+}

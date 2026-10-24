@@ -324,8 +324,8 @@ impl ActionRegistry {
         let (enabled, disabled_reason) = eval_enablement(action.as_ref(), ctx);
         let mut node = MenuNode::leaf(meta.id.0.clone(), meta.label.as_str());
         node.icon.clone_from(&meta.icon);
-        if let Some(ref desc) = meta.description {
-            node.description = Some(Arc::from(desc.as_str()));
+        if let Some(desc) = action.description_for(&ctx.basic) {
+            node.description = Some(Arc::from(desc.as_ref()));
         }
         node.enabled = enabled;
         node.disabled_reason = disabled_reason;

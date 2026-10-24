@@ -15,9 +15,9 @@ pub use action::{
     JobHandle, JobId, LogAction, Outcome,
 };
 pub use context::{
-    BasicContext, Context, ContextKind, FileFacts, FileKind, InvocationMode, Item,
-    MAX_CONTEXT_ITEMS, SourceInfo, TextEncoding, TextVerdict, local_path_to_file_uri,
-    normalize_cli_arg_to_uri, parse_uri_list,
+    BasicContext, CAP_EXCEEDED_REASON, CliArg, Context, ContextKind, ENRICH_TIMEOUT_REASON,
+    FileFacts, FileKind, InvocationMode, Item, MAX_CONTEXT_ITEMS, SourceInfo, TextEncoding,
+    TextVerdict, local_path_to_file_uri, normalize_cli_arg_to_uri, parse_uri_list,
 };
 pub use dispatch::{Dispatcher, JobEvent, JobSink};
 pub use enrich::{
