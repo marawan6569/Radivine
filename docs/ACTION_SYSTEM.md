@@ -1,7 +1,7 @@
 # Radivine — Context & Action System
 
-Status: **Implemented in M4–M5 (`radivine-core`, `radivine-actions`, `radivine`, `radivine-viewer`)** · Last updated: 2026-10-23
-Crates: `radivine-core` (API, context, registry, dispatcher), `radivine-actions` (built-ins), and `radivine-viewer` (preview application).
+Status: **Implemented in M4–M5 & v0.2.0 C3 (`radivine-core`, `radivine-actions`, `radivine`, `radivine-viewer`, `radivine-jobs`)** · Last updated: 2026-10-24
+Crates: `radivine-core` (API, context, registry, dispatcher), `radivine-actions` (built-ins including Quick Convert), `radivine-jobs` (background worker IPC client), and `radivine-viewer` (preview application).
 
 ---
 
@@ -50,10 +50,10 @@ flowchart LR
 
 ## 3. The visibility / enablement rule (key design rule)
 
-- **Visibility** (`Action::is_visible(&BasicContext)`) uses only the BasicContext. It decides the **layout** of the wheel, so it must be known before the first frame and must not block.
-- **Enablement** (`Action::enablement(&Context)`) may use FileFacts. It returns `Enabled`, `Disabled { reason }` or `Pending`. Enablement changes **never alter layout**; the app forwards them to `WheelSession::set_enabled`.
-- Until FileFacts arrive, items whose enablement needs them are `Pending` → shown disabled with reason "Checking…". When the enricher finishes (expected to take a few ms on local disks — an estimate, to be measured) they flip to enabled/disabled with a reason.
-- If enrichment times out (default 1500 ms), `Pending` becomes `Disabled { reason: "Couldn't inspect the file" }`.
+- **Visibility** (`Action::is_visible(&BasicContext)`) and **dynamic captions** (`Action::description_for(&BasicContext)`) use only the `BasicContext`. They decide the **layout** and initial caption of the wheel, so they must be known before the first frame and must perform **zero filesystem I/O**.
+- **Enablement** (`Action::enablement(&Context)`) may use `FileFacts`. It returns `Enabled`, `Disabled { reason }` or `Pending`. Enablement changes **never alter layout**; the app forwards them to `WheelSession::set_enabled`.
+- Until `FileFacts` arrive, items whose enablement needs them are `Pending` → shown disabled with reason `"Checking…"`. When the enricher finishes (expected to take `< 3 ms` on local disks) they flip to enabled/disabled with a reason.
+- Items beyond the 64-item enrichment cap (`CAP_EXCEEDED_REASON`) or items whose enrichment timed out (`ENRICH_TIMEOUT_REASON`, default 1500 ms) satisfy `FileFacts::is_uninspected() == true`. Actions that inspect individual items (like Preview) treat uninspected items as disabled (`"Couldn't inspect the file"`), whereas batch actions delegated to `radivine-worker` (like Quick Convert) enable optimistically when uninspected candidate items remain and let the worker validate each item at execution time.
 
 Rationale: network mounts (gvfs/sshfs/NFS/SMB) can block `stat` for seconds; the wheel must still appear instantly and must not reshuffle under the pointer.
 
@@ -147,6 +147,12 @@ pub trait Action: Send + Sync + 'static {
     fn meta(&self) -> &ActionMeta;
     /// Layout decision. MUST NOT perform I/O. Called on the UI thread.
     fn is_visible(&self, ctx: &BasicContext) -> bool;
+    /// Optional context-aware caption description (`E1`). MUST NOT perform I/O.
+    /// Defaults to `self.meta().description.as_deref().map(Cow::Borrowed)`.
+    fn description_for(&self, ctx: &BasicContext) -> Option<Cow<'_, str>> {
+        let _ = ctx;
+        self.meta().description.as_deref().map(Cow::Borrowed)
+    }
     /// May use FileFacts. MUST NOT perform I/O. Called on the UI thread.
     fn enablement(&self, ctx: &Context) -> Enablement { let _ = ctx; Enablement::Enabled }
     /// Executed on a worker thread. May block. Should poll `job.is_cancelled()` in loops.
@@ -210,6 +216,19 @@ vec![
             MenuSpec::Action(id("radivine.preview.full")),
             MenuSpec::Action(id("radivine.preview.head")),
             MenuSpec::Action(id("radivine.preview.tail")),
+        ],
+        default: None },
+    MenuSpec::Submenu { id: "radivine.convert".into(), label: "Convert".into(), icon: Some(icon("lucide:arrow-right-left")),
+        description: Some("Convert files to another format".into()),
+        children: vec![
+            MenuSpec::Submenu { id: "radivine.convert.image".into(), label: "Image".into(), icon: Some(icon("lucide:file-image")),
+                description: Some("Convert images to PNG, JPEG, or WebP".into()),
+                children: vec![
+                    MenuSpec::Action(id("radivine.convert.image.png")),
+                    MenuSpec::Action(id("radivine.convert.image.jpeg")),
+                    MenuSpec::Action(id("radivine.convert.image.webp")),
+                ],
+                default: None },
         ],
         default: None },
     MenuSpec::Action(id("radivine.copy")),
@@ -280,6 +299,9 @@ pub enum JobEvent { Finished { job: JobId, action: ActionId, result: Result<Outc
 | `radivine.preview.full` | Full Preview | `Files`, exactly 1 item, `local_path` is `Some`, `guessed_mime` not a known non-text family (`image/`, `audio/`, `video/`, `font/`, archives, `application/pdf`, …) | `Regular`, `readable`, `text = Text(_)` | Spawn `radivine-viewer --mode full -- <path>` |
 | `radivine.preview.head` | Head | same | same | Spawn `radivine-viewer --mode head --lines <N> -- <path>` (`N` from config, default 50) |
 | `radivine.preview.tail` | Tail | same | same | Spawn `radivine-viewer --mode tail --lines <N> -- <path>` |
+| `radivine.convert.image.png` | PNG | `Files`, ≥ 1 local candidate image (`png`, `jpg`/`jpeg`, `webp`), and not a single-item selection already `.png` | ≥ 1 item confirmed convertible via `FileFacts.sniffed_mime` + `CapabilityCatalog`, OR ≥ 1 candidate item uninspected (`> 64` cap or timeout) after pending items finish | Submits a durable `convert.image` job (`target = "png"`) to `radivine-worker` via `radivine-jobs::JobsClient::connect_or_launch` |
+| `radivine.convert.image.jpeg` | JPEG | same (hidden when single item is already `.jpg`/`.jpeg`) | same (`target = "jpeg"`) | Submits a durable `convert.image` job (`target = "jpeg"`) to `radivine-worker` |
+| `radivine.convert.image.webp` | WebP | same (hidden when single item is already `.webp`) | same (`target = "webp"`) | Submits a durable `convert.image` job (`target = "webp"`) to `radivine-worker` |
 | `radivine.copy` | Copy | `Files`, ≥ 1 item | always | Returns `Effects([SetClipboard(ClipboardRequest { uris, local_paths, op: ClipOp::Copy })])` → paste works in Nemo |
 | `radivine.properties` | Properties | `Files`, ≥ 1 item | always | D-Bus `org.freedesktop.FileManager1.ShowItemProperties(uris, startup_id="")` on the session bus (Nemo implements `org.freedesktop.FileManager1`; verify in M4); error → notification |
 | `custom.<id>` | user | from `when` | file facts if `when.require_text = true` | See §9 |
