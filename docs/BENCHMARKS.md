@@ -142,3 +142,19 @@ cargo run --release -p convert-cli -- bench --warmup 3 --runs 10
 | `12 MP PNG -> JPEG q82` | `4000 × 3000` | `26,545.5 KiB` | `1,752.7 KiB` | **`230.7 ms`** (`0.23 s`) | `233.0 ms` (`0.23 s`) | **`107.2 MiB`** | `<= 1.0 s` (`1,000 ms`) | **PASS (4.3× under budget)** |
 | `24 MP JPEG -> WebP q80 m4` | `6000 × 4000` | `7,336.1 KiB` | `3,703.1 KiB` | **`2,307.8 ms`** (`2.31 s`) | `2,380.1 ms` (`2.38 s`) | **`124.2 MiB`** | Baseline recorded | **PASS** |
 | `50 MP JPEG -> WebP q80 m4` | `8192 × 6144` | `15,370.7 KiB` | `8,291.5 KiB` | **`4,876.5 ms`** (`4.88 s`) | `4,998.1 ms` (`5.00 s`) | **`265.7 MiB`** | `<= 2.2 × decoded + 30 MiB` (`≈ 470 MiB`) | **PASS (1.77× under RSS budget)** |
+
+---
+
+## 9. Milestone C2 (v0.2.0) — Durable Background Job Worker (`radivine-jobs` + `radivine-worker`)
+
+Measured on 2026-10-24 on the reference Linux Mint 22.3 desktop (`11th Gen Intel® Core™ i5-11400F`, `46 GiB DDR4`, `Linux 6.8.0-147-generic x86_64`, `rustc 1.95.0`):
+
+| Metric | Provenance | Measured Value | Target Budget (`JOB_SYSTEM_DESIGN.md` / `IMPLEMENTATION_PLAN.md` §3) | Status |
+|---|---|---|---|---|
+| **IPC `Cancel` RPC Response Latency (`AC-C2.9`)** | `c2_acceptance::ac_c2_9_and_c2_10_cancellation_and_retry_modes` | **`< 5 ms`** | `< 100 ms` (`AC-C2.9`) | **PASS (>20× under budget)** |
+| **Watchdog `Mutex<ItemPhase>` Lock Acquisition (`T-WATCHDOG-LOCK-NONBLOCKING`)** | `radivine_worker::fence::tests::t_watchdog_fence_nonblocking_and_collision_fence` (while Step B `PRAGMA synchronous = FULL` is stalled `500 ms`) | **`< 1 ms`** (`~15 µs`) | `< 5 ms` (`T-WATCHDOG-LOCK-NONBLOCKING`) | **PASS (>300× under budget)** |
+| **Graceful `SIGTERM` Drain & Exit Latency (`T-RECOVER-SIGTERM`)** | `c2_acceptance::ac_c2_7_ownership_fences_shared_stage_dir_temp_inode_race_sigterm_and_reboot` | **`< 350 ms`** | `<= 6 s` (`AC-C2.7`) | **PASS** |
+| **1,000-Item Batch End-to-End Execution + SQLite WAL Persistence (`AC-C2.1`)** | `c2_acceptance::ac_c2_1_and_c2_2_single_medium_large_batches_idempotency_and_retention` (`1,000` PNG -> WebP items + `C0a`/`C0b`/`C1`/`C2` `PRAGMA synchronous = FULL` journals) | **`~11.8 s`** (`1,000 / 1,000` succeeded, `0` failed, `0` leftover `.part`/`.rvstage-*`) | Completes cleanly without deadlock or OOM (`AC-C2.1`) | **PASS** |
+| **9-Point Crash-Injection & Startup Recovery Matrix (`C0a`–`C6`, `AC-C2.6`–`AC-C2.8`)** | `c2_acceptance::ac_c2_6_c2_7_c2_8_crash_injection_matrix_c0a_through_c6` (9 process aborts + 9 recovery boots + 5 retries) | **`2.48 s` total** (`~275 ms` per crash-recovery cycle) | Deterministic `C0a`–`C6` recovery before socket bind | **PASS** |
+| **Idle Worker Resident Memory (`AC-C2.14`)** | `radivine-worker` after `idle_timeout_secs` exit (`0` processes running) | **`0 B` (`0 MiB`)** | `0 B` when idle (`ADR-028`) | **PASS** |
+
