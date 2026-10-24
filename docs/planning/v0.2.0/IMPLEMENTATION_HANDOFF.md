@@ -1,18 +1,18 @@
 # Radivine v0.2.0 — Implementation Handoff Guide
 
-Status: **Architecture Consolidated — Pending Owner Approval & Milestone Authorization** · Prepared: 2026-10-24 · Baseline: `v0.1.1` (`872d5d4`)
+Status: **Architecture Approved (`ADR-027`–`ADR-044`, `D1`–`D9`) — Milestone C1 Authorized ONLY (`C2`–`C5` Not Yet Authorized)** · Prepared: 2026-10-24 · Baseline: `v0.1.1` (`872d5d4`)
 Related: [README](README.md) · [CONVERSION_ARCHITECTURE](CONVERSION_ARCHITECTURE.md) · [JOB_SYSTEM_DESIGN](JOB_SYSTEM_DESIGN.md) · [SECURITY_AND_FILE_SAFETY](SECURITY_AND_FILE_SAFETY.md) · [CONVERSION_BACKENDS](CONVERSION_BACKENDS.md) · [CONVERSION_PRODUCT_SPEC](CONVERSION_PRODUCT_SPEC.md) · [CONVERSION_UX](CONVERSION_UX.md) · [ARCHITECTURE_DECISIONS](ARCHITECTURE_DECISIONS.md) · [IMPLEMENTATION_PLAN](IMPLEMENTATION_PLAN.md) · [INDEPENDENT_ARCHITECTURE_REVIEW](INDEPENDENT_ARCHITECTURE_REVIEW.md)
 
 ---
 
-## 13. Explicit Non-Authorization Notice (Read First)
+## 13. Milestone Authorization Boundary Notice (Read First)
 
 > [!CAUTION]
-> **MILESTONE C1 IS NOT YET AUTHORIZED.**
+> **MILESTONE C1 IS AUTHORIZED; MILESTONES C2–C5 ARE NOT YET AUTHORIZED.**
 >
 > Per `AGENTS.md` §3 (*Mandatory Milestone Authorization Policy*):
-> - **Do NOT begin Milestone C1 (or any spike/crate implementation)** until the project owner explicitly approves the v0.2.0 architecture decisions (`ADR-C01`–`ADR-C18` and `D1`–`D9`) and explicitly authorizes Milestone C1.
-> - All ADRs in [`ARCHITECTURE_DECISIONS.md`](ARCHITECTURE_DECISIONS.md) (`ADR-C01` through `ADR-C18`) are currently in **Proposed** status, and owner decisions `D1`–`D9` are recommendations awaiting formal approval.
+> - The project owner has formally approved the v0.2.0 architecture decisions (`ADR-C01`–`ADR-C18`, promoted to `ADR-027`–`ADR-044` in `docs/DECISIONS.md`, and owner decisions `D1`–`D9`, subject to the documented verification gates) and has explicitly authorized **Milestone C1 — Conversion Core & Built-in Image Backend ONLY**.
+> - **Do NOT begin Milestone C2, C3, C4, or C5.** Stop completely after completing and verifying Milestone C1 and wait for explicit owner authorization before beginning C2.
 > - Each authorized milestone (`C1`, `C2`, `C3`, `C4`, `C5`) is a **hard scope boundary**. Completing one milestone never authorizes the next.
 
 ---
@@ -258,40 +258,40 @@ All existing v0.1.1 signatures and behavior must remain backwards-compatible:
 
 ---
 
-## 12. Owner Decisions (`D1`–`D9`) and ADR Status (`ADR-C01`–`ADR-C18`)
+## 12. Owner Decisions (`D1`–`D9`) and ADR Status (`ADR-C01`–`ADR-C18` → `ADR-027`–`ADR-044`)
 
-### Proposed ADRs (`ADR-C01`–`ADR-C18`)
+### Approved ADRs (`ADR-C01`–`ADR-C18`, Promoted to `docs/DECISIONS.md` as `ADR-027`–`ADR-044`)
 
-All 18 v0.2.0 Architecture Decision Records in [`ARCHITECTURE_DECISIONS.md`](ARCHITECTURE_DECISIONS.md) are in **Proposed** status pending formal owner approval:
-- `ADR-C01` — Conversion is an Action capability, not a second action system (**Proposed**)
-- `ADR-C02` — Crate boundaries: `radivine-dbus`, `radivine-convert`, `radivine-convert-image`, `radivine-jobs`, `radivine-worker` (**Proposed**)
-- `ADR-C03` — Capability-based backends with data-only descriptors; deterministic routing (**Proposed**)
-- `ADR-C04` — Built-in image backend: pure-Rust decode, `image` encoders, `libwebp` for lossy WebP only (**Proposed**)
-- `ADR-C05` — `libwebp` linkage: vendored static (`D2`) (**Proposed**)
-- `ADR-C06` — Out-of-process, on-demand worker launched in its own systemd cgroup (**Proposed**)
-- `ADR-C07` — SQLite (WAL) job store, single writer (**Proposed**)
-- `ADR-C08` — Job/item state machines; retry creates a new attempt; no auto-resume across sessions (**Proposed**)
-- `ADR-C09` — Worker IPC: JSON lines, command + subscription connections, lossless paths, unified frame bounds (**Proposed**)
-- `ADR-C10` — No-overwrite output commit protocol (two-rung atomic commit + private `.rvstage-*` staging + `item-<idx>-<rand16>.part` + `O_RDWR` validation) (**Proposed**)
-- `ADR-C11` — Menu: `Convert ▸ Image ▸ target`; visibility by extension, progressive enablement by sniffed MIME; `description_for` hook (**Proposed**)
-- `ADR-C12` — Backend-independent options and presets (`QualityIntent`, `SameFormatPolicy`, validated overrides) (**Proposed**)
-- `ADR-C13` — Configuration: `convert.toml` (worker-authoritative) + `config.toml [jobs]`; daemon reads zero conversion config (**Proposed**)
-- `ADR-C14` — Advanced Convert hosted by `radivine-control convert` (bypasses `ControlInstanceLock::acquire_or_notify_existing()`, transient cgroup scope) (**Proposed**)
-- `ADR-C15` — Worker sends notifications via `radivine-dbus` (extracted from `radivine-actions/src/dbus.rs`, zero wheel/core deps) (**Proposed**)
-- `ADR-C16` — Optional backend framework ships; no optional backend in v0.2.0 (`D3`) (**Proposed**)
-- `ADR-C17` — Animated sources rejected; same-format governed by `SameFormatPolicy`; skips always reported (**Proposed**)
-- `ADR-C18` — Metadata defaults: auto-orient, keep ICC, strip EXIF, drop XMP (**Proposed**)
+All 18 v0.2.0 Architecture Decision Records in [`ARCHITECTURE_DECISIONS.md`](ARCHITECTURE_DECISIONS.md) have been approved in principle by the project owner and promoted to [`docs/DECISIONS.md`](../../DECISIONS.md) (subject to their documented `[VERIFY]` gates):
+- `ADR-027` (`ADR-C01`) — Conversion is an Action capability, not a second action system (**Accepted**)
+- `ADR-028` (`ADR-C02`) — Crate boundaries: `radivine-dbus`, `radivine-convert`, `radivine-convert-image`, `radivine-jobs`, `radivine-worker` (**Accepted**, `[VERIFY Q-A]`)
+- `ADR-029` (`ADR-C03`) — Capability-based backends with data-only descriptors; deterministic routing (**Accepted**)
+- `ADR-030` (`ADR-C04`) — Built-in image backend: pure-Rust decode, `image` encoders, `libwebp` for lossy WebP only (**Provisional — Direction Approved**, `[VERIFY P1–P7]`)
+- `ADR-031` (`ADR-C05`) — `libwebp` linkage: vendored static (`D2`) (**Provisional — Approved via `D2`**, `[VERIFY P1, P9]`)
+- `ADR-032` (`ADR-C06`) — Out-of-process, on-demand worker launched in its own systemd cgroup (**Provisional — Direction Approved**, `[VERIFY P10, Q-B]`)
+- `ADR-033` (`ADR-C07`) — SQLite (WAL) job store, single writer (**Accepted**, `[VERIFY C2]`)
+- `ADR-034` (`ADR-C08`) — Job/item state machines; retry creates a new attempt; no auto-resume across sessions (`D9`) (**Accepted**)
+- `ADR-035` (`ADR-C09`) — Worker IPC: JSON lines, command + subscription connections, lossless paths, unified frame bounds (**Accepted**)
+- `ADR-036` (`ADR-C10`) — No-overwrite output commit protocol (two-rung atomic commit + private `.rvstage-*` staging + `item-<idx>-<rand16>.part` + `O_RDWR` validation) (**Provisional — Direction Approved**, `[VERIFY P8]`)
+- `ADR-037` (`ADR-C11`) — Menu: `Convert ▸ Image ▸ target`; visibility by extension, progressive enablement by sniffed MIME; `description_for` hook (**Accepted**)
+- `ADR-038` (`ADR-C12`) — Backend-independent options and presets (`QualityIntent`, `SameFormatPolicy`, validated overrides) (**Accepted**)
+- `ADR-039` (`ADR-C13`) — Configuration: `convert.toml` (worker-authoritative) + `config.toml [jobs]`; daemon reads zero conversion config (**Accepted**)
+- `ADR-040` (`ADR-C14`) — Advanced Convert hosted by `radivine-control convert` (bypasses `ControlInstanceLock::acquire_or_notify_existing()`, transient cgroup scope) (**Accepted**, `[VERIFY Q-C]`)
+- `ADR-041` (`ADR-C15`) — Worker sends notifications via `radivine-dbus` (extracted from `radivine-actions/src/dbus.rs`, zero wheel/core deps) (**Accepted**)
+- `ADR-042` (`ADR-C16`) — Optional backend framework ships; no optional backend in v0.2.0 (`D3`) (**Accepted**)
+- `ADR-043` (`ADR-C17`) — Animated sources rejected; same-format governed by `SameFormatPolicy`; skips always reported (**Accepted**)
+- `ADR-044` (`ADR-C18`) — Metadata defaults: auto-orient, keep ICC, strip EXIF, drop XMP (**Provisional — Approved via `D5`**, `[VERIFY P2, P5]`)
 
-### Recommended Owner Decisions Pending Approval (`D1`–`D9`)
+### Approved Owner Decisions (`D1`–`D9`)
 
-| ID | Decision Topic | Recommended Choice | Status |
-|----|----------------|--------------------|--------|
-| **D1** | Milestone sequence | 5 milestones: **C1** (core + image backend) → **C2** (durable worker) → **C3** (wheel Quick Convert) → **C4** (Control Center UI + Advanced Convert) → **C5** (hardening & release) | Pending owner approval |
-| **D2** | `libwebp` linkage | Vendored static build via `libwebp-sys` (≥ 1.3.2) | Pending owner approval |
-| **D3** | Optional external backend in v0.2.0 | Ship discovery/routing framework only; defer `external.vips` to v0.2.x | Pending owner approval |
-| **D4** | Radial menu depth | 3-level `Convert ▸ Image ▸ {PNG, JPEG, WebP, Advanced…}` | Pending owner approval |
-| **D5** | Default EXIF policy | `ExifPolicy::Strip` (privacy-first; orientation still applied to pixels) | Pending owner approval |
-| **D6** | Collision naming format | Space-parenthesized suffix: `photo (1).webp`, `photo (2).webp` | Pending owner approval |
-| **D7** | Completion notification default | One notification per job (`notify = "always"`) | Pending owner approval |
-| **D8** | GitHub Issue #1 (`eframe` clipboard) | Fix separately before Milestone C4 | Pending owner approval |
-| **D9** | Queued jobs across logout / reboot | Transition to `Interrupted`; user triggers explicit Retry | Pending owner approval |
+| ID | Decision Topic | Approved Choice | Status |
+|----|----------------|-----------------|--------|
+| **D1** | Milestone sequence | 5 milestones: **C1** (core + image backend) → **C2** (durable worker) → **C3** (wheel Quick Convert) → **C4** (Control Center UI + Advanced Convert) → **C5** (hardening & release) | **Approved (2026-10-24)** |
+| **D2** | `libwebp` linkage | Vendored static build via `libwebp-sys` (≥ 1.3.2) | **Approved (2026-10-24, subject to `P1`/`P9`)** |
+| **D3** | Optional external backend in v0.2.0 | Ship discovery/routing framework only; defer `external.vips` to v0.2.x | **Approved (2026-10-24)** |
+| **D4** | Radial menu depth | 3-level `Convert ▸ Image ▸ {PNG, JPEG, WebP, Advanced…}` | **Approved (2026-10-24)** |
+| **D5** | Default EXIF policy | `ExifPolicy::Strip` (privacy-first; orientation still applied to pixels) | **Approved (2026-10-24)** |
+| **D6** | Collision naming format | Space-parenthesized suffix: `photo (1).webp`, `photo (2).webp` | **Approved (2026-10-24)** |
+| **D7** | Completion notification default | One notification per job (`notify = "always"`) | **Approved (2026-10-24)** |
+| **D8** | GitHub Issue #1 (`eframe` clipboard) | Fix separately before Milestone C4 | **Approved (2026-10-24)** |
+| **D9** | Queued jobs across logout / reboot | Transition to `Interrupted`; user triggers explicit Retry | **Approved (2026-10-24)** |

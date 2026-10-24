@@ -1,30 +1,30 @@
-# Radivine v0.2.0 — Proposed Architecture Decisions
+# Radivine v0.2.0 — Architecture Decisions (`ADR-C01`–`ADR-C18` → `ADR-027`–`ADR-044`)
 
-Status: **All ADRs below are PROPOSED (pending owner review). None is Accepted.** · Prepared: 2026-10-24
-These ADRs are intentionally kept **outside** the canonical `docs/DECISIONS.md` until the owner approves them. After approval, they are renumbered into `DECISIONS.md` (next free number ADR-027) without editing existing Accepted ADRs. Superseded items (e.g. ADR-018 "no settings GUI", the ACTION_SYSTEM §1 non-goal "no long-running job UI") are marked as such at that time.
+Status: **Approved by Owner (2026-10-24) — Promoted to `docs/DECISIONS.md` (`ADR-027`–`ADR-044`), Subject to Verification Gates (`[VERIFY]`)** · Prepared: 2026-10-24
+These ADRs (`ADR-C01` through `ADR-C18`) and owner decisions `D1` through `D9` were formally approved by the project owner on 2026-10-24 and promoted into the canonical [`docs/DECISIONS.md`](../../DECISIONS.md) as `ADR-027` through `ADR-044` without modifying existing Accepted ADRs `ADR-001`–`ADR-026`. Implementation details marked **`[VERIFY]`** remain provisional until empirically confirmed by the C1–C5 verification spikes (`P1`–`P10`, `Q-A`–`Q-D`).
 
 ## Index
 
-| ADR | Title | Status |
-|-----|-------|--------|
-| C01 | Conversion is an Action capability, not a second action system | Proposed |
-| C02 | Crate boundaries: `radivine-dbus`, `radivine-convert`, `radivine-convert-image`, `radivine-jobs`, `radivine-worker` | Proposed |
-| C03 | Capability-based backends with data-only descriptors; deterministic routing | Proposed |
-| C04 | Built-in image backend: pure-Rust decode, `image` encoders, libwebp for lossy WebP only | Proposed |
-| C05 | libwebp linkage: vendored static (owner decision D2) | Proposed |
-| C06 | Out-of-process, on-demand worker launched in its own systemd cgroup | Proposed |
-| C07 | SQLite (WAL) job store, single writer | Proposed |
-| C08 | Job/item state machines; retry creates a new attempt; no auto-resume across sessions | Proposed |
-| C09 | Worker IPC: JSON lines, command + subscription connections, lossless paths | Proposed |
-| C10 | No-overwrite output commit protocol | Proposed |
-| C11 | Menu: `Convert ▸ Image ▸ target`; visibility by extension, enablement by sniffed MIME; `description_for` hook | Proposed |
-| C12 | Backend-independent options and presets (intents + validated per-format overrides) | Proposed |
-| C13 | Configuration: `convert.toml` + `config.toml [jobs]`; daemon untouched | Proposed |
-| C14 | Advanced Convert hosted by `radivine-control convert` | Proposed |
-| C15 | Worker sends notifications via the existing pure-Rust D-Bus client | Proposed |
-| C16 | Optional backend framework ships; no optional backend in v0.2.0 (owner decision D3) | Proposed |
-| C17 | Animated sources rejected; same-format hidden in Quick; skips always reported | Proposed |
-| C18 | Metadata defaults: auto-orient, keep ICC, strip EXIF, drop XMP | Proposed |
+| ADR | Promoted ID | Title | Status |
+|-----|-------------|-------|--------|
+| C01 | ADR-027 | Conversion is an Action capability, not a second action system | Accepted (`v0.2.0`) |
+| C02 | ADR-028 | Crate boundaries: `radivine-dbus`, `radivine-convert`, `radivine-convert-image`, `radivine-jobs`, `radivine-worker` | Accepted (`v0.2.0`; `[VERIFY Q-A]`) |
+| C03 | ADR-029 | Capability-based backends with data-only descriptors; deterministic routing | Accepted (`v0.2.0`) |
+| C04 | ADR-030 | Built-in image backend: pure-Rust decode, `image` encoders, libwebp for lossy WebP only | Provisional (Direction Approved; `[VERIFY P1–P7]`) |
+| C05 | ADR-031 | libwebp linkage: vendored static (owner decision D2) | Provisional (Approved via `D2`; `[VERIFY P1, P9]`) |
+| C06 | ADR-032 | Out-of-process, on-demand worker launched in its own systemd cgroup | Provisional (Direction Approved; `[VERIFY P10, Q-B]`) |
+| C07 | ADR-033 | SQLite (WAL) job store, single writer | Accepted (`v0.2.0`; pre-commit WAL policy `[VERIFY C2]`) |
+| C08 | ADR-034 | Job/item state machines; retry creates a new attempt; no auto-resume across sessions (`D9`) | Accepted (`v0.2.0`) |
+| C09 | ADR-035 | Worker IPC: JSON lines, command + subscription connections, lossless paths | Accepted (`v0.2.0`) |
+| C10 | ADR-036 | No-overwrite output commit protocol (`D6`) | Provisional (Direction Approved; `[VERIFY P8]`) |
+| C11 | ADR-037 | Menu: `Convert ▸ Image ▸ target` (`D4`); visibility by extension, enablement by sniffed MIME; `description_for` hook | Accepted (`v0.2.0`) |
+| C12 | ADR-038 | Backend-independent options and presets (intents + validated per-format overrides) | Accepted (`v0.2.0`; calibrated in `C1`) |
+| C13 | ADR-039 | Configuration: `convert.toml` + `config.toml [jobs]`; daemon untouched | Accepted (`v0.2.0`) |
+| C14 | ADR-040 | Advanced Convert hosted by `radivine-control convert` | Accepted (`v0.2.0`; `[VERIFY Q-C]`) |
+| C15 | ADR-041 | Worker sends notifications via the existing pure-Rust D-Bus client (`D7`) | Accepted (`v0.2.0`) |
+| C16 | ADR-042 | Optional backend framework ships; no optional backend in v0.2.0 (owner decision D3) | Accepted (`v0.2.0`) |
+| C17 | ADR-043 | Animated sources rejected; same-format hidden in Quick; skips always reported | Accepted (`v0.2.0`) |
+| C18 | ADR-044 | Metadata defaults: auto-orient, keep ICC, strip EXIF (`D5`), drop XMP | Provisional (Approved via `D5`; `[VERIFY P2, P5]`) |
 
 ---
 

@@ -1,11 +1,10 @@
 # Radivine v0.2.0 — Conversion Engine & Background Jobs (Planning Set)
 
-Status: **Proposed — pending owner architecture review** · Prepared: 2026-10-24 · Baseline: `v0.1.1` (`872d5d4`)
+Status: **Architecture Approved (`ADR-027`–`ADR-044`, `D1`–`D9`) — Milestone C1 Authorized ONLY** · Prepared: 2026-10-24 · Baseline: `v0.1.1` (`872d5d4`)
 
 > [!IMPORTANT]
-> This directory is the planning set only. Nothing in here authorizes implementation.
-> Per `AGENTS.md` §3, no milestone (C1–C5) may begin until the project owner explicitly approves the architecture and authorizes that milestone.
-> All ADRs in [ARCHITECTURE_DECISIONS.md](ARCHITECTURE_DECISIONS.md) are **Proposed**, not Accepted.
+> Per `AGENTS.md` §3, each milestone (`C1`–`C5`) requires **explicit owner authorization**.
+> The project owner has approved `ADR-C01`–`ADR-C18` (promoted to [`docs/DECISIONS.md`](../../DECISIONS.md) as `ADR-027`–`ADR-044`, subject to verification gates) and owner decisions `D1`–`D9`, and has explicitly authorized **Milestone C1 ONLY**. Milestones `C2`–`C5` remain unauthorized until explicitly approved by the owner.
 
 ## Labels used throughout
 

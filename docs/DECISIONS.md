@@ -29,6 +29,26 @@ To change a decision: add a new ADR that supersedes the old one; never silently 
 | 022 | Project licence | Proposed |
 | 023 | Invoke mode is both the M2 vehicle and a permanent fallback | Accepted |
 | 024 | Pre-created overlay; `_NET_WM_WINDOW_TYPE` chosen by S-5 | Accepted (Verified M0 S-5) |
+| 025 | Control Center architecture, systemd user service lifecycle & settings persistence (`v0.1.1`) | Accepted (`v0.1.1`) |
+| 026 | Login autostart graphical readiness & dynamic X11 compositor/display synchronization (`v0.1.1`) | Accepted (`v0.1.1`) |
+| 027 | (`ADR-C01`) Conversion is an Action capability, not a second action system | Accepted (`v0.2.0`) |
+| 028 | (`ADR-C02`) Crate boundaries: `radivine-dbus`, `radivine-convert`, `radivine-convert-image`, `radivine-jobs`, `radivine-worker` | Accepted (`v0.2.0`; daemon size delta `[VERIFY Q-A]`) |
+| 029 | (`ADR-C03`) Capability-based backends with data-only descriptors; deterministic routing | Accepted (`v0.2.0`) |
+| 030 | (`ADR-C04`) Built-in image backend: pure-Rust decode, `image` encoders, `libwebp` for lossy WebP only | Provisional (`v0.2.0` — direction approved; subject to C1 gates `P1`–`P7`) |
+| 031 | (`ADR-C05`) `libwebp` linkage: vendored static (`D2`) | Provisional (`v0.2.0` — direction approved; subject to C1 gates `P1`, `P9`) |
+| 032 | (`ADR-C06`) Out-of-process, on-demand worker launched in its own systemd cgroup | Provisional (`v0.2.0` — direction approved; subject to C2 gate `P10`) |
+| 033 | (`ADR-C07`) SQLite (WAL) job store, single writer | Accepted (`v0.2.0`; WAL pre-commit power-loss policy `[VERIFY C2]`) |
+| 034 | (`ADR-C08`) Job/item state machines; retry creates a new attempt; no auto-resume across sessions (`D9`) | Accepted (`v0.2.0`) |
+| 035 | (`ADR-C09`) Worker IPC: JSON lines, command + subscription connections, lossless paths, unified frame bounds | Accepted (`v0.2.0`) |
+| 036 | (`ADR-C10`) No-overwrite output commit protocol (`D6`) | Provisional (`v0.2.0` — direction approved; subject to C1 gate `P8`) |
+| 037 | (`ADR-C11`) Menu: `Convert ▸ Image ▸ target` (`D4`); visibility by extension, progressive enablement by sniffed MIME; `description_for` hook | Accepted (`v0.2.0`) |
+| 038 | (`ADR-C12`) Backend-independent options and presets (`QualityIntent`, `SameFormatPolicy`, validated overrides) | Accepted (`v0.2.0`; intent table calibrated in `C1`) |
+| 039 | (`ADR-C13`) Configuration: `convert.toml` (worker-authoritative) + `config.toml [jobs]`; daemon untouched | Accepted (`v0.2.0`) |
+| 040 | (`ADR-C14`) Advanced Convert hosted by `radivine-control convert` | Accepted (`v0.2.0`; cold-start budget `[VERIFY Q-C]`) |
+| 041 | (`ADR-C15`) Worker sends notifications via standalone `radivine-dbus` (`D7`) | Accepted (`v0.2.0`) |
+| 042 | (`ADR-C16`) Optional backend framework ships; no optional backend in v0.2.0 (`D3`) | Accepted (`v0.2.0`) |
+| 043 | (`ADR-C17`) Animated sources rejected; same-format governed by `SameFormatPolicy`; skips always reported | Accepted (`v0.2.0`) |
+| 044 | (`ADR-C18`) Metadata defaults: auto-orient, keep ICC, strip EXIF (`D5`), drop XMP | Provisional (`v0.2.0` — direction approved; lossy WebP RIFF mux subject to C1 gates `P2`, `P5`) |
 
 ---
 
@@ -185,3 +205,107 @@ To change a decision: add a new ADR that supersedes the old one; never silently 
 2. **Bounded Startup Compositor Readiness Wait & Login Retry:** When launched by `systemd --user` (`RADIVINE_SYSTEMD_SERVICE=1` or parent `comm == "systemd"` on a real display), retry transient X11 connection failures during display-manager handover and perform a bounded poll (up to `2500 ms` default, `25 ms` interval) for `_NET_WM_CM_S0` ownership before finalizing the initial `DoctorReport`.
 3. **Visual-Only `ShapeBounding` in True No-Compositor Environments:** When running in a genuine uncomposited X11 environment (`!translucent`), compute `ShapeBounding` strictly from visible `scene.wheels` disks and `scene.caption` (never from invisible pointer hit-slop corridors in `ws.input_region()`), update `ShapeBounding` on `HoverChanged` / `SubmenuOpened` / `SubmenuClosed`, and explicitly clear `ShapeBounding` (`set_bounding_region(None)`) whenever `translucent` becomes `true`.
 4. **Systemd Service Hardening & Graphical Readiness Telemetry:** Add `After=default.target graphical-session-pre.target dbus.socket`, `StartLimitIntervalSec=0`, and `Environment=RADIVINE_SYSTEMD_SERVICE=1` to `radivine.service`, and expose `graphical_ready`, `compositor_active`, `translucent_overlay`, and `monitor_count` in `DaemonStatus` and the Control Center Dashboard/Diagnostics views.
+
+---
+
+## v0.2.0 Architecture Decisions (`ADR-027` through `ADR-044`, promoted from `ADR-C01`–`ADR-C18`)
+
+> [!NOTE]
+> The architectural direction for `ADR-027` through `ADR-044` (and owner decisions `D1`–`D9`: 5-milestone sequence `C1`–`C5`, vendored static `libwebp`, optional-backend framework only in v0.2.0, 3-level `Convert ▸ Image ▸ target` menu, `ExifPolicy::Strip` default, `photo (1).webp` collision naming, one notification per job default, separate fix for issue #1 before C4, and `Interrupted` + manual `Retry` across logout/reboot) was formally approved by the project owner on 2026-10-24. Implementation details marked **`[VERIFY]`** remain provisional until confirmed by their respective C1–C5 verification spikes (`P1`–`P10`, `Q-A`–`Q-D`).
+
+## ADR-027 (`ADR-C01`) — Conversion is an Action capability, not a second action system
+**Status:** Accepted (`v0.2.0`)
+**Context:** Conversion must integrate with the existing Action System without introducing a competing interaction model or blocking the wheel daemon.
+**Decision:** Quick Convert targets (`PNG`, `JPEG`, `WebP`) and `Advanced…` are ordinary `impl Action` types in `radivine-actions::convert`, placed in `default_menu()` via `MenuSpec`. `run()` submits a durable job (or spawns the Advanced Convert window) and returns quickly.
+**Alternatives:** (a) Dedicated conversion-mode wheel (competing system, rejected). (b) Converting inside `Action::run` on the daemon `Dispatcher` (blocks Dispatcher slots, dies with the daemon, inflates daemon RSS; rejected).
+**Consequences:** Reuses existing menu overrides, ordering, `"More…"` overflow, enablement re-check, and error notifications.
+
+## ADR-028 (`ADR-C02`) — Crate boundaries: `radivine-dbus`, `radivine-convert`, `radivine-convert-image`, `radivine-jobs`, `radivine-worker`
+**Status:** Accepted (`v0.2.0`; daemon binary size delta **`[VERIFY Q-A]`** in C3)
+**Decision:**
+- `radivine-dbus`: pure-Rust D-Bus notification and `FileManager1` client extracted from `crates/radivine-actions/src/dbus.rs:1-492`, zero Radivine dependencies, re-exported by `radivine-actions::dbus`.
+- `radivine-convert`: codec-free, desktop-agnostic conversion core (`#![forbid(unsafe_code)]`, zero Radivine crate dependencies).
+- `radivine-convert-image`: built-in image backend (`#![forbid(unsafe_code)]`).
+- `radivine-jobs`: durable job contract, wire protocol, `JobsClient`, `WorkerLauncher`, `JobsSettings`.
+- `apps/radivine-worker`: SQLite WAL store, scheduler, resource governor, handlers, IPC server; depends on `radivine-jobs`, `radivine-convert`, `radivine-convert-image`, and `radivine-dbus` — zero dependency on `radivine-actions`, `radivine-core`, or `radivine-wheel`.
+**Consequences:** Clean dependency graph enforced by `cargo tree` / CI (`X7`). **`[VERIFY Q-A]`:** verify in C3 that `radivine` daemon depending on `radivine-convert-image` for `descriptor()` adds ≤ +300 KiB stripped (fallback: move descriptor constant into `radivine-convert::builtin`).
+
+## ADR-029 (`ADR-C03`) — Capability-based backends with data-only descriptors and deterministic routing
+**Status:** Accepted (`v0.2.0`)
+**Decision:** Backends publish a data-only `BackendDescriptor` (capabilities per `(from, to)`, `FeatureSet`, `max_pixels`, `BackendKind::BuiltIn | ExternalProgram(ProbeSpec)`). Discovery produces `Availability`. `CapabilityCatalog::route` selects deterministically by availability → feature match → `max_pixels` → user preference → `default_priority` → `BackendId`. Implementations (`ConversionBackend`) are instantiated only by the worker (or CLI/test harnesses).
+**Consequences:** Three-way availability (`Available`, `RequiresOptional`, `Unsupported`) is first-class and deterministic.
+
+## ADR-030 (`ADR-C04`) — Built-in image backend: pure-Rust decode, `image` encoders, `libwebp` for lossy WebP only
+**Status:** Provisional (`v0.2.0` — architectural direction approved; implementation details subject to C1 verification spikes **`[VERIFY P1–P7]`**)
+**Decision:**
+- Decode PNG, JPEG, and WebP with the pure-Rust `image` crate (`png`, `zune-jpeg`, `image-webp`) with explicit `image::Limits` (`[VERIFY P3, P4]`).
+- Encode PNG and JPEG with `image` (`[VERIFY P6]` comparing `image` `JpegEncoder` vs `jpeg-encoder`).
+- Encode lossless WebP with `image-webp`.
+- Encode lossy WebP with native `libwebp` behind a minimal safe wrapper (`[VERIFY P1, Q-D]`), operating only on Radivine-allocated RGBA8/RGB8 pixel buffers.
+- Preserve ICC/EXIF via `image` encoder hooks and RIFF chunk muxing for lossy WebP (`[VERIFY P2, P5]`).
+- Resize via `image::imageops` (`[VERIFY P7]`).
+**Consequences:** All untrusted file parsing stays in memory-safe Rust; C code (`libwebp`) only encodes validated pixel buffers.
+
+## ADR-031 (`ADR-C05`) — `libwebp` linkage: vendored static (owner decision `D2`)
+**Status:** Provisional (`v0.2.0` — approved via `D2`; subject to C1 verification spikes **`[VERIFY P1, P9]`**)
+**Decision:** Link `libwebp` statically via vendored C source (`libwebp-sys`, bundled `libwebp >= 1.3.2` **`[VERIFY P1]`**), tracked with `cargo deny` / `cargo audit` **`[VERIFY P9]`** and documented in `THIRD_PARTY_NOTICES.md` and `debian/copyright`.
+**Consequences:** Self-contained `.deb` package with no new shared library `Depends`.
+
+## ADR-032 (`ADR-C06`) — Out-of-process, on-demand worker launched in its own systemd cgroup
+**Status:** Provisional (`v0.2.0` — architectural direction approved; cgroup survival subject to C2 verification spike **`[VERIFY P10]`** and unit hardening subject to **`[VERIFY Q-B]`** in C5)
+**Decision:** Single-instance `radivine-worker` (`flock(worker.lock, LOCK_EX)` + `worker.sock`). Launched via `systemctl --user start --no-block radivine-worker.service` (static unit, `After=dbus.socket`), falling back to `systemd-run --user --collect --unit=radivine-worker-transient -- radivine-worker serve` when `systemd --user` is active but the static unit is not installed, and falling back to detached `process_group(0)` only when no `systemd --user` manager is running **`[VERIFY P10]`**. Before idle exit (60 s), unlinks `worker.sock` and drains `accept()` non-blockingly while holding `worker.lock`. Watchdog timeouts use lock-free-I/O `Mutex<ItemPhase>` + `CommitPermit`, bounded ≤ 5 s drain, and `exit(75)` holding `worker.lock` (`O_CLOEXEC`). Note: kernel uninterruptible sleep (`TASK_UNINTERRUPTIBLE` / `D` state on hung kernel mounts) cannot be preempted by user-space process exit until the kernel I/O driver times out.
+
+## ADR-033 (`ADR-C07`) — SQLite (WAL) job store, single writer
+**Status:** Accepted (`v0.2.0`; pre-commit WAL power-loss durability **`[VERIFY C2]`**)
+**Decision:** `rusqlite` with `bundled`, WAL mode, single writer (`radivine-worker` serialized by `worker.lock`), schema versioning, retention pruning, at `$XDG_STATE_HOME/radivine/jobs.sqlite3`. `Committing` journal updates always use `PRAGMA synchronous = FULL` before `commit_no_replace`. `PRAGMA wal_checkpoint(TRUNCATE)` runs on startup after recovery and before clean idle exit. In C2, `JobStore` must evaluate `PRAGMA synchronous = FULL` vs `NORMAL` for `StageIntent`, `StageCreated`, and `TempCreated` journaling and must not claim power-loss guarantees stronger than the configured synchronous mode provides.
+
+## ADR-034 (`ADR-C08`) — Job/item state machines; retry creates a new attempt; no auto-resume across sessions (`D9`)
+**Status:** Accepted (`v0.2.0`, confirmed via `D9`)
+**Decision:** Job states: `Queued`, `Preparing`, `Running`, `Cancelling`, `Completed`, `Failed`, `Cancelled`, `Interrupted`. Item states: `Pending`, `Running`, `Succeeded`, `Failed`, `Skipped`, `Cancelled`, `Interrupted`. Retry creates a new job linked by `retry_of` reusing the `jobs.resolved` snapshot. Mid-file conversion is restarted from scratch, never resumed. Queued jobs survive a worker crash within the same `boot_id`, and transition to `Interrupted` after logout (`SIGTERM`) or reboot (`D9`).
+
+## ADR-035 (`ADR-C09`) — Worker IPC: JSON lines, command + subscription connections, lossless paths, unified frame bounds
+**Status:** Accepted (`v0.2.0`)
+**Decision:** JSON lines over `0600` `$XDG_RUNTIME_DIR/radivine/worker.sock` with `SO_PEERCRED` UID check, lossless `WirePath` encoding, `16 MiB` max `submit` request frame, `64 KiB` max non-`submit` request frame, `4 MiB` max command response frame (`get` paged at ≤ 200 items), `64 KiB` max subscription event frame (≤ 10 Hz progress coalescing), and `1..=10,000` items per job (`≤ 4,096` bytes per path).
+
+## ADR-036 (`ADR-C10`) — No-overwrite output commit protocol (`D6`)
+**Status:** Provisional (`v0.2.0` — architectural direction approved via `D6`; filesystem `errno` behavior subject to C1 verification spike **`[VERIFY P8]`**)
+**Decision:**
+- Sources opened `O_RDONLY | O_NONBLOCK | O_CLOEXEC` (following user-selected symlinks to regular files, verified `S_ISREG` via `fstat`, re-verified after decode).
+- All destination/staging/temp operations relative to opened directory fds with strict `O_NOFOLLOW` / `AT_SYMLINK_NOFOLLOW`.
+- Private per-job staging directory `.rvstage-<job>-<rand16>` (`0700`) with two-phase journaling (`StageIntent` before `mkdirat`; `mkdirat` + `fsync(dest_dir)` + `fstat` → `StageCreated` before temp creation).
+- Canonical temp files `item-<idx>-<rand16>.part` (`0600`) opened `O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC`, journaled via `TempCreated` before writing, `fsync`ed, and re-validated via `O_RDWR` header parse before `begin_commit`.
+- Two-rung atomic commit ladder only **`[VERIFY P8]`**: Rung A (`renameat_with(NOREPLACE)` → `fsync(stage_dir)` → `fsync(dest_dir)`) → Rung B (`linkat` → `fsync(dest_dir)` → `unlinkat` → `fsync(stage_dir)`) → `ConversionError::FilesystemUnsupported` (no non-atomic copy fallback). Collision suffix `stem (1).ext` .. `stem (9999).ext` (`D6`).
+- Safe cleanup (`cleanup_temp_safely`) verifies `worker.lock`, regexes, `(stage_dev, stage_ino)` + `0700`/UID namespace exclusivity, and `(temp_dev, temp_ino)` before `unlinkat` + `fsync(stage_dir)`; unverified/unjournaled entries are preserved untouched (`OrphanedTempPreserved`).
+
+## ADR-037 (`ADR-C11`) — Menu: `Convert ▸ Image ▸ target` (`D4`); visibility by extension, progressive enablement by sniffed MIME; `description_for` hook
+**Status:** Accepted (`v0.2.0`, confirmed via `D4`)
+**Decision:** Insert `Convert ▸ Image ▸ {PNG, JPEG, WebP, Advanced…}` at root index 1 in `default_menu()`. Visibility uses file extensions in `BasicContext` + static `CapabilityCatalog` snapshot (zero I/O). Progressive enablement enables as soon as the first enriched item confirms ≥ 1 convertible image (`confirmed > 0`). Add default method `Action::description_for(&BasicContext)` (`E1`), `FileFacts::is_uninspected()` (`E2`), and lossless `OsStr` percent-encoding in `local_path_to_file_uri` / `Commands::Invoke` (`E8`).
+
+## ADR-038 (`ADR-C12`) — Backend-independent options and presets (`QualityIntent`, `SameFormatPolicy`, validated overrides)
+**Status:** Accepted (`v0.2.0`; intent-to-quality mapping calibrated in C1 **`[VERIFY P6, P7]`**)
+**Decision:** Express presets as `QualityIntent` (`Small`, `Balanced`, `High`, `Lossless`) + `ResizeSpec` + optional per-format overrides, and include `SameFormatPolicy` (`Skip` for Quick Convert, `Convert` for Advanced Convert) in `ConversionOptions`. Validate options purely against `FormatTraits`.
+
+## ADR-039 (`ADR-C13`) — Configuration ownership: `convert.toml` + `config.toml [jobs]`; daemon untouched
+**Status:** Accepted (`v0.2.0`)
+**Decision:** `convert.toml` is owned by `radivine-convert`, resolved authoritatively at runtime only by `radivine-worker` during `Preparing` (snapshotted into `jobs.resolved`), and edited by `radivine-control`. `config.toml [jobs]` is owned by `radivine-jobs`. The wheel daemon (`radivine`) reads zero conversion configuration. Note: alongside `ADR-025`, this supersedes the v0.1 scope note in `ADR-018` ("no settings GUI in v1").
+
+## ADR-040 (`ADR-C14`) — Advanced Convert hosted by `radivine-control convert`
+**Status:** Accepted (`v0.2.0`; cold-start budget **`[VERIFY Q-C]`** in C4; issue #1 scheduled separately before C4 per `D8`)
+**Decision:** `radivine-control convert [--stdin] [PATHS…]` runs as a separate process that bypasses `ControlInstanceLock::acquire_or_notify_existing()` so multiple Advanced Convert dialogs can coexist with the Settings/Jobs window, spawned in a transient user cgroup scope when `systemd --user` is active, reading bounded `WirePath` lines (`≤ 10,000` lines / `≤ 16 MiB`) and performing header-only `ConversionEngine::inspect` on a background thread.
+
+## ADR-041 (`ADR-C15`) — Worker sends notifications via standalone `radivine-dbus` (`D7`)
+**Status:** Accepted (`v0.2.0`, confirmed via `D7`)
+**Decision:** Extract `crates/radivine-actions/src/dbus.rs:1-492` into `crates/radivine-dbus` (`#![forbid(unsafe_code)]`, depending only on `thiserror`) and re-export `pub use radivine_dbus as dbus;` in `radivine-actions`. `radivine-worker` sends one completion notification per job (`notify = "always"` default, `D7`) via `radivine_dbus::call_desktop_notify`.
+
+## ADR-042 (`ADR-C16`) — Optional backend framework ships; no optional backend in v0.2.0 (`D3`)
+**Status:** Accepted (`v0.2.0`, confirmed via `D3`)
+**Decision:** Ship the external-program discovery and routing framework (`BackendKind::ExternalProgram(ProbeSpec)`, `probe_all`, `Availability::MissingDependency`, `TargetStatus::RequiresOptional`) in v0.2.0 tested with a stub program, while deferring `external.vips` implementation to v0.2.x (`D3`).
+
+## ADR-043 (`ADR-C17`) — Animated sources rejected; same-format governed by `SameFormatPolicy`; skips always reported
+**Status:** Accepted (`v0.2.0`)
+**Decision:** Reject animated APNG/WebP sources with `ConversionError::UnsupportedFeature(Animation)`. Govern same-format sources via `SameFormatPolicy` (`Skip` with `AlreadyTargetFormat` in Quick Convert; `Convert` with numbered output in Advanced Convert). Never ignore skipped files silently.
+
+## ADR-044 (`ADR-C18`) — Metadata defaults: auto-orient, keep ICC, strip EXIF (`D5`), drop XMP
+**Status:** Provisional (`v0.2.0` — privacy/metadata defaults approved via `D5`; lossy WebP RIFF `ICCP`/`EXIF` muxing subject to C1 verification spikes **`[VERIFY P2, P5]`**)
+**Decision:** Default to `OrientationPolicy::AutoOrient` (pixels rotated/flipped, EXIF orientation tag normalized to `1` when EXIF is preserved), `IccPolicy::Preserve` (byte-exact when backend reports `ICC_EMBED`, otherwise `ItemWarning::IccNotPreserved`), `ExifPolicy::Strip` (`D5`), XMP/IPTC dropped, new mtime by default, and output mode `source_mode & 0o666`.
+

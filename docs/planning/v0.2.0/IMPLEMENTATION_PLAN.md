@@ -1,6 +1,6 @@
 # Radivine v0.2.0 — Implementation Plan
 
-Status: **Proposed — pending owner review. No milestone is authorized.** · Prepared: 2026-10-24
+Status: **Architecture Approved (`ADR-027`–`ADR-044`, `D1`–`D9`) — Milestone C1 Authorized ONLY (`C2`–`C5` Not Yet Authorized)** · Prepared: 2026-10-24
 Related: [IMPLEMENTATION_HANDOFF](IMPLEMENTATION_HANDOFF.md) · [ARCHITECTURE_DECISIONS](ARCHITECTURE_DECISIONS.md)
 
 > [!IMPORTANT]
