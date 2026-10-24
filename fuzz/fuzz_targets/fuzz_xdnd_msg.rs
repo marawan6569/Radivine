@@ -1,9 +1,9 @@
 #![no_main]
 
-use std::time::Instant;
 use libfuzzer_sys::fuzz_target;
 use radivine_platform::x11::selection::SelectionReader;
 use radivine_platform::x11::xdnd::{XdndAtoms, XdndTarget};
+use std::time::Instant;
 
 fuzz_target!(|data: &[u8]| {
     let atoms = XdndAtoms {
