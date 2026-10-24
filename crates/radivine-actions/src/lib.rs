@@ -5,7 +5,7 @@
 
 pub mod builtins;
 pub mod custom;
-pub mod dbus;
+pub use radivine_dbus as dbus;
 
 use std::sync::Arc;
 
@@ -23,7 +23,8 @@ pub use custom::{
     NotifyPolicy, WhenRule, load_actions_file, mime_glob_matches, parse_actions_toml,
 };
 pub use dbus::{
-    DbusError, call_desktop_notify, call_show_item_properties, resolve_session_bus_path,
+    DbusError, call_desktop_notify, call_show_item_properties, call_show_items,
+    resolve_session_bus_path,
 };
 
 /// Returns the default declarative [`MenuSpec`] tree (`ACTION_SYSTEM.md` §6.1).

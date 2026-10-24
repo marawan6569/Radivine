@@ -1,9 +1,17 @@
-//! Minimal pure-Rust D-Bus session-bus client over `UnixStream` (`ACTION_SYSTEM.md` §7, §8).
+//! `radivine-dbus` — Minimal pure-Rust D-Bus session-bus client over `UnixStream`
+//! (`ACTION_SYSTEM.md` §7, §8; `ADR-028`, `ADR-041`).
 //!
-//! Implements SASL `EXTERNAL` authentication, `org.freedesktop.DBus.Hello`,
-//! `org.freedesktop.FileManager1.ShowItemProperties(as, s)`, and
-//! `org.freedesktop.Notifications.Notify(susssasa{sv}i)` directly over the session bus Unix
-//! domain socket without external crate dependencies or shell/CLI argument splitting hazards.
+//! Enforces `#![forbid(unsafe_code)]` with zero Radivine crate dependencies so both
+//! `radivine-actions` and `radivine-worker` can call session D-Bus services without coupling
+//! the background worker to the radial wheel or action registry.
+//!
+//! Implements:
+//! - SASL `EXTERNAL` authentication and `org.freedesktop.DBus.Hello`
+//! - `org.freedesktop.FileManager1.ShowItemProperties(as, s)`
+//! - `org.freedesktop.FileManager1.ShowItems(as, s)` (`E6`)
+//! - `org.freedesktop.Notifications.Notify(susssasa{sv}i)`
+
+#![forbid(unsafe_code)]
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::MetadataExt;
@@ -99,6 +107,24 @@ pub fn call_show_item_properties(
     uris: &[String],
     startup_id: &str,
 ) -> Result<(), DbusError> {
+    call_file_manager_uris_method("ShowItemProperties", socket_override, uris, startup_id)
+}
+
+/// Calls `org.freedesktop.FileManager1.ShowItems(uris, startup_id)` on the session bus (`E6`).
+pub fn call_show_items(
+    socket_override: Option<&Path>,
+    uris: &[String],
+    startup_id: &str,
+) -> Result<(), DbusError> {
+    call_file_manager_uris_method("ShowItems", socket_override, uris, startup_id)
+}
+
+fn call_file_manager_uris_method(
+    member: &str,
+    socket_override: Option<&Path>,
+    uris: &[String],
+    startup_id: &str,
+) -> Result<(), DbusError> {
     let sock_path = match socket_override {
         Some(p) => p.to_path_buf(),
         None => resolve_session_bus_path()?,
@@ -124,7 +150,7 @@ pub fn call_show_item_properties(
         "org.freedesktop.FileManager1",
         "/org/freedesktop/FileManager1",
         "org.freedesktop.FileManager1",
-        "ShowItemProperties",
+        member,
         Some("ass"),
         &body,
     )?;
@@ -488,5 +514,126 @@ fn read_u32(bytes: &[u8], le: bool) -> u32 {
         u32::from_le_bytes(arr)
     } else {
         u32::from_be_bytes(arr)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::net::UnixListener;
+    use std::thread;
+
+    fn encode_method_return(reply_serial: u32, body: &[u8]) -> Vec<u8> {
+        let mut header = vec![b'l', 2, 1, 1]; // LE, METHOD_RETURN, NO_REPLY_EXPECTED, v1
+        header.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        header.extend_from_slice(&100u32.to_le_bytes());
+        header.extend_from_slice(&0u32.to_le_bytes());
+        let fields_start = header.len();
+
+        // Field 5: REPLY_SERIAL (u)
+        align_to(&mut header, 8);
+        header.push(5);
+        header.push(1);
+        header.push(b'u');
+        header.push(0);
+        align_to(&mut header, 4);
+        header.extend_from_slice(&reply_serial.to_le_bytes());
+
+        let fields_len = (header.len() - fields_start) as u32;
+        header[12..16].copy_from_slice(&fields_len.to_le_bytes());
+        align_to(&mut header, 8);
+        header.extend_from_slice(body);
+        header
+    }
+
+    fn spawn_mock_bus(sock_path: PathBuf, reply_body: Vec<u8>) -> thread::JoinHandle<()> {
+        let listener = UnixListener::bind(&sock_path).unwrap();
+        thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream);
+            let mut line = String::new();
+            // AUTH EXTERNAL
+            reader.read_line(&mut line).unwrap();
+            assert!(line.contains("AUTH EXTERNAL"));
+            reader
+                .get_mut()
+                .write_all(b"OK 0123456789abcdef0123456789abcdef\r\n")
+                .unwrap();
+            // BEGIN
+            line.clear();
+            reader.read_line(&mut line).unwrap();
+            assert_eq!(line.trim(), "BEGIN");
+
+            // 1. Hello() call (serial 1)
+            let hello_msg = read_dbus_message(&mut reader).unwrap();
+            assert_eq!(hello_msg.msg_type, 1);
+            let mut hello_reply = Vec::new();
+            write_dbus_string(&mut hello_reply, ":1.42");
+            let ret1 = encode_method_return(1, &hello_reply);
+            reader.get_mut().write_all(&ret1).unwrap();
+
+            // 2. Actual method call (serial 2)
+            let call_msg = read_dbus_message(&mut reader).unwrap();
+            assert_eq!(call_msg.msg_type, 1);
+            let ret2 = encode_method_return(2, &reply_body);
+            reader.get_mut().write_all(&ret2).unwrap();
+        })
+    }
+
+    #[test]
+    fn parse_dbus_address_and_error_classification() {
+        assert_eq!(
+            parse_dbus_unix_path("unix:path=/run/user/1000/bus,guid=0123"),
+            Some(PathBuf::from("/run/user/1000/bus"))
+        );
+        assert_eq!(parse_dbus_unix_path("tcp:host=127.0.0.1"), None);
+
+        let err = DbusError::RemoteError {
+            name: "org.freedesktop.DBus.Error.ServiceUnknown".to_string(),
+            message: "not running".to_string(),
+        };
+        assert!(err.is_service_unsupported());
+    }
+
+    #[test]
+    fn mock_bus_notify_show_properties_and_show_items() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // 1. call_desktop_notify
+        let sock1 = dir.path().join("bus1.sock");
+        let h1 = spawn_mock_bus(sock1.clone(), 77u32.to_le_bytes().to_vec());
+        let id = call_desktop_notify(
+            Some(&sock1),
+            "Radivine",
+            "radivine",
+            "Converted to WebP",
+            "photo.webp saved beside the original.",
+            5000,
+        )
+        .unwrap();
+        assert_eq!(id, 77);
+        h1.join().unwrap();
+
+        // 2. call_show_item_properties
+        let sock2 = dir.path().join("bus2.sock");
+        let h2 = spawn_mock_bus(sock2.clone(), Vec::new());
+        call_show_item_properties(
+            Some(&sock2),
+            &["file:///tmp/photo.webp".to_string()],
+            "radivine",
+        )
+        .unwrap();
+        h2.join().unwrap();
+
+        // 3. call_show_items (E6)
+        let sock3 = dir.path().join("bus3.sock");
+        let h3 = spawn_mock_bus(sock3.clone(), Vec::new());
+        call_show_items(
+            Some(&sock3),
+            &["file:///tmp/photo.webp".to_string()],
+            "radivine",
+        )
+        .unwrap();
+        h3.join().unwrap();
     }
 }
