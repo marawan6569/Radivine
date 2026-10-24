@@ -136,6 +136,21 @@ impl TestWorkerEnv {
         JobsClient::connect(&self.paths.socket_path).expect("connect to test worker")
     }
 
+    fn run_cli(
+        &self,
+        args: impl IntoIterator<Item = impl AsRef<std::ffi::OsStr>>,
+    ) -> std::process::Output {
+        let mut cmd = self.base_command();
+        cmd.arg("--socket")
+            .arg(&self.paths.socket_path)
+            .arg("--db")
+            .arg(&self.paths.db_path)
+            .arg("--lock")
+            .arg(&self.paths.lock_path)
+            .args(args);
+        cmd.output().expect("execute radivine-worker CLI")
+    }
+
     fn wait_for_job_terminal(
         &self,
         job_id: JobId,
@@ -781,20 +796,31 @@ fn ac_c2_6_c2_7_c2_8_crash_injection_matrix_c0a_through_c6() {
                 "crash point {point} must not leave uncommitted photo.webp"
             );
 
-            // Furthermore, verify retrying the Interrupted job succeeds cleanly!
-            let (retry_state, reset_count) =
+            // Furthermore, verify retrying the Interrupted job creates a new linked job that succeeds cleanly!
+            let (retry_job_id, retry_state, reset_count) =
                 client.retry(job_id, RetryMode::FailedOnly, None).unwrap();
+            assert_ne!(
+                retry_job_id, job_id,
+                "retry must create a new linked job_id"
+            );
             assert_eq!(reset_count, 1);
             assert!(matches!(
                 retry_state,
                 JobState::Queued | JobState::Preparing | JobState::Running | JobState::Completed
             ));
             let (retried_job, retried_items) =
-                env.wait_for_job_terminal(job_id, Duration::from_secs(10));
+                env.wait_for_job_terminal(retry_job_id, Duration::from_secs(10));
+            assert_eq!(retried_job.retry_of, Some(job_id));
+            assert_eq!(retried_job.origin, Origin::Retry);
             assert_eq!(retried_job.state, JobState::Completed);
             assert_eq!(retried_items[0].state, ItemState::Succeeded);
             assert_eq!(retried_items[0].attempt_count, 2);
             assert!(expected_out.exists());
+
+            // Original job history must remain immutable
+            let (orig_after, orig_items_after, _) = client.get_job(job_id, None, None).unwrap();
+            assert_eq!(orig_after.state, JobState::Failed);
+            assert_eq!(orig_items_after[0].state, ItemState::Interrupted);
         }
     }
 }
@@ -1042,42 +1068,73 @@ fn ac_c2_9_and_c2_10_cancellation_and_retry_modes() {
         .collect();
     assert!(!succeeded_before_retry.is_empty());
 
-    // Now test RetryMode::FailedAndCancelled (AC-C2.10)
-    let (retry_state, reset_items) = client
+    // Now test RetryMode::FailedAndCancelled (AC-C2.10, ADR-034)
+    let (retry_job_id, retry_state, reset_items) = client
         .retry(job_id, RetryMode::FailedAndCancelled, None)
         .unwrap();
+    assert_ne!(
+        retry_job_id, job_id,
+        "retry must create a new linked job_id"
+    );
     assert_eq!(reset_items, cancelled_job.counts.cancelled_items);
     assert!(matches!(
         retry_state,
         JobState::Queued | JobState::Preparing | JobState::Running | JobState::Completed
     ));
 
-    let (completed_job, final_items) = env.wait_for_job_terminal(job_id, Duration::from_secs(15));
-    assert_eq!(completed_job.job_id, job_id, "retry must preserve job_id");
+    let (completed_job, final_items) =
+        env.wait_for_job_terminal(retry_job_id, Duration::from_secs(15));
+    assert_eq!(completed_job.job_id, retry_job_id);
+    assert_eq!(completed_job.retry_of, Some(job_id));
+    assert_eq!(completed_job.origin, Origin::Retry);
     assert_eq!(completed_job.state, JobState::Completed);
-    assert_eq!(completed_job.counts.succeeded_items, 10);
+    assert_eq!(
+        completed_job.counts.total_items,
+        cancelled_job.counts.cancelled_items
+    );
+    assert_eq!(
+        completed_job.counts.succeeded_items,
+        cancelled_job.counts.cancelled_items
+    );
     let mut saw_inflight_retry_attempt_2 = false;
     for it in &final_items {
         assert_eq!(it.state, ItemState::Succeeded);
-        if succeeded_before_retry.contains(&it.item_index) {
-            assert_eq!(
-                it.attempt_count, 1,
-                "already-Succeeded item must not be re-run in FailedAndCancelled mode"
-            );
-        } else {
-            assert!(
-                it.attempt_count >= 1,
-                "retried item must have executed at least 1 attempt"
-            );
-            if it.attempt_count >= 2 {
-                saw_inflight_retry_attempt_2 = true;
-            }
+        assert!(
+            it.attempt_count >= 1,
+            "retried item must have executed at least 1 attempt"
+        );
+        if it.attempt_count >= 2 {
+            saw_inflight_retry_attempt_2 = true;
         }
     }
     assert!(
         saw_inflight_retry_attempt_2,
         "items that were in-flight when cancelled must have attempt_count == 2 after retry"
     );
+
+    // Original cancelled job must remain immutable
+    let (orig_cancelled_after, _, _) = client.get_job(job_id, None, None).unwrap();
+    assert_eq!(orig_cancelled_after.state, JobState::Cancelled);
+    assert_eq!(
+        orig_cancelled_after.counts.succeeded_items,
+        cancelled_job.counts.succeeded_items
+    );
+    assert_eq!(
+        orig_cancelled_after.counts.cancelled_items,
+        cancelled_job.counts.cancelled_items
+    );
+
+    // All 10 output files must exist, and already-succeeded items must not have duplicate ` (1)` files
+    for i in 0..10 {
+        assert!(
+            dir.join(format!("cr_{i:02}.webp")).exists(),
+            "cr_{i:02}.webp must exist after retry"
+        );
+        assert!(
+            !dir.join(format!("cr_{i:02} (1).webp")).exists(),
+            "already-succeeded item cr_{i:02} must not be re-encoded"
+        );
+    }
 
     // Also test RetryMode::FailedOnly on a CompletedWithErrors job (1 good + 1 corrupt -> fix corrupt -> retry)
     let good_path = dir.join("good_item.png");
@@ -1105,19 +1162,248 @@ fn ac_c2_9_and_c2_10_cancellation_and_retry_modes() {
     assert_eq!(err_items[1].state, ItemState::Failed);
 
     // Fix the corrupt input file on disk and retry FailedOnly with an options_override
+    let override_out_dir = dir.join("retry_override_out");
+    fs::create_dir_all(&override_out_dir).unwrap();
     write_test_png(&bad_path, 8, 8, 22);
-    let (_, reset_failed) = client
+    let (fixed_job_id, _, reset_failed) = client
         .retry(
             err_job_id,
             RetryMode::FailedOnly,
-            Some(serde_json::json!({"target": "webp"})),
+            Some(serde_json::json!({
+                "output": { "location": { "folder": override_out_dir.to_string_lossy() } }
+            })),
         )
         .unwrap();
+    assert_ne!(
+        fixed_job_id, err_job_id,
+        "FailedOnly retry must create a new linked job"
+    );
     assert_eq!(reset_failed, 1);
-    let (fixed_job, fixed_items) = env.wait_for_job_terminal(err_job_id, Duration::from_secs(10));
+    let (fixed_job, fixed_items) = env.wait_for_job_terminal(fixed_job_id, Duration::from_secs(10));
+    assert_eq!(fixed_job.retry_of, Some(err_job_id));
+    assert_eq!(fixed_job.origin, Origin::Retry);
     assert_eq!(fixed_job.state, JobState::Completed);
-    assert_eq!(fixed_items[0].attempt_count, 1);
-    assert_eq!(fixed_items[1].attempt_count, 2);
+    assert_eq!(fixed_job.counts.total_items, 1);
+    assert_eq!(fixed_job.counts.succeeded_items, 1);
+    assert_eq!(fixed_items.len(), 1);
+    assert_eq!(fixed_items[0].state, ItemState::Succeeded);
+    assert_eq!(fixed_items[0].attempt_count, 2);
+    assert!(
+        override_out_dir.join("bad_item.webp").exists(),
+        "options_override output folder must receive retried bad_item.webp"
+    );
+    assert!(
+        !dir.join("good_item (1).webp").exists()
+            && !override_out_dir.join("good_item.webp").exists(),
+        "already-Succeeded good_item.png must not be reprocessed by FailedOnly retry"
+    );
+
+    // Original CompletedWithErrors job and its failed item error record must remain immutable
+    let (orig_err_after, orig_err_items_after, _) = client.get_job(err_job_id, None, None).unwrap();
+    assert_eq!(orig_err_after.state, JobState::CompletedWithErrors);
+    assert_eq!(orig_err_after.counts.succeeded_items, 1);
+    assert_eq!(orig_err_after.counts.failed_items, 1);
+    assert_eq!(orig_err_items_after[0].state, ItemState::Succeeded);
+    assert_eq!(orig_err_items_after[1].state, ItemState::Failed);
+    assert!(orig_err_items_after[1].error_message.is_some());
+}
+
+#[test]
+fn ac_c2_10_retry_contract_cli_repaired_file_and_sigkill_interrupted_recovery() {
+    let mut env = TestWorkerEnv::new();
+    let dir = env.root.join("retry_regression");
+    fs::create_dir_all(&dir).unwrap();
+
+    // Part A: CLI `radivine-worker retry <id> --mode failed_only` after repairing a corrupt PNG
+    env.spawn_worker();
+    let ok_png = dir.join("ok.png");
+    let broken_png = dir.join("broken.png");
+    write_test_png(&ok_png, 12, 12, 5);
+    fs::write(&broken_png, b"not-a-valid-image-payload").unwrap();
+
+    let submit_out = env.run_cli([
+        "submit-convert",
+        "--to",
+        "webp",
+        "--wait",
+        ok_png.to_str().unwrap(),
+        broken_png.to_str().unwrap(),
+    ]);
+    assert!(
+        submit_out.status.success(),
+        "submit-convert --wait failed: {}",
+        String::from_utf8_lossy(&submit_out.stderr)
+    );
+    let submit_stdout = String::from_utf8_lossy(&submit_out.stdout);
+    assert!(
+        submit_stdout.contains("Job #1: completed_with_errors"),
+        "expected Job #1 completed_with_errors, got:\n{submit_stdout}"
+    );
+    assert!(dir.join("ok.webp").exists());
+    assert!(!dir.join("broken.webp").exists());
+
+    // Repair broken.png on disk and run the exact CLI command `retry 1 --mode failed_only`
+    write_test_png(&broken_png, 12, 12, 42);
+    let retry_out = env.run_cli(["retry", "1", "--mode", "failed_only"]);
+    assert!(
+        retry_out.status.success(),
+        "CLI retry failed: {}",
+        String::from_utf8_lossy(&retry_out.stderr)
+    );
+    let retry_stdout = String::from_utf8_lossy(&retry_out.stdout);
+    assert!(
+        retry_stdout.contains("Created retry job #2 (retry of job #1): queued 1 item(s)"),
+        "expected new linked job #2 in CLI output, got:\n{retry_stdout}"
+    );
+
+    // Wait for Job #2 to reach Completed and verify both Job #1 (immutable) and Job #2 (completed)
+    let (job2, job2_items) = env.wait_for_job_terminal(JobId(2), Duration::from_secs(10));
+    assert_eq!(job2.job_id, JobId(2));
+    assert_eq!(job2.retry_of, Some(JobId(1)));
+    assert_eq!(job2.origin, Origin::Retry);
+    assert_eq!(job2.state, JobState::Completed);
+    assert_eq!(job2.counts.total_items, 1);
+    assert_eq!(job2.counts.succeeded_items, 1);
+    assert_eq!(job2_items.len(), 1);
+    assert_eq!(job2_items[0].state, ItemState::Succeeded);
+    assert_eq!(job2_items[0].attempt_count, 2);
+    assert!(
+        dir.join("broken.webp").exists(),
+        "repaired broken.png must be converted to broken.webp by retry job #2"
+    );
+    assert!(
+        !dir.join("ok (1).webp").exists(),
+        "already-succeeded ok.png must not be re-encoded"
+    );
+
+    let show1 = env.run_cli(["show", "1"]);
+    let show1_stdout = String::from_utf8_lossy(&show1.stdout);
+    assert!(
+        show1_stdout.contains("Job #1: completed_with_errors"),
+        "original Job #1 must remain immutable in completed_with_errors, got:\n{show1_stdout}"
+    );
+
+    let show2 = env.run_cli(["show", "2"]);
+    let show2_stdout = String::from_utf8_lossy(&show2.stdout);
+    assert!(
+        show2_stdout.contains("Job #2: completed") && show2_stdout.contains("Retry of:    #1"),
+        "Job #2 must show completed and Retry of: #1, got:\n{show2_stdout}"
+    );
+
+    // Part B: Multi-item batch SIGKILL mid-conversion -> restart recovery -> FailedOnly retry
+    let mut env_kill = TestWorkerEnv::new();
+    let kill_pid =
+        env_kill.spawn_worker_with_env(&[("RADIVINE_WORKER_TEST_ITEM_SLEEP_MS", "200")], 60_000);
+    let kill_dir = env_kill.root.join("sigkill_batch");
+    fs::create_dir_all(&kill_dir).unwrap();
+    let mut batch_wires = Vec::new();
+    for i in 0..8 {
+        let p = kill_dir.join(format!("item_{i:02}.png"));
+        write_test_png(&p, 12, 12, i as u8);
+        batch_wires.push(WirePath::from_absolute_path(&p).unwrap());
+    }
+
+    let mut c_kill = env_kill.connect();
+    let (batch_job_id, _, _) = c_kill
+        .submit(
+            RequestId::generate(),
+            Origin::Cli,
+            CONVERT_IMAGE_KIND,
+            batch_wires,
+            serde_json::json!({"target": "webp"}),
+        )
+        .unwrap();
+
+    // Wait until at least 1 item has succeeded and others are in-flight, then SIGKILL the worker
+    let wait_partial = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < wait_partial {
+        let (j, _, _) = c_kill.get_job(batch_job_id, Some(0), Some(1)).unwrap();
+        if j.counts.succeeded_items >= 1 && j.counts.in_flight_items >= 1 {
+            break;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    drop(c_kill);
+
+    rustix::process::kill_process(
+        rustix::process::Pid::from_raw(kill_pid as i32).unwrap(),
+        rustix::process::Signal::KILL,
+    )
+    .unwrap();
+    if let Some(mut ch) = env_kill.children.pop() {
+        let _ = ch.wait();
+    }
+
+    // Restart worker without sleep delay; startup recovery marks in-flight items Interrupted
+    // and scheduler finishes any remaining pending items -> CompletedWithErrors (or Failed)
+    env_kill.spawn_worker();
+    let (recovered_job, recovered_items) =
+        env_kill.wait_for_job_terminal(batch_job_id, Duration::from_secs(15));
+    assert!(matches!(
+        recovered_job.state,
+        JobState::CompletedWithErrors | JobState::Failed
+    ));
+    let interrupted_count = recovered_job.counts.interrupted_items;
+    let succeeded_count = recovered_job.counts.succeeded_items;
+    assert!(
+        interrupted_count >= 1,
+        "at least 1 in-flight item must be marked Interrupted after SIGKILL"
+    );
+    assert_eq!(succeeded_count + interrupted_count, 8);
+    assert_eq!(
+        recovered_items
+            .iter()
+            .filter(|it| it.state == ItemState::Interrupted)
+            .count() as u32,
+        interrupted_count
+    );
+
+    // Retry FailedOnly with an explicit RequestId and verify idempotency on duplicate retry
+    let mut c_rec = env_kill.connect();
+    let retry_req_id = RequestId::generate();
+    let (rec_retry_id, _, rec_queued, dedup1) = c_rec
+        .retry_with_request_id(
+            retry_req_id.clone(),
+            batch_job_id,
+            RetryMode::FailedOnly,
+            None,
+        )
+        .unwrap();
+    assert!(!dedup1);
+    assert_ne!(rec_retry_id, batch_job_id);
+    assert_eq!(rec_queued, interrupted_count);
+
+    let (dup_retry_id, _, dup_queued, dedup2) = c_rec
+        .retry_with_request_id(retry_req_id, batch_job_id, RetryMode::FailedOnly, None)
+        .unwrap();
+    assert!(dedup2, "duplicate retry request_id must be deduplicated");
+    assert_eq!(dup_retry_id, rec_retry_id);
+    assert_eq!(dup_queued, interrupted_count);
+
+    let (rec_completed, rec_retry_items) =
+        env_kill.wait_for_job_terminal(rec_retry_id, Duration::from_secs(10));
+    assert_eq!(rec_completed.retry_of, Some(batch_job_id));
+    assert_eq!(rec_completed.origin, Origin::Retry);
+    assert_eq!(rec_completed.state, JobState::Completed);
+    assert_eq!(rec_completed.counts.total_items, interrupted_count);
+    assert_eq!(rec_completed.counts.succeeded_items, interrupted_count);
+    for it in &rec_retry_items {
+        assert_eq!(it.state, ItemState::Succeeded);
+        assert_eq!(it.attempt_count, 2);
+    }
+
+    // All 8 WebP files must exist, with zero duplicate ` (1).webp` files
+    for i in 0..8 {
+        assert!(
+            kill_dir.join(format!("item_{i:02}.webp")).exists(),
+            "item_{i:02}.webp must exist after SIGKILL recovery + FailedOnly retry"
+        );
+        assert!(
+            !kill_dir.join(format!("item_{i:02} (1).webp")).exists(),
+            "already-succeeded item_{i:02} must not be reprocessed during interrupted-item retry"
+        );
+    }
+    assert_no_temp_or_stage_artifacts(&kill_dir);
 }
 
 #[test]
