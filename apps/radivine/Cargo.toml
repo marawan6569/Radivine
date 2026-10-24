@@ -29,7 +29,13 @@ anyhow.workspace = true
 smallvec.workspace = true
 
 [dev-dependencies]
+image.workspace = true
+radivine-convert = { path = "../../crates/radivine-convert" }
+radivine-jobs = { path = "../../crates/radivine-jobs" }
 radivine-viewer = { path = "../radivine-viewer" }
+radivine-worker = { path = "../radivine-worker" }
+sha2.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true
