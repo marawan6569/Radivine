@@ -92,6 +92,18 @@ const EMBEDDED_ICONS: &[(&str, &str)] = &[
         include_str!("../../../assets/wheel-icons/image.svg"),
     ),
     ("link", include_str!("../../../assets/wheel-icons/link.svg")),
+    (
+        "arrow-right-left",
+        include_str!("../../../assets/wheel-icons/arrow-right-left.svg"),
+    ),
+    (
+        "file-image",
+        include_str!("../../../assets/wheel-icons/file-image.svg"),
+    ),
+    (
+        "sliders-horizontal",
+        include_str!("../../../assets/wheel-icons/sliders-horizontal.svg"),
+    ),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -448,5 +460,34 @@ fn build_shadow_sprite(r_out_px: u32, blur_px: u32) -> AlphaMask {
         width: size,
         height: size,
         data,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_convert_lucide_wheel_icons_rasterize_embedded_and_dir() {
+        let mut embedded = AssetCache::new(AssetSource::Embedded).expect("embedded AssetCache");
+        let assets_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let mut dir_cache = AssetCache::new(AssetSource::Dir(assets_dir)).expect("dir AssetCache");
+
+        for key in [
+            "lucide:arrow-right-left",
+            "lucide:file-image",
+            "lucide:sliders-horizontal",
+        ] {
+            let mask_emb = embedded.icon_mask(key, 24).clone();
+            assert_eq!(mask_emb.width, 24);
+            assert_eq!(mask_emb.height, 24);
+            assert!(
+                mask_emb.data.iter().any(|&a| a > 0),
+                "embedded icon {key} rasterized to all-zero alpha"
+            );
+
+            let mask_dir = dir_cache.icon_mask(key, 24);
+            assert_eq!(mask_dir.data, mask_emb.data);
+        }
     }
 }
