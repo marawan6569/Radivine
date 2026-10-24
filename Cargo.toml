@@ -6,6 +6,7 @@ members = [
     "crates/radivine-core",
     "crates/radivine-actions",
     "crates/radivine-platform",
+    "crates/radivine-convert",
     "apps/radivine",
     "apps/radivine-viewer",
     "apps/radivine-control",
@@ -57,3 +58,9 @@ eframe = { version = "0.37", default-features = false, features = ["default_font
 egui = "0.37"
 memchr = "2.8"
 encoding_rs = "0.8"
+fastrand = "2.5"
+tempfile = "3.27"
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp"] }
+jpeg-encoder = { version = "0.7.1", default-features = false, features = ["std"] }
+libwebp-sys = "0.14.4"
+sha2 = "0.10.9"

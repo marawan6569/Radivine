@@ -2573,6 +2573,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "radivine-convert"
+version = "0.1.1"
+dependencies = [
+ "fastrand",
+ "proptest",
+ "rustix 1.1.5",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "toml",
+ "toml_edit 0.22.27",
+ "tracing",
+]
+
+[[package]]
 name = "radivine-core"
 version = "0.1.1"
 dependencies = [
