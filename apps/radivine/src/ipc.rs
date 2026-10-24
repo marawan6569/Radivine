@@ -172,9 +172,14 @@ pub enum IpcResponse {
     },
 }
 
-/// Returns the default IPC socket path (`$XDG_RUNTIME_DIR/radivine/radivine.sock`).
+/// Returns the default IPC socket path (`$RADIVINE_SOCKET` if set, otherwise `$XDG_RUNTIME_DIR/radivine/radivine.sock`).
 #[must_use]
 pub fn default_socket_path() -> PathBuf {
+    if let Ok(env_sock) = std::env::var("RADIVINE_SOCKET")
+        && !env_sock.trim().is_empty()
+    {
+        return PathBuf::from(env_sock);
+    }
     if let Ok(xdg_runtime) = std::env::var("XDG_RUNTIME_DIR")
         && !xdg_runtime.trim().is_empty()
     {

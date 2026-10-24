@@ -863,6 +863,14 @@ pub fn generate_systemd_unit_content(daemon_bin: &Path) -> String {
 }
 
 fn resolve_daemon_binary() -> PathBuf {
+    if let Ok(env_bin) = std::env::var("RADIVINE_DAEMON_BIN")
+        && !env_bin.trim().is_empty()
+    {
+        let p = PathBuf::from(env_bin.trim());
+        if p.exists() {
+            return p;
+        }
+    }
     if let Ok(exe) = std::env::current_exe()
         && let Some(dir) = exe.parent()
     {
