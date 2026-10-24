@@ -2654,6 +2654,7 @@ name = "radivine-actions"
 version = "0.1.1"
 dependencies = [
  "radivine-core",
+ "radivine-dbus",
  "serde",
  "thiserror 2.0.21",
  "toml",
@@ -2720,6 +2721,31 @@ dependencies = [
  "radivine-wheel",
  "rustix 1.1.5",
  "thiserror 2.0.21",
+ "tracing",
+]
+
+[[package]]
+name = "radivine-dbus"
+version = "0.1.1"
+dependencies = [
+ "tempfile",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "radivine-jobs"
+version = "0.1.1"
+dependencies = [
+ "fastrand",
+ "percent-encoding",
+ "proptest",
+ "rustix 1.1.5",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "toml",
+ "toml_edit 0.22.27",
  "tracing",
 ]
 

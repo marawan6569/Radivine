@@ -9,6 +9,7 @@ members = [
     "crates/radivine-platform",
     "crates/radivine-convert",
     "crates/radivine-convert-image",
+    "crates/radivine-jobs",
     "ffi/radivine-webp",
     "apps/radivine",
     "apps/radivine-viewer",

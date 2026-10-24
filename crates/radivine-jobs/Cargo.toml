@@ -1,0 +1,25 @@
+[package]
+name = "radivine-jobs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Generic durable background job contracts, lossless WirePath codec, IPC protocol v1, and client/launcher for Radivine."
+
+[lints]
+workspace = true
+
+[dependencies]
+fastrand.workspace = true
+percent-encoding.workspace = true
+rustix = { workspace = true, features = ["fs", "process", "net"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+toml.workspace = true
+toml_edit.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+tempfile.workspace = true
