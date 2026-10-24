@@ -12,7 +12,10 @@ workspace = true
 [dependencies]
 radivine = { path = "../radivine" }
 radivine-actions = { path = "../../crates/radivine-actions" }
+radivine-convert = { path = "../../crates/radivine-convert" }
 radivine-core = { path = "../../crates/radivine-core" }
+radivine-dbus = { path = "../../crates/radivine-dbus" }
+radivine-jobs = { path = "../../crates/radivine-jobs" }
 radivine-platform = { path = "../../crates/radivine-platform" }
 anyhow = { workspace = true }
 clap = { workspace = true }

@@ -220,6 +220,20 @@ impl ServicePaths {
     pub fn daemon_log_path(&self) -> PathBuf {
         self.state_dir.join("daemon.log")
     }
+
+    /// Returns the path to the `radivine-worker` Unix domain socket (`worker.sock`).
+    #[must_use]
+    pub fn worker_socket_path(&self) -> PathBuf {
+        if let Ok(env_sock) = std::env::var("RADIVINE_WORKER_SOCKET")
+            && !env_sock.trim().is_empty()
+        {
+            return PathBuf::from(env_sock);
+        }
+        self.ipc_socket
+            .parent()
+            .unwrap_or_else(|| Path::new("/tmp"))
+            .join("worker.sock")
+    }
 }
 
 /// Manages daemon lifecycle (`Start`, `Stop`, `Restart`, `Reload`) and login autostart preferences.

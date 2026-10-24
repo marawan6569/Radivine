@@ -19,6 +19,8 @@ use radivine_actions::{
     ActionsConfig, ArgToken, CountRange, CustomAction, NotifyPolicy, load_actions_file,
     parse_actions_toml,
 };
+use radivine_convert::ConvertSettings;
+use radivine_jobs::{JobsSettings, MaxParallelSetting, MemoryBudgetSetting};
 use toml_edit::{Array, DocumentMut, Item as TomlItem, Table, value};
 
 /// Default commented `config.toml` template used when creating a new user configuration file.
@@ -485,6 +487,81 @@ pub fn apply_app_config_to_toml_doc(
     let out = doc.to_string();
     let parsed: AppConfig = toml::from_str(&out).map_err(|e| vec![e.to_string()])?;
     parsed.validate_strict()?;
+    Ok(out)
+}
+
+/// Resolves the path to `convert.toml` adjacent to `config_path` (`~/.config/radivine/convert.toml`).
+#[must_use]
+pub fn convert_path_for(config_path: &Path) -> PathBuf {
+    config_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("convert.toml")
+}
+
+/// Strictly validates [`JobsSettings`] ranges (`JOB_SYSTEM_DESIGN.md` §10).
+pub fn validate_jobs_settings_strict(jobs: &JobsSettings) -> Result<(), Vec<String>> {
+    let mut errs = Vec::new();
+    if let MaxParallelSetting::Fixed(n) = jobs.max_parallel
+        && !(1..=16).contains(&n)
+    {
+        errs.push(format!("jobs.max_parallel must be in 1..=16 (got {n})"));
+    }
+    if let MemoryBudgetSetting::FixedMb(mb) = jobs.memory_budget_mb
+        && !(64..=4096).contains(&mb)
+    {
+        errs.push(format!(
+            "jobs.memory_budget_mb must be in 64..=4096 MiB (got {mb})"
+        ));
+    }
+    if !(5..=3600).contains(&jobs.idle_timeout_secs) {
+        errs.push(format!(
+            "jobs.idle_timeout_secs must be in 5..=3600 (got {})",
+            jobs.idle_timeout_secs
+        ));
+    }
+    if !(10..=1000).contains(&jobs.retention_max_jobs) {
+        errs.push(format!(
+            "jobs.retention_max_jobs must be in 10..=1000 (got {})",
+            jobs.retention_max_jobs
+        ));
+    }
+    if !(1..=90).contains(&jobs.retention_days) {
+        errs.push(format!(
+            "jobs.retention_days must be in 1..=90 (got {})",
+            jobs.retention_days
+        ));
+    }
+    if errs.is_empty() { Ok(()) } else { Err(errs) }
+}
+
+/// Updates `existing_toml` with both `cfg` (`AppConfig`) and `jobs` (`[jobs]`), preserving
+/// comments, formatting, and unknown keys, and validates the complete resulting TOML document.
+pub fn apply_app_and_jobs_config_to_toml_doc(
+    existing_toml: &str,
+    cfg: &AppConfig,
+    jobs: &JobsSettings,
+) -> Result<String, Vec<String>> {
+    validate_jobs_settings_strict(jobs)?;
+    let with_app = apply_app_config_to_toml_doc(existing_toml, cfg)?;
+    let with_jobs = jobs
+        .apply_to_toml_document(&with_app)
+        .map_err(|e| vec![e])?;
+    let parsed: AppConfig = toml::from_str(&with_jobs).map_err(|e| vec![e.to_string()])?;
+    parsed.validate_strict()?;
+    Ok(with_jobs)
+}
+
+/// Updates `existing_toml` (`convert.toml`) with `convert`, preserving comments, formatting, and
+/// unknown keys, and validates the complete resulting TOML document (`AC-C4.4`).
+pub fn apply_convert_settings_doc(
+    existing_toml: &str,
+    convert: &ConvertSettings,
+) -> Result<String, Vec<String>> {
+    let out = convert
+        .save_preserving_comments(existing_toml)
+        .map_err(|e| vec![e])?;
+    ConvertSettings::validate_strict(&out)?;
     Ok(out)
 }
 

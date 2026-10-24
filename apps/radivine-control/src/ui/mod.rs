@@ -1,5 +1,8 @@
 //! `eframe`/`egui` graphical Control Center interface (`apps/radivine-control/src/ui/mod.rs`).
 
+pub mod advanced_convert;
+pub mod conversion;
+pub mod jobs;
 pub mod theme;
 
 use std::path::{Path, PathBuf};
@@ -16,6 +19,8 @@ use eframe::egui::{
 
 use radivine::config::{AppConfig, ReducedMotionSetting, ScaleSetting};
 use radivine::ipc::DaemonStatus;
+use radivine_convert::ConvertSettings;
+use radivine_jobs::JobsSettings;
 
 use crate::ControlPage;
 use crate::diagnostics::{
@@ -24,7 +29,8 @@ use crate::diagnostics::{
 };
 use crate::persistence::{
     DiskFileSnapshot, EditableAction, EditableActionsDoc, apply_actions_to_toml_doc,
-    apply_app_config_to_toml_doc, atomic_write_with_backup,
+    apply_app_and_jobs_config_to_toml_doc, apply_convert_settings_doc, atomic_write_with_backup,
+    convert_path_for,
 };
 use crate::screenshot::EguiSoftRasterizer;
 use crate::service::{
@@ -33,6 +39,18 @@ use crate::service::{
 };
 use crate::single_instance::ControlInstanceLock;
 
+pub use self::advanced_convert::{
+    AdvancedConvertApp, AdvancedConvertCliArgs, SelectionInspectionSummary,
+    inspect_selection_headers, parse_convert_cli_args, read_bounded_stdin_paths,
+    run_advanced_convert_window,
+};
+pub use self::conversion::{
+    ConversionPageAction, ConversionPageState, render_conversion_settings_page,
+};
+pub use self::jobs::{
+    ITEMS_PAGE_SIZE, JOBS_PAGE_SIZE, JobsCommand, JobsFilter, JobsViewState, UiJobsEvent,
+    path_to_file_uri, render_jobs_page, reveal_path_in_file_manager, spawn_jobs_bridge,
+};
 pub use self::theme::{
     BrandPalette, apply_palette_visuals, health_colors, install_inter_font, kv_cell, section_card,
 };
@@ -106,8 +124,10 @@ pub struct ControlCenterApp {
     diagnostics_snapshot: Option<DiagnosticsSnapshot>,
     config_path: PathBuf,
     actions_path: PathBuf,
+    convert_path: PathBuf,
     config_disk_snapshot: DiskFileSnapshot,
     actions_disk_snapshot: DiskFileSnapshot,
+    convert_disk_snapshot: DiskFileSnapshot,
     /// Last saved configuration loaded from or written to `config.toml`.
     pub saved_config: AppConfig,
     /// In-memory editable configuration draft.
@@ -116,9 +136,24 @@ pub struct ControlCenterApp {
     pub saved_actions: EditableActionsDoc,
     /// In-memory editable custom actions draft.
     pub draft_actions: EditableActionsDoc,
+    /// Last saved conversion settings loaded from or written to `convert.toml`.
+    pub saved_convert: ConvertSettings,
+    /// In-memory editable conversion settings draft.
+    pub draft_convert: ConvertSettings,
+    /// Last saved `[jobs]` settings loaded from or written to `config.toml`.
+    pub saved_jobs: JobsSettings,
+    /// In-memory editable `[jobs]` settings draft.
+    pub draft_jobs: JobsSettings,
     actions_load_warnings: Vec<String>,
     config_conflict_pending: bool,
     actions_conflict_pending: bool,
+    convert_conflict_pending: bool,
+    /// Form state for the Conversion Settings page.
+    pub conversion_page_state: ConversionPageState,
+    /// Pure view-model state for the Jobs page.
+    pub jobs_view: JobsViewState,
+    jobs_cmd_tx: Sender<JobsCommand>,
+    jobs_ev_rx: Receiver<UiJobsEvent>,
     action_search_query: String,
     action_editor_mode: ActionEditorMode,
     editor_draft: EditableAction,
@@ -155,10 +190,19 @@ impl ControlCenterApp {
             .clone()
             .unwrap_or_else(AppConfig::default_path);
         let actions_path = AppConfig::actions_path_for(Some(&config_path));
+        let convert_path = convert_path_for(&config_path);
 
         let config_disk_snapshot = DiskFileSnapshot::load(&config_path);
         let saved_config = AppConfig::load_or_default(Some(&config_path));
         let draft_config = saved_config.clone();
+
+        let (saved_jobs, _) = JobsSettings::load_lenient(&config_path);
+        let draft_jobs = saved_jobs.clone();
+
+        let convert_disk_snapshot = DiskFileSnapshot::load(&convert_path);
+        let (saved_convert, _) = ConvertSettings::load_or_default(&convert_path);
+        let draft_convert = saved_convert.clone();
+        let conversion_page_state = ConversionPageState::from_settings(&saved_convert);
 
         let (saved_actions, actions_disk_snapshot, actions_load_warnings) =
             match EditableActionsDoc::load_with_snapshot(&actions_path) {
@@ -170,6 +214,18 @@ impl ControlCenterApp {
                 ),
             };
         let draft_actions = saved_actions.clone();
+
+        let worker_socket_path = service_paths.worker_socket_path();
+        let (jobs_cmd_tx, jobs_ev_rx) = spawn_jobs_bridge(
+            worker_socket_path,
+            service_paths.state_dir.clone(),
+            egui_ctx.clone(),
+        );
+        if initial_page == ControlPage::Jobs {
+            let _ = jobs_cmd_tx.send(JobsCommand::RefreshAll {
+                allow_auto_start: true,
+            });
+        }
 
         let service_ctrl = ServiceController::new(service_paths);
         let initial_snapshot = service_ctrl.query_snapshot(None);
@@ -315,15 +371,26 @@ impl ControlCenterApp {
             diagnostics_snapshot: None,
             config_path,
             actions_path,
+            convert_path,
             config_disk_snapshot,
             actions_disk_snapshot,
+            convert_disk_snapshot,
             saved_config,
             draft_config,
             saved_actions,
             draft_actions,
+            saved_convert,
+            draft_convert,
+            saved_jobs,
+            draft_jobs,
             actions_load_warnings,
             config_conflict_pending: false,
             actions_conflict_pending: false,
+            convert_conflict_pending: false,
+            conversion_page_state,
+            jobs_view: JobsViewState::default(),
+            jobs_cmd_tx,
+            jobs_ev_rx,
             action_search_query: String::new(),
             action_editor_mode: ActionEditorMode::Closed,
             editor_draft: EditableAction::default(),
@@ -352,9 +419,20 @@ impl ControlCenterApp {
         if page == ControlPage::Diagnostics && self.diagnostics_snapshot.is_none() {
             let _ = self.worker_tx.send(WorkerCommand::RefreshDiagnostics);
         }
+        if page == ControlPage::Jobs {
+            let _ = self.jobs_cmd_tx.send(JobsCommand::RefreshAll {
+                allow_auto_start: true,
+            });
+        }
     }
 
-    /// Saves `draft_config` to `config.toml` atomically, handling external modification conflicts.
+    /// Returns a sender for dispatching [`JobsCommand`]s to the background worker bridge.
+    #[must_use]
+    pub fn jobs_command_sender(&self) -> Sender<JobsCommand> {
+        self.jobs_cmd_tx.clone()
+    }
+
+    /// Saves `draft_config` (and `draft_jobs`) to `config.toml` atomically, handling external modification conflicts.
     pub fn save_config(&mut self, force_overwrite_with_backup: bool) -> Result<(), String> {
         if !force_overwrite_with_backup && self.config_disk_snapshot.has_external_conflict() {
             self.config_conflict_pending = true;
@@ -366,13 +444,16 @@ impl ControlCenterApp {
             return Err(msg);
         }
 
-        let updated_toml =
-            apply_app_config_to_toml_doc(&self.config_disk_snapshot.raw_text, &self.draft_config)
-                .map_err(|errs| {
-                let msg = errs.join(" · ");
-                self.banner_err = Some(msg.clone());
-                msg
-            })?;
+        let updated_toml = apply_app_and_jobs_config_to_toml_doc(
+            &self.config_disk_snapshot.raw_text,
+            &self.draft_config,
+            &self.draft_jobs,
+        )
+        .map_err(|errs| {
+            let msg = errs.join(" · ");
+            self.banner_err = Some(msg.clone());
+            msg
+        })?;
 
         let new_snap = atomic_write_with_backup(
             &self.config_path,
@@ -387,9 +468,11 @@ impl ControlCenterApp {
 
         self.config_disk_snapshot = new_snap;
         self.saved_config = self.draft_config.clone();
+        self.saved_jobs = self.draft_jobs.clone();
         self.config_conflict_pending = false;
         self.banner_err = None;
 
+        let _ = self.jobs_cmd_tx.send(JobsCommand::ReloadWorkerSettings);
         if self.service_snapshot.health == DaemonHealthState::Running {
             let _ = self.worker_tx.send(WorkerCommand::ReloadDaemon);
             self.banner_ok = Some(
@@ -402,6 +485,99 @@ impl ControlCenterApp {
             );
         }
         Ok(())
+    }
+
+    /// Saves `draft_convert` (`convert.toml`) and `draft_jobs` (`config.toml [jobs]`) atomically,
+    /// handling external modification conflicts and triggering `reload_settings` on the worker (`AC-C4.4`).
+    pub fn save_convert_and_jobs(
+        &mut self,
+        force_overwrite_with_backup: bool,
+    ) -> Result<(), String> {
+        let errs = self
+            .conversion_page_state
+            .sync_and_validate(&mut self.draft_convert, &self.draft_jobs);
+        if !errs.is_empty() {
+            let msg = errs.join(" · ");
+            self.banner_err = Some(msg.clone());
+            return Err(msg);
+        }
+
+        if !force_overwrite_with_backup
+            && (self.convert_disk_snapshot.has_external_conflict()
+                || self.config_disk_snapshot.has_external_conflict())
+        {
+            self.convert_conflict_pending = true;
+            let msg = "External modification detected on convert.toml or config.toml. Choose 'Reload from Disk' or 'Back Up & Overwrite'.".to_string();
+            self.banner_err = Some(msg.clone());
+            return Err(msg);
+        }
+
+        let updated_convert_toml =
+            apply_convert_settings_doc(&self.convert_disk_snapshot.raw_text, &self.draft_convert)
+                .map_err(|e_list| {
+                let msg = e_list.join(" · ");
+                self.banner_err = Some(msg.clone());
+                msg
+            })?;
+
+        let updated_config_toml = apply_app_and_jobs_config_to_toml_doc(
+            &self.config_disk_snapshot.raw_text,
+            &self.draft_config,
+            &self.draft_jobs,
+        )
+        .map_err(|e_list| {
+            let msg = e_list.join(" · ");
+            self.banner_err = Some(msg.clone());
+            msg
+        })?;
+
+        let new_convert_snap = atomic_write_with_backup(
+            &self.convert_path,
+            &updated_convert_toml,
+            force_overwrite_with_backup,
+        )
+        .map_err(|e| {
+            let msg = format!("Failed to write {}: {e}", self.convert_path.display());
+            self.banner_err = Some(msg.clone());
+            msg
+        })?;
+
+        if self.draft_jobs != self.saved_jobs || self.config_disk_snapshot.existed {
+            let new_cfg_snap = atomic_write_with_backup(
+                &self.config_path,
+                &updated_config_toml,
+                force_overwrite_with_backup,
+            )
+            .map_err(|e| {
+                let msg = format!("Failed to write {}: {e}", self.config_path.display());
+                self.banner_err = Some(msg.clone());
+                msg
+            })?;
+            self.config_disk_snapshot = new_cfg_snap;
+            self.saved_config = self.draft_config.clone();
+            self.saved_jobs = self.draft_jobs.clone();
+        }
+
+        self.convert_disk_snapshot = new_convert_snap;
+        self.saved_convert = self.draft_convert.clone();
+        self.convert_conflict_pending = false;
+        self.config_conflict_pending = false;
+        self.banner_err = None;
+
+        let _ = self.jobs_cmd_tx.send(JobsCommand::ReloadWorkerSettings);
+        self.banner_ok = Some(
+            "Saved convert.toml & [jobs] preferences and notified the conversion worker."
+                .to_string(),
+        );
+        Ok(())
+    }
+
+    /// Reverts unsaved conversion and `[jobs]` edits back to the last saved values.
+    pub fn revert_convert_and_jobs(&mut self) {
+        self.draft_convert = self.saved_convert.clone();
+        self.draft_jobs = self.saved_jobs.clone();
+        self.conversion_page_state = ConversionPageState::from_settings(&self.saved_convert);
+        self.banner_err = None;
     }
 
     /// Saves `draft_actions` to `actions.toml` atomically, handling external modification conflicts.
@@ -454,12 +630,23 @@ impl ControlCenterApp {
         Ok(())
     }
 
-    /// Reloads both `config.toml` and `actions.toml` from disk into the Control Center.
+    /// Reloads `config.toml`, `actions.toml`, and `convert.toml` from disk into the Control Center.
     pub fn reload_files_from_disk(&mut self) {
         self.config_disk_snapshot = DiskFileSnapshot::load(&self.config_path);
         self.saved_config = AppConfig::load_or_default(Some(&self.config_path));
         self.draft_config = self.saved_config.clone();
         self.config_conflict_pending = false;
+
+        let (jobs_cfg, _) = JobsSettings::load_lenient(&self.config_path);
+        self.saved_jobs = jobs_cfg.clone();
+        self.draft_jobs = jobs_cfg;
+
+        self.convert_disk_snapshot = DiskFileSnapshot::load(&self.convert_path);
+        let (saved_conv, _) = ConvertSettings::load_or_default(&self.convert_path);
+        self.saved_convert = saved_conv;
+        self.draft_convert = self.saved_convert.clone();
+        self.conversion_page_state = ConversionPageState::from_settings(&self.saved_convert);
+        self.convert_conflict_pending = false;
 
         match EditableActionsDoc::load_with_snapshot(&self.actions_path) {
             Ok((doc, snap, warnings)) => {
@@ -469,13 +656,19 @@ impl ControlCenterApp {
                 self.actions_load_warnings = warnings;
                 self.actions_conflict_pending = false;
                 self.banner_err = None;
-                self.banner_ok =
-                    Some("Reloaded config.toml and actions.toml from disk.".to_string());
+                self.banner_ok = Some(
+                    "Reloaded config.toml, convert.toml, and actions.toml from disk.".to_string(),
+                );
             }
             Err(err) => {
                 self.banner_err = Some(err);
             }
         }
+    }
+
+    /// Drains all pending asynchronous daemon and jobs events into the view state.
+    pub fn drain_all_events(&mut self) {
+        self.drain_worker_events();
     }
 
     fn drain_worker_events(&mut self) {
@@ -500,6 +693,9 @@ impl ControlCenterApp {
                     self.diagnostics_snapshot = Some(*diag);
                 }
             }
+        }
+        while let Ok(jev) = self.jobs_ev_rx.try_recv() {
+            self.jobs_view.apply_event(jev);
         }
     }
 
@@ -599,6 +795,55 @@ impl ControlCenterApp {
                             ControlPage::General => self.render_general_page(ui, &pal),
                             ControlPage::Wheel => self.render_wheel_page(ui, &pal),
                             ControlPage::Actions => self.render_actions_page(ui, &pal),
+                            ControlPage::Conversion => {
+                                if let Some(act) = render_conversion_settings_page(
+                                    ui,
+                                    &pal,
+                                    &mut self.conversion_page_state,
+                                    &mut self.draft_convert,
+                                    &self.saved_convert,
+                                    &mut self.draft_jobs,
+                                    &self.saved_jobs,
+                                    self.convert_conflict_pending,
+                                ) {
+                                    match act {
+                                        ConversionPageAction::Save => {
+                                            let _ = self.save_convert_and_jobs(false);
+                                        }
+                                        ConversionPageAction::Revert => {
+                                            self.revert_convert_and_jobs();
+                                        }
+                                        ConversionPageAction::ReloadFromDisk => {
+                                            self.reload_files_from_disk();
+                                        }
+                                        ConversionPageAction::BackupAndOverwrite => {
+                                            let _ = self.save_convert_and_jobs(true);
+                                        }
+                                    }
+                                }
+                            }
+                            ControlPage::Jobs => {
+                                let mut nav_diag = false;
+                                let mut nav_conv = false;
+                                let concurrency_changed = render_jobs_page(
+                                    ui,
+                                    &pal,
+                                    &mut self.jobs_view,
+                                    &mut self.draft_jobs.max_parallel,
+                                    &self.jobs_cmd_tx,
+                                    &mut nav_diag,
+                                    &mut nav_conv,
+                                );
+                                if concurrency_changed {
+                                    let _ = self.save_config(false);
+                                }
+                                if nav_diag {
+                                    self.set_page(ControlPage::Diagnostics);
+                                }
+                                if nav_conv {
+                                    self.set_page(ControlPage::Conversion);
+                                }
+                            }
                             ControlPage::Diagnostics => {
                                 self.render_diagnostics_page(ui, &ctx, &pal)
                             }
@@ -718,9 +963,21 @@ impl ControlCenterApp {
                         || item == ControlPage::Wheel)
                         && self.draft_config != self.saved_config)
                         || (item == ControlPage::Actions
-                            && self.draft_actions != self.saved_actions);
+                            && self.draft_actions != self.saved_actions)
+                        || (item == ControlPage::Conversion
+                            && (self.draft_convert != self.saved_convert
+                                || self.draft_jobs != self.saved_jobs));
                     if has_unsaved {
                         label_text.push_str(" •");
+                    }
+                    if item == ControlPage::Jobs {
+                        let active = self.jobs_view.active_count();
+                        let failed = self.jobs_view.failed_count();
+                        if active > 0 {
+                            label_text.push_str(&format!(" ({active})"));
+                        } else if failed > 0 {
+                            label_text.push_str(" (!)");
+                        }
                     }
                     ui.add(
                         egui::Label::new(RichText::new(label_text).size(13.5).strong().color(fg))
@@ -2468,6 +2725,86 @@ impl ControlCenterApp {
                 "X11 session active: Full Nemo 'Drag + Shift' mid-drag interception and 'radivine invoke' are supported.".to_string(),
             ],
         });
+
+        self.jobs_view.worker_online = true;
+        self.jobs_view.worker_pid = Some(4890);
+        self.jobs_view.jobs = vec![
+            radivine_jobs::JobSummary {
+                job_id: radivine_jobs::JobId(43),
+                request_id: radivine_jobs::RequestId("demo-req-43".to_string()),
+                origin: radivine_jobs::Origin::Wheel,
+                retry_of: None,
+                kind: radivine_jobs::CONVERT_IMAGE_KIND.to_string(),
+                state: radivine_jobs::JobState::Running,
+                created_at_ms: 1_760_000_200_000,
+                started_at_ms: Some(1_760_000_200_050),
+                finished_at_ms: None,
+                updated_at_ms: 1_760_000_200_500,
+                counts: radivine_jobs::JobProgressCounts {
+                    total_items: 12,
+                    pending_items: 4,
+                    in_flight_items: 2,
+                    succeeded_items: 6,
+                    skipped_items: 0,
+                    failed_items: 0,
+                    cancelled_items: 0,
+                    interrupted_items: 0,
+                },
+                summary_text: Some("Converting 12 files…".to_string()),
+                options: serde_json::json!({"target": "webp", "preset_ref": "webp-85"}),
+                resolved: None,
+            },
+            radivine_jobs::JobSummary {
+                job_id: radivine_jobs::JobId(42),
+                request_id: radivine_jobs::RequestId("demo-req-42".to_string()),
+                origin: radivine_jobs::Origin::Retry,
+                retry_of: Some(radivine_jobs::JobId(41)),
+                kind: radivine_jobs::CONVERT_IMAGE_KIND.to_string(),
+                state: radivine_jobs::JobState::Completed,
+                created_at_ms: 1_760_000_100_000,
+                started_at_ms: Some(1_760_000_100_020),
+                finished_at_ms: Some(1_760_000_100_480),
+                updated_at_ms: 1_760_000_100_480,
+                counts: radivine_jobs::JobProgressCounts {
+                    total_items: 1,
+                    pending_items: 0,
+                    in_flight_items: 0,
+                    succeeded_items: 1,
+                    skipped_items: 0,
+                    failed_items: 0,
+                    cancelled_items: 0,
+                    interrupted_items: 0,
+                },
+                summary_text: Some("Converted 1 files".to_string()),
+                options: serde_json::json!({"target": "png", "preset_ref": "png-optimized"}),
+                resolved: None,
+            },
+            radivine_jobs::JobSummary {
+                job_id: radivine_jobs::JobId(41),
+                request_id: radivine_jobs::RequestId("demo-req-41".to_string()),
+                origin: radivine_jobs::Origin::Advanced,
+                retry_of: None,
+                kind: radivine_jobs::CONVERT_IMAGE_KIND.to_string(),
+                state: radivine_jobs::JobState::CompletedWithErrors,
+                created_at_ms: 1_760_000_000_000,
+                started_at_ms: Some(1_760_000_000_010),
+                finished_at_ms: Some(1_760_000_001_200),
+                updated_at_ms: 1_760_000_001_200,
+                counts: radivine_jobs::JobProgressCounts {
+                    total_items: 4,
+                    pending_items: 0,
+                    in_flight_items: 0,
+                    succeeded_items: 3,
+                    skipped_items: 0,
+                    failed_items: 1,
+                    cancelled_items: 0,
+                    interrupted_items: 0,
+                },
+                summary_text: Some("Converted 3 of 4 files (1 failed, 0 skipped)".to_string()),
+                options: serde_json::json!({"target": "png", "preset_ref": "png-optimized"}),
+                resolved: None,
+            },
+        ];
     }
 }
 
@@ -2497,6 +2834,18 @@ pub fn export_all_page_screenshots(
         (ControlPage::General, "control-general-dark.png", "dark"),
         (ControlPage::Wheel, "control-wheel-dark.png", "dark"),
         (ControlPage::Actions, "control-actions-dark.png", "dark"),
+        (
+            ControlPage::Conversion,
+            "control-conversion-dark.png",
+            "dark",
+        ),
+        (
+            ControlPage::Conversion,
+            "control-conversion-light.png",
+            "light",
+        ),
+        (ControlPage::Jobs, "control-jobs-dark.png", "dark"),
+        (ControlPage::Jobs, "control-jobs-light.png", "light"),
         (
             ControlPage::Diagnostics,
             "control-diagnostics-dark.png",

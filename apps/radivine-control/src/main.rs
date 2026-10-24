@@ -1,12 +1,17 @@
 #![forbid(unsafe_code)]
 
+use std::ffi::OsStr;
+use std::io;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use radivine_control::ControlPage;
 use radivine_control::service::{ServiceController, ServicePaths};
 use radivine_control::single_instance::{ControlInstanceLock, default_control_socket_path};
-use radivine_control::ui::{export_all_page_screenshots, run_control_window};
+use radivine_control::ui::{
+    export_all_page_screenshots, parse_convert_cli_args, read_bounded_stdin_paths,
+    run_advanced_convert_window, run_control_window,
+};
 
 fn print_help() {
     println!(
@@ -16,12 +21,13 @@ fn print_help() {
     println!();
     println!("USAGE:");
     println!("    radivine-control [OPTIONS]");
+    println!("    radivine-control convert [--stdin] [PATHS...]");
     println!();
     println!("OPTIONS:");
     println!(
         "    --page <NAME>                Open directly to a page: dashboard, general, wheel,"
     );
-    println!("                                 actions, diagnostics, about");
+    println!("                                 actions, conversion, jobs, diagnostics, about");
     println!("    --config <PATH>              Override path to config.toml");
     println!("    --socket <PATH>              Override path to daemon IPC socket");
     println!("    --control-socket <PATH>      Override path to control single-instance socket");
@@ -36,6 +42,35 @@ fn print_help() {
 }
 
 fn main() -> ExitCode {
+    let raw_os_args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    if raw_os_args.first().map(|a| a.as_os_str()) == Some(OsStr::new("convert")) {
+        let parsed = match parse_convert_cli_args(&raw_os_args[1..]) {
+            Ok(p) => p,
+            Err(err) => {
+                eprintln!("Error: {err}");
+                return ExitCode::from(2);
+            }
+        };
+        let mut sources = parsed.paths;
+        if parsed.read_stdin {
+            let stdin = io::stdin();
+            match read_bounded_stdin_paths(stdin.lock()) {
+                Ok(mut stdin_paths) => sources.append(&mut stdin_paths),
+                Err(err) => {
+                    eprintln!("Error reading --stdin: {err}");
+                    return ExitCode::from(2);
+                }
+            }
+        }
+        let paths = ServicePaths::default_user(parsed.config_path, None);
+        // Standalone Advanced Convert window bypasses ControlInstanceLock (`ADR-C14`, `ADR-C15`).
+        if let Err(err) = run_advanced_convert_window(sources, paths) {
+            eprintln!("Radivine Advanced Convert error: {err}");
+            return ExitCode::FAILURE;
+        }
+        return ExitCode::SUCCESS;
+    }
+
     let mut initial_page = ControlPage::Dashboard;
     let mut explicit_page: Option<ControlPage> = None;
     let mut config_override: Option<PathBuf> = None;
@@ -44,7 +79,9 @@ fn main() -> ExitCode {
     let mut export_screenshots_dir: Option<PathBuf> = None;
     let mut check_status_json = false;
 
-    let mut args = std::env::args().skip(1);
+    let mut args = raw_os_args
+        .into_iter()
+        .map(|os| os.to_string_lossy().into_owned());
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "-h" | "--help" => {
@@ -58,13 +95,13 @@ fn main() -> ExitCode {
             "--page" => {
                 let Some(val) = args.next() else {
                     eprintln!(
-                        "Error: --page requires a value (dashboard|general|wheel|actions|diagnostics|about)"
+                        "Error: --page requires a value (dashboard|general|wheel|actions|conversion|jobs|diagnostics|about)"
                     );
                     return ExitCode::from(2);
                 };
                 let Some(parsed) = ControlPage::from_slug(&val) else {
                     eprintln!(
-                        "Error: unknown page '{val}'. Expected one of: dashboard, general, wheel, actions, diagnostics, about"
+                        "Error: unknown page '{val}'. Expected one of: dashboard, general, wheel, actions, conversion, jobs, diagnostics, about"
                     );
                     return ExitCode::from(2);
                 };
