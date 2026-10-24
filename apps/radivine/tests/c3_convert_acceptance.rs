@@ -526,7 +526,11 @@ fn ac_c3_1_c3_2_c3_3_c3_4_menu_tree_visibility_enablement_captions_and_zero_io()
         .collect();
     assert_eq!(
         leaf_ids,
-        vec!["radivine.convert.image.jpeg", "radivine.convert.image.webp"]
+        vec![
+            "radivine.convert.image.jpeg",
+            "radivine.convert.image.webp",
+            "radivine.convert.image.advanced"
+        ]
     );
     assert_eq!(
         img_node.children().unwrap()[1].description.as_deref(),

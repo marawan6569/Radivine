@@ -620,8 +620,12 @@ fn test_ac_c3_1_menu_structure_for_image_and_text_snapshot_parity() {
     let target_ids: Vec<&str> = targets.iter().map(|n| n.id.as_ref()).collect();
     assert_eq!(
         target_ids,
-        vec!["radivine.convert.image.jpeg", "radivine.convert.image.webp"],
-        "PNG must be hidden as same-format when only PNG is selected"
+        vec![
+            "radivine.convert.image.jpeg",
+            "radivine.convert.image.webp",
+            "radivine.convert.image.advanced"
+        ],
+        "PNG must be hidden as same-format when only PNG is selected, while Advanced… remains available"
     );
     assert_eq!(
         targets[1].description.as_deref(),
@@ -635,8 +639,12 @@ fn test_ac_c3_1_menu_structure_for_image_and_text_snapshot_parity() {
         png_index.get(&ItemPath::from_slice(&[0, 0, 1])),
         Some(&ActionId::from("radivine.convert.image.webp"))
     );
+    assert_eq!(
+        png_index.get(&ItemPath::from_slice(&[0, 0, 2])),
+        Some(&ActionId::from("radivine.convert.image.advanced"))
+    );
 
-    // 3. Mixed PNG + JPEG selection: all 3 targets (PNG, JPEG, WebP) are visible
+    // 3. Mixed PNG + JPEG selection: all 3 targets (PNG, JPEG, WebP) + Advanced… are visible
     let mixed_img_ctx = Context::from_basic(BasicContext::from_uris(
         ["file:///tmp/a.png", "file:///tmp/b.jpg"],
         InvocationMode::Drag,
@@ -654,7 +662,8 @@ fn test_ac_c3_1_menu_structure_for_image_and_text_snapshot_parity() {
         vec![
             "radivine.convert.image.png",
             "radivine.convert.image.jpeg",
-            "radivine.convert.image.webp"
+            "radivine.convert.image.webp",
+            "radivine.convert.image.advanced"
         ]
     );
 }
@@ -940,5 +949,63 @@ fn test_ac_c3_3_and_c3_4_and_c3_5_captions_and_zero_io_10k_benchmark() {
     assert!(
         p95_us < 10_000,
         "10,000-item visibility + caption took p95 = {p95_us} us"
+    );
+}
+
+#[test]
+fn test_ac_c4_5_advanced_convert_action_visibility_and_missing_binary_handling() {
+    use radivine_actions::AdvancedConvertAction;
+    use std::path::PathBuf;
+    use std::sync::atomic::AtomicBool;
+
+    let menu_ctx = ConvertMenuContext::default().with_control_bin(PathBuf::from(
+        "/nonexistent_radivine_c4_test/radivine-control",
+    ));
+    let adv_act = AdvancedConvertAction::new(menu_ctx);
+
+    assert_eq!(
+        adv_act.meta().id,
+        ActionId::from("radivine.convert.image.advanced")
+    );
+    assert_eq!(adv_act.meta().label, "Advanced\u{2026}");
+    assert_eq!(
+        adv_act.meta().icon,
+        Some(radivine_core::IconKey::from("lucide:sliders-horizontal"))
+    );
+    assert_eq!(
+        adv_act.meta().description.as_deref(),
+        Some("Choose quality, size and destination\u{2026}")
+    );
+
+    // Hidden for non-image selection
+    let txt_basic = BasicContext::from_uris(
+        ["file:///tmp/notes.txt"],
+        InvocationMode::Drag,
+        SourceInfo::default(),
+    );
+    assert!(!adv_act.is_visible(&txt_basic));
+
+    // Visible for any supported image format (PNG, JPEG, WebP)
+    for uri in [
+        "file:///tmp/photo.png",
+        "file:///tmp/photo.jpg",
+        "file:///tmp/photo.webp",
+    ] {
+        let basic = BasicContext::from_uris([uri], InvocationMode::Drag, SourceInfo::default());
+        assert!(adv_act.is_visible(&basic));
+    }
+
+    // Missing radivine-control binary fails gracefully with ActionError::Other without panicking
+    let png_ctx = Context::from_basic(BasicContext::from_uris(
+        ["file:///tmp/photo.png"],
+        InvocationMode::Drag,
+        SourceInfo::default(),
+    ));
+    let job =
+        radivine_core::JobHandle::new(radivine_core::JobId(1), Arc::new(AtomicBool::new(false)));
+    let res = adv_act.run(&png_ctx, &job);
+    assert!(
+        matches!(res, Err(radivine_core::ActionError::Other(ref msg)) if msg.contains("not found")),
+        "expected graceful ActionError::Other when radivine-control binary is missing, got: {res:?}"
     );
 }

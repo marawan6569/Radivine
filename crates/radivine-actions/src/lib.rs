@@ -19,7 +19,10 @@ pub use builtins::{
     PropertiesAction, PropertiesBackend, SessionDbusPropertiesBackend, evaluate_text_file_facts,
     is_known_non_text_mime, resolve_viewer_binary,
 };
-pub use convert::{ConvertAction, ConvertMenuContext, register_convert_actions};
+pub use convert::{
+    AdvancedConvertAction, ConvertAction, ConvertMenuContext, register_convert_actions,
+    resolve_control_binary,
+};
 pub use custom::{
     ActionsConfig, ActionsLoadError, ArgPlaceholder, ArgToken, CountRange, CustomAction,
     NotifyPolicy, WhenRule, load_actions_file, mime_glob_matches, parse_actions_toml,
@@ -59,6 +62,7 @@ pub fn default_menu() -> Vec<MenuSpec> {
                     MenuSpec::Action(ActionId::from("radivine.convert.image.png")),
                     MenuSpec::Action(ActionId::from("radivine.convert.image.jpeg")),
                     MenuSpec::Action(ActionId::from("radivine.convert.image.webp")),
+                    MenuSpec::Action(ActionId::from("radivine.convert.image.advanced")),
                 ],
                 default: None,
             }],
