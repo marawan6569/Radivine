@@ -255,7 +255,6 @@ impl ItemControl for WorkerItemControl<'_> {
         &mut self,
         stage: &StageCreatedJournal<'_>,
     ) -> Result<(), ConversionError> {
-        self.check_timeout_or_cancel()?;
         self.store
             .record_stage_created(
                 self.slot.item_id,
@@ -267,14 +266,14 @@ impl ItemControl for WorkerItemControl<'_> {
                 op: FsOp::CreateStageDir,
                 path: stage.stage_dir_path.to_path_buf(),
                 source: std::io::Error::other(e.to_string()),
-            })
+            })?;
+        self.check_timeout_or_cancel()
     }
 
     fn record_temp_created(
         &mut self,
         temp: &TempCreatedJournal<'_>,
     ) -> Result<(), ConversionError> {
-        self.check_timeout_or_cancel()?;
         self.store
             .record_temp_created(
                 self.slot.item_id,
@@ -287,7 +286,8 @@ impl ItemControl for WorkerItemControl<'_> {
                 op: FsOp::CreateTemp,
                 path: temp.temp_path.to_path_buf(),
                 source: std::io::Error::other(e.to_string()),
-            })
+            })?;
+        self.check_timeout_or_cancel()
     }
 
     fn acquire_commit_permit<'a>(

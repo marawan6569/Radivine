@@ -636,45 +636,60 @@ impl PendingOutput {
         let stage_dir_dev = stage_meta.dev();
         let stage_dir_ino = stage_meta.ino();
 
-        ctrl.record_stage_created(&StageCreatedJournal {
+        if let Err(e) = ctrl.record_stage_created(&StageCreatedJournal {
             stage_dir_path: &stage_dir_path,
             stage_dir_dev,
             stage_dir_ino,
-        })?;
+        }) {
+            if !matches!(
+                e,
+                ConversionError::LimitExceeded {
+                    limit: crate::error::Limit::Timeout { .. }
+                }
+            ) {
+                let _ = cleanup_staging_dir_if_empty(&stage_dir_path, stage_dir_dev, stage_dir_ino);
+            }
+            return Err(e);
+        }
 
         let temp_name_str = format!("item-{item_index}-{}.part", random_hex16());
         let temp_name = OsString::from(&temp_name_str);
         let temp_path = stage_dir_path.join(&temp_name_str);
 
-        let owned_fd = openat(
+        let owned_fd = match openat(
             &stage_dir_fd,
             &temp_name,
             OFlags::RDWR | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
             Mode::from_raw_mode(0o600),
-        )
-        .map_err(|errno| ConversionError::Io {
-            op: FsOp::CreateTemp,
-            path: temp_path.clone(),
-            source: io::Error::from_raw_os_error(errno.raw_os_error()),
-        })?;
+        ) {
+            Ok(fd) => fd,
+            Err(errno) => {
+                let _ = cleanup_staging_dir_if_empty(&stage_dir_path, stage_dir_dev, stage_dir_ino);
+                return Err(ConversionError::Io {
+                    op: FsOp::CreateTemp,
+                    path: temp_path,
+                    source: io::Error::from_raw_os_error(errno.raw_os_error()),
+                });
+            }
+        };
 
         let temp_file = File::from(owned_fd);
-        let temp_meta = temp_file.metadata().map_err(|source| ConversionError::Io {
-            op: FsOp::CreateTemp,
-            path: temp_path.clone(),
-            source,
-        })?;
+        let temp_meta = match temp_file.metadata() {
+            Ok(m) => m,
+            Err(source) => {
+                let _ = fs_ops.unlink_in_dir(&stage_dir_fd, &temp_name);
+                let _ = cleanup_staging_dir_if_empty(&stage_dir_path, stage_dir_dev, stage_dir_ino);
+                return Err(ConversionError::Io {
+                    op: FsOp::CreateTemp,
+                    path: temp_path,
+                    source,
+                });
+            }
+        };
         let temp_dev = temp_meta.dev();
         let temp_ino = temp_meta.ino();
 
-        ctrl.record_temp_created(&TempCreatedJournal {
-            stage_dir_path: &stage_dir_path,
-            temp_path: &temp_path,
-            temp_dev,
-            temp_ino,
-        })?;
-
-        Ok(Self {
+        let mut pending = Self {
             stage_dir_fd,
             stage_dir_path,
             stage_dir_dev,
@@ -688,7 +703,26 @@ impl PendingOutput {
             temp_ino,
             committed: false,
             fs_ops,
-        })
+        };
+
+        if let Err(e) = ctrl.record_temp_created(&TempCreatedJournal {
+            stage_dir_path: &pending.stage_dir_path,
+            temp_path: &pending.temp_path,
+            temp_dev,
+            temp_ino,
+        }) {
+            if matches!(
+                e,
+                ConversionError::LimitExceeded {
+                    limit: crate::error::Limit::Timeout { .. }
+                }
+            ) {
+                pending.disarm_drop_cleanup();
+            }
+            return Err(e);
+        }
+
+        Ok(pending)
     }
 
     /// Returns a mutable reference to the open `O_RDWR` temporary [`File`].
@@ -1338,6 +1372,80 @@ mod tests {
                 },
             )
             .unwrap();
+    }
+
+    #[test]
+    fn pending_output_create_cancellation_cleans_up_stage_and_part() {
+        struct CancelDuringCreateControl {
+            cancel_on_stage_created: bool,
+            cancel_on_temp_created: bool,
+        }
+
+        impl crate::engine::ItemControl for CancelDuringCreateControl {
+            fn check_cancelled(&self) -> Result<(), ConversionError> {
+                Ok(())
+            }
+            fn on_stage(&mut self, _stage: crate::engine::Stage) {}
+            fn reserve(
+                &mut self,
+                _estimate: crate::engine::ResourceEstimate,
+            ) -> Result<crate::engine::Reservation, ConversionError> {
+                Ok(crate::engine::Reservation::empty())
+            }
+            fn record_stage_intent(
+                &mut self,
+                _stage: &StageIntentJournal<'_>,
+            ) -> Result<(), ConversionError> {
+                Ok(())
+            }
+            fn record_stage_created(
+                &mut self,
+                _stage: &StageCreatedJournal<'_>,
+            ) -> Result<(), ConversionError> {
+                if self.cancel_on_stage_created {
+                    return Err(ConversionError::Cancelled);
+                }
+                Ok(())
+            }
+            fn record_temp_created(
+                &mut self,
+                _temp: &TempCreatedJournal<'_>,
+            ) -> Result<(), ConversionError> {
+                if self.cancel_on_temp_created {
+                    return Err(ConversionError::Cancelled);
+                }
+                Ok(())
+            }
+            fn acquire_commit_permit<'a>(
+                &mut self,
+                req: &CommitRequest<'a>,
+            ) -> Result<CommitPermit<'a>, ConversionError> {
+                Ok(CommitPermit::issue(req))
+            }
+        }
+
+        let tmp = tempfile::tempdir().unwrap();
+        let fs_ops: Arc<dyn FsOps> = Arc::new(RealFsOps);
+
+        // 1. Cancel right after stage_dir creation (`record_stage_created`)
+        let mut ctrl1 = CancelDuringCreateControl {
+            cancel_on_stage_created: true,
+            cancel_on_temp_created: false,
+        };
+        let stage1 = format!(".rvstage-1-{}", random_hex16());
+        let res1 = PendingOutput::create(tmp.path(), &stage1, 0, &mut ctrl1, fs_ops.clone());
+        assert!(matches!(res1, Err(ConversionError::Cancelled)));
+        assert!(!tmp.path().join(&stage1).exists());
+
+        // 2. Cancel right after .part creation (`record_temp_created`)
+        let mut ctrl2 = CancelDuringCreateControl {
+            cancel_on_stage_created: false,
+            cancel_on_temp_created: true,
+        };
+        let stage2 = format!(".rvstage-2-{}", random_hex16());
+        let res2 = PendingOutput::create(tmp.path(), &stage2, 0, &mut ctrl2, fs_ops);
+        assert!(matches!(res2, Err(ConversionError::Cancelled)));
+        assert!(!tmp.path().join(&stage2).exists());
     }
 
     fn random_hex16_u64() -> u64 {
