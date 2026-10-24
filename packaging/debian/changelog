@@ -1,3 +1,28 @@
+radivine (0.2.0) noble; urgency=medium
+
+  * Introduce the Radivine v0.2.0 File & Media Conversion Suite for PNG,
+    JPEG, and WebP with magic-byte sniffing, EXIF orientation normalization,
+    ICC profile preservation, privacy-safe EXIF stripping, Lanczos3 resize,
+    and alpha background flattening (radivine-convert, radivine-convert-image,
+    radivine-webp).
+  * Add the on-demand background job worker (radivine-worker) with durable
+    SQLite WAL job history (jobs.sqlite3), C0a-C6 startup crash recovery,
+    two-rung atomic no-overwrite file commits (RENAME_NOREPLACE / linkat),
+    cooperative cancellation, linked retry jobs, and 60s idle auto-exit.
+  * Add context-aware "Convert" radial wheel submenu with instant zero-I/O
+    menu construction (< 1 ms for 10,000 items), Quick Convert to PNG/JPG/WebP,
+    and "Advanced…" launcher.
+  * Expand Radivine Control Center (radivine-control) with the live Jobs
+    page (virtualized 10,000-item drawer, filter pills, Cancel, Retry Failed,
+    Clear Finished, staging health indicator), Conversion Settings page
+    (convert.toml and config.toml [jobs]), and standalone Advanced Convert
+    window (radivine-control convert).
+  * Add native X11/Wayland system clipboard integration (arboard) and
+    automatic system-font fallback for Arabic and non-Latin scripts in
+    radivine-control and radivine-viewer.
+
+ -- marawan6569 <marawan6569@gmail.com>  Sun, 25 Oct 2026 02:30:00 +0300
+
 radivine (0.1.1) noble; urgency=medium
 
   * Introduce the native Radivine Control Center desktop application

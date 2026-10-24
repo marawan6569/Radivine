@@ -1,0 +1,58 @@
+# Radivine Conversion Configuration (`~/.config/radivine/convert.toml`)
+# Managed graphically by `radivine-control --page conversion` or edited manually.
+
+schema_version = 1
+
+# Default preset pre-selected in Advanced Convert ("web-optimized", "high-quality",
+# "small-file", "lossless-archive", or a custom user preset ID).
+default_preset = "web-optimized"
+
+# Default target format emphasized in Quick Convert ("webp", "jpeg", or "png").
+quick_convert_target = "webp"
+
+[defaults]
+quality = "balanced"
+resize = { mode = "original" }
+alpha_background = "#FFFFFF"
+
+[metadata]
+# "auto_orient" (apply EXIF orientation 1..8 and normalize tag to 1) or "preserve_raw"
+orientation = "auto_orient"
+# "preserve" or "strip"
+icc = "preserve"
+# Privacy-safe default: "strip" (removes GPS/camera serials), "keep_safe", or "preserve_all"
+exif = "strip"
+
+[output]
+# { kind = "same_directory" }, { kind = "subfolder", value = "Converted" },
+# or { kind = "directory", value = "/absolute/path" }
+location = { kind = "same_directory" }
+# { mode = "preserve_stem", jpeg_ext = "jpg" } or { mode = "append_suffix", suffix = "-converted", jpeg_ext = "jpg" }
+naming = { mode = "preserve_stem", jpeg_ext = "jpg" }
+# "suffix" ("photo (1).webp"), "skip", or "fail"
+collision = "suffix"
+max_collision_probes = 999
+preserve_timestamps = false
+# "skip" or "reencode"
+same_format = "skip"
+
+[backends]
+# External CLI adapters are disabled by default in v0.2.0 (in-process Rust/libwebp only).
+allow_external = false
+
+[limits]
+max_source_bytes = 268435456        # 256 MiB per source file
+max_dimension = 16384               # 16,384 px per axis
+max_pixels = 100000000              # 100 MP per image
+per_item_timeout_ms = 60000         # 60 s per item
+memory_budget_bytes = 536870912     # 512 MiB concurrent decoded-frame budget
+worker_memory_max_bytes = 786432000 # 750 MiB hard worker memory ceiling
+
+# Optional user-defined presets:
+# [[presets]]
+# id = "blog-1600w"
+# name = "Blog 1600px WebP"
+# description = "Resize to 1600px wide and encode as high-quality WebP"
+# target = "webp"
+# quality = "high"
+# resize = { mode = "width", px = 1600, allow_upscale = false }

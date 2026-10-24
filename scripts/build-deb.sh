@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# Build `target/debian/radivine_0.1.1_amd64.deb` and `target/debian/SHA256SUMS.txt` (`IMPLEMENTATION_PLAN.md` §10.2).
+# Build `target/debian/radivine_0.2.0_amd64.deb` and `target/debian/SHA256SUMS.txt` (`IMPLEMENTATION_PLAN.md` §3, `AC-C5.5`).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 PKG_NAME="radivine"
-PKG_VERSION="0.1.1"
+PKG_VERSION="0.2.0"
 PKG_ARCH="amd64"
 DEB_BASENAME="${PKG_NAME}_${PKG_VERSION}_${PKG_ARCH}"
 OUT_DIR="${REPO_ROOT}/target/debian"
 STAGE_DIR="${OUT_DIR}/${DEB_BASENAME}"
 DEB_PATH="${OUT_DIR}/${DEB_BASENAME}.deb"
 
-echo "==> Building release binaries (radivine, radivine-viewer, radivine-control)..."
-DISPLAY="" cargo build --release -p radivine -p radivine-viewer -p radivine-control
+echo "==> Building release binaries (radivine, radivine-viewer, radivine-control, radivine-worker)..."
+DISPLAY="" cargo build --release -p radivine -p radivine-viewer -p radivine-control -p radivine-worker
 
 rm -rf "$STAGE_DIR"
 mkdir -p \
@@ -32,14 +32,17 @@ echo "==> Installing and stripping binaries..."
 install -m 0755 "${REPO_ROOT}/target/release/radivine" "${STAGE_DIR}/usr/bin/radivine"
 install -m 0755 "${REPO_ROOT}/target/release/radivine-viewer" "${STAGE_DIR}/usr/bin/radivine-viewer"
 install -m 0755 "${REPO_ROOT}/target/release/radivine-control" "${STAGE_DIR}/usr/bin/radivine-control"
+install -m 0755 "${REPO_ROOT}/target/release/radivine-worker" "${STAGE_DIR}/usr/bin/radivine-worker"
 strip --strip-unneeded \
     "${STAGE_DIR}/usr/bin/radivine" \
     "${STAGE_DIR}/usr/bin/radivine-viewer" \
-    "${STAGE_DIR}/usr/bin/radivine-control"
+    "${STAGE_DIR}/usr/bin/radivine-control" \
+    "${STAGE_DIR}/usr/bin/radivine-worker"
 
-echo "==> Installing desktop entry, systemd user unit, and Nemo action..."
+echo "==> Installing desktop entry, systemd user units, and Nemo action..."
 install -m 0644 "${REPO_ROOT}/packaging/radivine.desktop" "${STAGE_DIR}/usr/share/applications/radivine.desktop"
 install -m 0644 "${REPO_ROOT}/packaging/radivine.service" "${STAGE_DIR}/usr/lib/systemd/user/radivine.service"
+install -m 0644 "${REPO_ROOT}/packaging/radivine-worker.service" "${STAGE_DIR}/usr/lib/systemd/user/radivine-worker.service"
 install -m 0644 "${REPO_ROOT}/packaging/radivine.nemo_action" "${STAGE_DIR}/usr/share/nemo/actions/radivine.nemo_action"
 
 if command -v desktop-file-validate >/dev/null 2>&1; then
@@ -68,15 +71,20 @@ gzip -9nc "${REPO_ROOT}/packaging/debian/changelog" > "${STAGE_DIR}/usr/share/do
 chmod 0644 "${STAGE_DIR}/usr/share/doc/radivine/changelog.gz"
 
 install -m 0644 "${REPO_ROOT}/packaging/config.example.toml" "${STAGE_DIR}/usr/share/doc/radivine/examples/config.example.toml"
+install -m 0644 "${REPO_ROOT}/packaging/convert.example.toml" "${STAGE_DIR}/usr/share/doc/radivine/examples/convert.example.toml"
 install -m 0644 "${REPO_ROOT}/packaging/actions.example.toml" "${STAGE_DIR}/usr/share/doc/radivine/examples/actions.example.toml"
 install -m 0644 "${REPO_ROOT}/packaging/radivine-daemon.desktop" "${STAGE_DIR}/usr/share/doc/radivine/examples/radivine-daemon.desktop"
 install -m 0644 "${REPO_ROOT}/packaging/radivine.service" "${STAGE_DIR}/usr/share/doc/radivine/examples/radivine.service"
+install -m 0644 "${REPO_ROOT}/packaging/radivine-worker.service" "${STAGE_DIR}/usr/share/doc/radivine/examples/radivine-worker.service"
 if [ -f "${REPO_ROOT}/README.md" ]; then
     install -m 0644 "${REPO_ROOT}/README.md" "${STAGE_DIR}/usr/share/doc/radivine/README.md"
 fi
+if [ -f "${REPO_ROOT}/THIRD_PARTY_NOTICES.md" ]; then
+    install -m 0644 "${REPO_ROOT}/THIRD_PARTY_NOTICES.md" "${STAGE_DIR}/usr/share/doc/radivine/THIRD_PARTY_NOTICES.md"
+fi
 
 cat <<'MAN1' | gzip -9nc > "${STAGE_DIR}/usr/share/man/man1/radivine.1.gz"
-.TH RADIVINE 1 "October 2026" "Radivine 0.1.1" "User Commands"
+.TH RADIVINE 1 "October 2026" "Radivine 0.2.0" "User Commands"
 .SH NAME
 radivine \- context-aware radial action wheel daemon and CLI client
 .SH SYNOPSIS
@@ -98,7 +106,8 @@ Summon the radial wheel in Invoke mode for the specified files or URIs.
 Query the running daemon status and telemetry.
 .TP
 \fBreload\fR
-Reload \fB~/.config/radivine/config.toml\fR and \fB~/.config/radivine/actions.toml\fR.
+Reload \fB~/.config/radivine/config.toml\fR, \fB~/.config/radivine/actions.toml\fR,
+and \fB~/.config/radivine/convert.toml\fR.
 .TP
 \fBquit\fR
 Gracefully stop the running daemon.
@@ -109,7 +118,7 @@ MAN1
 chmod 0644 "${STAGE_DIR}/usr/share/man/man1/radivine.1.gz"
 
 cat <<'MAN2' | gzip -9nc > "${STAGE_DIR}/usr/share/man/man1/radivine-viewer.1.gz"
-.TH RADIVINE-VIEWER 1 "October 2026" "Radivine 0.1.1" "User Commands"
+.TH RADIVINE-VIEWER 1 "October 2026" "Radivine 0.2.0" "User Commands"
 .SH NAME
 radivine-viewer \- read-only file preview window for Radivine
 .SH SYNOPSIS
@@ -122,18 +131,37 @@ MAN2
 chmod 0644 "${STAGE_DIR}/usr/share/man/man1/radivine-viewer.1.gz"
 
 cat <<'MAN3' | gzip -9nc > "${STAGE_DIR}/usr/share/man/man1/radivine-control.1.gz"
-.TH RADIVINE-CONTROL 1 "October 2026" "Radivine 0.1.1" "User Commands"
+.TH RADIVINE-CONTROL 1 "October 2026" "Radivine 0.2.0" "User Commands"
 .SH NAME
-radivine-control \- graphical Control Center for Radivine
+radivine-control \- graphical Control Center and Advanced Convert window for Radivine
 .SH SYNOPSIS
 .B radivine-control
-[\fB\-\-page\fR \fIdashboard|general|wheel|actions|diagnostics|about\fR] [\fB\-\-config\fR \fIPATH\fR] [\fB\-\-socket\fR \fIPATH\fR]
+[\fB\-\-page\fR \fIdashboard|general|wheel|actions|conversion|jobs|diagnostics|about\fR] [\fB\-\-config\fR \fIPATH\fR] [\fB\-\-socket\fR \fIPATH\fR]
+.br
+.B radivine-control convert
+[\fB\-\-preset\fR \fIID\fR] [\fB\-\-target\fR \fIpng|jpeg|webp\fR] \fB\-\-\fR \fIPATH\fR...
 .SH DESCRIPTION
 Opens the native Radivine Control Center desktop application to manage the
 background Radivine daemon, login autostart, radial wheel geometry, shell-free
-custom actions, and diagnostics without requiring a terminal session.
+custom actions, conversion settings, background jobs, and diagnostics, or
+launches the standalone Advanced Convert window.
 MAN3
 chmod 0644 "${STAGE_DIR}/usr/share/man/man1/radivine-control.1.gz"
+
+cat <<'MAN4' | gzip -9nc > "${STAGE_DIR}/usr/share/man/man1/radivine-worker.1.gz"
+.TH RADIVINE-WORKER 1 "October 2026" "Radivine 0.2.0" "User Commands"
+.SH NAME
+radivine-worker \- on-demand background conversion and job worker for Radivine
+.SH SYNOPSIS
+.B radivine-worker
+[\fB\-\-socket\fR \fIPATH\fR] [\fB\-\-db\fR \fIPATH\fR] [\fB\-\-lock\fR \fIPATH\fR] \fBserve\fR [\fB\-\-idle\-timeout\-ms\fR \fIMS\fR]
+.SH DESCRIPTION
+Executes durable background conversion jobs submitted by \fBradivine\fR or
+\fBradivine-control\fR, persisting job history in \fB~/.local/state/radivine/jobs.sqlite3\fR
+with startup crash recovery, atomic no-overwrite file commits, and automatic
+idle exit after 60 seconds of inactivity.
+MAN4
+chmod 0644 "${STAGE_DIR}/usr/share/man/man1/radivine-worker.1.gz"
 
 INSTALLED_SIZE="$(du -sk "${STAGE_DIR}/usr" | awk '{print $1}')"
 sed "s/__INSTALLED_SIZE__/${INSTALLED_SIZE}/g" \

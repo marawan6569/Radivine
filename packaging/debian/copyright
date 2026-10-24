@@ -14,6 +14,11 @@ License: OFL-1.1
 Files: assets/wheel-icons/*.svg
 Copyright: 2013-2023 Cole Bemis, 2020-2026 Lucide Contributors
 License: ISC
+Comment:
+ The compiled radivine-worker binary statically links Google libwebp 1.6.0
+ (Copyright 2010 Google Inc., BSD-3-Clause) via libwebp-sys and SQLite 3.x
+ (Public Domain) via rusqlite/libsqlite3-sys. Complete third-party crate
+ attributions are installed in /usr/share/doc/radivine/THIRD_PARTY_NOTICES.md.
 
 License: MIT
  Permission is hereby granted, free of charge, to any person obtaining a copy

@@ -63,3 +63,11 @@ tail_lines = 50
 enabled = true
 notify_on_action_error = true
 notify_on_config_warning = true
+
+[jobs]
+# Maximum parallel conversion items (0 = auto: clamp(num_cpus / 2, 1, 4); explicit 1..=8)
+max_parallel = 0
+# Maximum terminal jobs retained in ~/.local/state/radivine/jobs.sqlite3 (10..=1000)
+retention_max_jobs = 100
+# Maximum age in days for terminal jobs before automatic pruning (1..=365)
+retention_days = 30

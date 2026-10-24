@@ -2,7 +2,7 @@
 
 Radivine is dual-licensed under **`MIT OR Apache-2.0`** ([`LICENSE-MIT`](file:///home/marwanmohamed/Documents/work/rust/radivine/LICENSE-MIT), [`LICENSE-APACHE`](file:///home/marwanmohamed/Documents/work/rust/radivine/LICENSE-APACHE)).
 
-This document lists the third-party fonts, vector icons, and Rust crate dependencies bundled or linked into Radivine and `radivine-viewer`.
+This document lists the third-party fonts, vector icons, C libraries, and Rust crate dependencies bundled or linked into `radivine`, `radivine-control`, `radivine-viewer`, and `radivine-worker`.
 
 ---
 
@@ -25,12 +25,14 @@ All direct workspace dependencies have been audited via `cargo metadata` for com
 | Crate | Version | SPDX License Expression | Upstream Repository |
 | :--- | :--- | :--- | :--- |
 | `anyhow` | `1.0.104` | `MIT OR Apache-2.0` | <https://github.com/dtolnay/anyhow> |
+| `arboard` | `3.7.0` | `MIT OR Apache-2.0` | <https://github.com/1Password/arboard> |
 | `calloop` | `0.14.5` | `MIT` | <https://github.com/Smithay/calloop> |
 | `clap` | `4.6.7` | `MIT OR Apache-2.0` | <https://github.com/clap-rs/clap> |
 | `cosmic-text` | `0.12.1` | `MIT OR Apache-2.0` | <https://github.com/pop-os/cosmic-text> |
 | `criterion` *(dev)* | `0.5.1` | `Apache-2.0 OR MIT` | <https://github.com/bheisler/criterion.rs> |
 | `eframe` | `0.37.0` | `MIT OR Apache-2.0` | <https://github.com/emilk/egui/tree/main/crates/eframe> |
 | `egui` | `0.37.0` | `MIT OR Apache-2.0` | <https://github.com/emilk/egui> |
+| `egui_system_font_provider` | `0.37.0` | `MIT OR Apache-2.0` | <https://github.com/emilk/egui> |
 | `encoding_rs` | `0.8.42` | `(Apache-2.0 OR MIT) AND BSD-3-Clause` | <https://github.com/hsivonen/encoding_rs> |
 | `fastrand` | `2.5.0` | `Apache-2.0 OR MIT` | <https://github.com/smol-rs/fastrand> |
 | `image` | `0.25.10` | `MIT OR Apache-2.0` | <https://github.com/image-rs/image> |
@@ -41,7 +43,7 @@ All direct workspace dependencies have been audited via `cargo metadata` for com
 | `percent-encoding` | `2.3.2` | `MIT OR Apache-2.0` | <https://github.com/servo/rust-url/> |
 | `proptest` *(dev)* | `1.12.0` | `MIT OR Apache-2.0` | <https://github.com/proptest-rs/proptest> |
 | `resvg` | `0.44.0` | `MPL-2.0` | <https://github.com/RazrFalcon/resvg> |
-| `rusqlite` | `0.32.1` (bundles `SQLite 3.x` via `libsqlite3-sys`) | `MIT` (bindings) / `Public Domain` (`SQLite`) | <https://github.com/rusqlite/rusqlite> / <https://www.sqlite.org> |
+| `rusqlite` | `0.34.0` (bundles `SQLite 3.x` via `libsqlite3-sys 0.32.0`) | `MIT` (bindings) / `Public Domain` (`SQLite`) | <https://github.com/rusqlite/rusqlite> / <https://www.sqlite.org> |
 | `rustix` | `1.0.x` | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | <https://github.com/bytecodealliance/rustix> |
 | `serde` | `1.0.229` | `MIT OR Apache-2.0` | <https://github.com/serde-rs/serde> |
 | `serde_json` | `1.0.154` | `MIT OR Apache-2.0` | <https://github.com/serde-rs/json> |
