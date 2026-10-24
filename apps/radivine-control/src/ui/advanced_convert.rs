@@ -121,14 +121,15 @@ where
 
 fn parse_arg_to_wire_path(arg: &OsStr) -> Result<WirePath, String> {
     let raw = arg.as_bytes();
+    if raw.is_empty() {
+        return Err("Path argument cannot be empty".to_string());
+    }
     if let Ok(s) = std::str::from_utf8(raw) {
-        let trimmed = s.trim();
-        if trimmed.starts_with("b64:") {
-            return WirePath::parse_encoded(trimmed).map_err(|e| e.to_string());
+        if let Some(encoded) = s.strip_prefix("wire:") {
+            return WirePath::parse_encoded(encoded).map_err(|e| e.to_string());
         }
-        if let Some(rest) = trimmed.strip_prefix("file://") {
-            let decoded = percent_decode_bytes(rest.as_bytes());
-            return WirePath::from_raw_bytes(&decoded).map_err(|e| e.to_string());
+        if s.starts_with("file://") {
+            return parse_file_uri_to_wire_path(s);
         }
     }
     let path = Path::new(arg);
@@ -140,6 +141,26 @@ fn parse_arg_to_wire_path(arg: &OsStr) -> Result<WirePath, String> {
             .join(path);
         WirePath::from_path(&abs).map_err(|e| e.to_string())
     }
+}
+
+fn parse_file_uri_to_wire_path(uri: &str) -> Result<WirePath, String> {
+    let rest = uri
+        .strip_prefix("file://")
+        .ok_or_else(|| "Invalid file:// URI".to_string())?;
+    let path_part = if rest.starts_with('/') {
+        rest
+    } else if rest.starts_with("localhost/") {
+        &rest["localhost".len()..]
+    } else {
+        return Err(format!("Unsupported non-local file URI: {uri}"));
+    };
+    let decoded = percent_decode_bytes(path_part.as_bytes());
+    if decoded.first() != Some(&b'/') {
+        return Err(format!(
+            "file:// URI must resolve to an absolute path: {uri}"
+        ));
+    }
+    WirePath::from_raw_bytes(&decoded).map_err(|e| e.to_string())
 }
 
 fn percent_decode_bytes(input: &[u8]) -> Vec<u8> {
@@ -169,7 +190,7 @@ fn hex_val(b: u8) -> Option<u8> {
     }
 }
 
-/// Reads newline-separated [`WirePath`] lines from `reader` with strict security bounds:
+/// Reads newline-separated path/URI/`wire:<WirePath>` lines from `reader` with strict security bounds:
 /// `<= 10,000` lines, `<= 16 KiB` per line, `<= 16 MiB` total (`SECURITY_AND_FILE_SAFETY.md` §2.5).
 pub fn read_bounded_stdin_paths<R: BufRead>(mut reader: R) -> Result<Vec<WirePath>, String> {
     let mut paths = Vec::new();
@@ -210,18 +231,7 @@ pub fn read_bounded_stdin_paths<R: BufRead>(mut reader: R) -> Result<Vec<WirePat
             ));
         }
 
-        let wp = if let Ok(s) = std::str::from_utf8(&buf) {
-            if s.starts_with("b64:") {
-                WirePath::parse_encoded(s).map_err(|e| e.to_string())?
-            } else if let Some(rest) = s.strip_prefix("file://") {
-                let decoded = percent_decode_bytes(rest.as_bytes());
-                WirePath::from_raw_bytes(&decoded).map_err(|e| e.to_string())?
-            } else {
-                WirePath::from_raw_bytes(&buf).map_err(|e| e.to_string())?
-            }
-        } else {
-            WirePath::from_raw_bytes(&buf).map_err(|e| e.to_string())?
-        };
+        let wp = parse_arg_to_wire_path(OsStr::from_bytes(&buf))?;
         paths.push(wp);
     }
 

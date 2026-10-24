@@ -20,8 +20,8 @@ pub use builtins::{
     is_known_non_text_mime, resolve_viewer_binary,
 };
 pub use convert::{
-    AdvancedConvertAction, ConvertAction, ConvertMenuContext, register_convert_actions,
-    resolve_control_binary,
+    AdvancedConvertAction, ConvertAction, ConvertMenuContext, encode_advanced_convert_stdin,
+    register_convert_actions, resolve_control_binary,
 };
 pub use custom::{
     ActionsConfig, ActionsLoadError, ArgPlaceholder, ArgToken, CountRange, CustomAction,

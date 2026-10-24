@@ -1369,3 +1369,225 @@ fn ac_c4_7_screenshots_export_all_pages_and_advanced_convert_themes() {
 
     let _ = fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn c4_bugfix_advanced_convert_spaces_unicode_arabic_literal_percent_and_uris() {
+    let dir = make_temp_test_dir("c4-bugfix-paths");
+    let paths = isolated_service_paths(&dir);
+
+    // 1. Create parent directories containing spaces and Arabic/Unicode characters
+    let space_parent = dir.join("My Game Captures 2026");
+    let arabic_parent = space_parent.join("الصور المفضلة");
+    fs::create_dir_all(&arabic_parent).expect("create directories with spaces and Arabic");
+
+    // 2. Create test images covering:
+    //    - Filename with spaces ("DAYS GONE.png", "Red Dead Redemption 2.png")
+    //    - Parent directory with spaces ("My Game Captures 2026")
+    //    - Unicode & Arabic filename ("لقطة شاشة ١ — تجربة.png")
+    //    - Literal "%20", "%", "#", and apostrophes ("literal%20in%name 100% #1 'final'.png")
+    let file_days_gone = space_parent.join("DAYS GONE.png");
+    let file_rdr2 = space_parent.join("Red Dead Redemption 2.png");
+    let file_arabic = arabic_parent.join("لقطة شاشة ١ — تجربة.png");
+    let file_literal_specials = space_parent.join("literal%20in%name 100% #1 'final'.png");
+
+    write_valid_rgba_png(&file_days_gone, 64, 48, 1);
+    write_valid_rgba_png(&file_rdr2, 80, 60, 2);
+    write_valid_rgba_png(&file_arabic, 96, 72, 3);
+    write_valid_rgba_png(&file_literal_specials, 112, 84, 4);
+
+    let source_files = [
+        &file_days_gone,
+        &file_rdr2,
+        &file_arabic,
+        &file_literal_specials,
+    ];
+
+    // 3. Test complete file-manager -> wheel -> AdvancedConvertAction -> --stdin handoff:
+    //    Nemo produces `file://` URIs -> `BasicContext::from_uris` decodes them to `PathBuf` ->
+    //    `encode_advanced_convert_stdin` writes `wire:<WirePath>` lines ->
+    //    `read_bounded_stdin_paths` parses them back into `WirePath` without double-encoding.
+    let file_uris: Vec<String> = source_files
+        .iter()
+        .map(|p| radivine_core::local_path_to_file_uri(p))
+        .collect();
+    // Verify Nemo-style URI encoding has `%20` for spaces and `%2520` for literal `%20`
+    assert!(
+        file_uris[0].ends_with("/My%20Game%20Captures%202026/DAYS%20GONE.png"),
+        "expected URI with %20, got {}",
+        file_uris[0]
+    );
+    assert!(
+        file_uris[3].contains("literal%2520in%25name%20100%25%20%231%20'final'.png")
+            || file_uris[3].contains("literal%2520in%25name%20100%25%20%231%20%27final%27.png"),
+        "expected literal %20 to be encoded as %2520 in file:// URI, got {}",
+        file_uris[3]
+    );
+
+    let basic_ctx = radivine_core::BasicContext::from_uris(
+        &file_uris,
+        radivine_core::InvocationMode::Invoke,
+        radivine_core::SourceInfo::default(),
+    );
+    assert_eq!(basic_ctx.items.len(), 4);
+    for (item, expected_path) in basic_ctx.items.iter().zip(source_files.iter()) {
+        assert_eq!(
+            item.local_path.as_deref(),
+            Some(expected_path.as_path()),
+            "BasicContext::from_uris must decode file:// URI to exact local PathBuf"
+        );
+    }
+
+    let (stdin_payload, encoded_count) =
+        radivine_actions::encode_advanced_convert_stdin(&basic_ctx)
+            .expect("encode_advanced_convert_stdin");
+    assert_eq!(encoded_count, 4);
+    assert!(
+        stdin_payload.lines().all(|line| line.starts_with("wire:/")),
+        "every line from encode_advanced_convert_stdin must carry explicit 'wire:' prefix"
+    );
+
+    let handoff_wire_paths = read_bounded_stdin_paths(Cursor::new(stdin_payload.as_bytes()))
+        .expect("read_bounded_stdin_paths from wheel handoff");
+    assert_eq!(handoff_wire_paths.len(), 4);
+    for (wp, expected_path) in handoff_wire_paths.iter().zip(source_files.iter()) {
+        let decoded = wp.to_path_buf().expect("to_path_buf");
+        assert_eq!(
+            &decoded, *expected_path,
+            "wheel -> --stdin handoff must preserve exact filesystem path without %20 corruption"
+        );
+        assert!(
+            decoded.is_file(),
+            "decoded path must exist on disk: {}",
+            decoded.display()
+        );
+    }
+
+    // 4. Test direct CLI arguments and raw --stdin inputs mixing:
+    //    - Ordinary filesystem paths (with spaces, Arabic, literal `%20`, `%`, `#`, `'`)
+    //    - `file:///...` URIs
+    //    - `file://localhost/...` URIs
+    let localhost_uri = file_uris[1].replacen("file:///", "file://localhost/", 1);
+    let cli_args = vec![
+        file_days_gone.as_os_str().to_os_string(), // ordinary filesystem path with spaces
+        OsString::from(&localhost_uri),            // file://localhost/... URI
+        OsString::from(&file_uris[2]),             // file:///... URI with Arabic
+        file_literal_specials.as_os_str().to_os_string(), // ordinary filesystem path with literal `%20`, `%`, `#`, `'`
+    ];
+    let cli_res = radivine_control::ui::advanced_convert::parse_convert_cli_args(&cli_args)
+        .expect("parse mixed CLI args");
+    assert!(!cli_res.read_stdin);
+    assert_eq!(cli_res.paths.len(), 4);
+    for (wp, expected_path) in cli_res.paths.iter().zip(source_files.iter()) {
+        assert_eq!(&wp.to_path_buf().unwrap(), *expected_path);
+    }
+
+    // Also test raw --stdin mixing ordinary filesystem paths and `file://` URIs
+    let mixed_raw_stdin = format!(
+        "{}\n{}\n{}\n{}\n",
+        file_days_gone.display(),
+        localhost_uri,
+        file_uris[2],
+        file_literal_specials.display()
+    );
+    let parsed_mixed_stdin = read_bounded_stdin_paths(Cursor::new(mixed_raw_stdin.as_bytes()))
+        .expect("parse mixed raw stdin");
+    assert_eq!(parsed_mixed_stdin.len(), 4);
+    for (wp, expected_path) in parsed_mixed_stdin.iter().zip(source_files.iter()) {
+        assert_eq!(&wp.to_path_buf().unwrap(), *expected_path);
+    }
+
+    // 5. Verify Advanced Convert selection summary (`inspect_selection_headers` & `AdvancedConvertApp`)
+    let summary = inspect_selection_headers(&handoff_wire_paths, &ResourceLimitsConfig::default());
+    assert_eq!(summary.total_selected, 4);
+    assert_eq!(
+        summary.supported_count, 4,
+        "all 4 images (including spaces, Arabic, and literal %20) must be recognized as supported"
+    );
+    assert!(
+        summary.unsupported_items.is_empty(),
+        "expected 0 unsupported items, got: {:?}",
+        summary.unsupported_items
+    );
+
+    let ctx = eframe::egui::Context::default();
+    let mut adv_app = AdvancedConvertApp::new(handoff_wire_paths.clone(), paths.clone(), Some(ctx));
+    let insp_deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < insp_deadline {
+        adv_app.drain_background_messages();
+        if adv_app.inspection.is_some() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    let app_insp = adv_app
+        .inspection
+        .as_ref()
+        .expect("AdvancedConvertApp background inspection must complete");
+    assert_eq!(app_insp.supported_count, 4);
+    assert!(app_insp.unsupported_items.is_empty());
+    assert!(adv_app.can_submit());
+
+    // 6. Execute actual conversion job to WebP via radivine-worker and verify every output file
+    let worker = TestWorkerGuard::spawn(&dir, &paths, None);
+    adv_app.select_target_format(FormatId::WebP);
+    adv_app.dest_mode = UiDestMode::SameFolder;
+    adv_app.append_suffix = false;
+    adv_app.recompute_validation();
+    assert!(adv_app.can_submit());
+
+    adv_app.trigger_submit();
+    let sub_deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < sub_deadline {
+        adv_app.drain_background_messages();
+        if adv_app.submitted_job_id.is_some() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(15));
+    }
+    let job_id = adv_app
+        .submitted_job_id
+        .expect("Advanced Convert job must submit cleanly");
+    assert!(adv_app.submit_error.is_none());
+
+    let done_deadline = Instant::now() + Duration::from_secs(5);
+    let mut final_sum = None;
+    let mut final_items = Vec::new();
+    while Instant::now() < done_deadline {
+        let mut c = JobsClient::connect(&worker.socket_path).expect("connect worker");
+        let (sum, items, _) = c.get_job(job_id, Some(0), Some(10)).expect("get_job");
+        if sum.state.is_terminal() {
+            final_sum = Some(sum);
+            final_items = items;
+            break;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    let sum = final_sum.expect("conversion job must reach terminal state");
+    assert_eq!(
+        sum.state,
+        JobState::Completed,
+        "all 4 items must convert without os error 2; items: {final_items:?}"
+    );
+    assert_eq!(sum.counts.succeeded_items, 4);
+    assert_eq!(sum.counts.failed_items, 0);
+
+    // Verify all 4 converted .webp files exist at their exact uncorrupted paths
+    let expected_outputs = [
+        space_parent.join("DAYS GONE.webp"),
+        space_parent.join("Red Dead Redemption 2.webp"),
+        arabic_parent.join("لقطة شاشة ١ — تجربة.webp"),
+        space_parent.join("literal%20in%name 100% #1 'final'.webp"),
+    ];
+    for out_path in &expected_outputs {
+        assert!(
+            out_path.is_file(),
+            "expected converted WebP output file at {}",
+            out_path.display()
+        );
+        let hdr = radivine_convert::inspect_file_header(out_path, &ResourceLimitsConfig::default())
+            .expect("inspect converted WebP header");
+        assert_eq!(hdr.format, FormatId::WebP);
+    }
+
+    let _ = fs::remove_dir_all(&dir);
+}

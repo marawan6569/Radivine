@@ -684,31 +684,14 @@ impl Action for AdvancedConvertAction {
     }
 
     /// Launches `radivine-control convert --stdin` in an independent transient user cgroup scope
-    /// (when `systemd --user` is active) or detached process group, piping [`WirePath`] lines
+    /// (when `systemd --user` is active) or detached process group, piping `wire:<WirePath>` lines
     /// losslessly over stdin without blocking the wheel daemon (`ADR-C14`, `AC-C4.5`).
     fn run(&self, ctx: &Context, job: &JobHandle) -> Result<Outcome, ActionError> {
         if job.is_cancelled() {
             return Err(ActionError::Cancelled);
         }
 
-        let mut stdin_payload = String::new();
-        let mut count = 0usize;
-        for item in &ctx.basic.items {
-            let Some(ref path) = item.local_path else {
-                continue;
-            };
-            let wp = WirePath::from_absolute_path(path)
-                .map_err(|e| ActionError::Other(format!("Invalid source path: {e}")))?;
-            stdin_payload.push_str(wp.as_str());
-            stdin_payload.push('\n');
-            count += 1;
-        }
-
-        if count == 0 {
-            return Err(ActionError::NotApplicable(
-                "No local files to convert".to_string(),
-            ));
-        }
+        let (stdin_payload, count) = encode_advanced_convert_stdin(&ctx.basic)?;
 
         let bin = resolve_control_binary_with_override(self.menu_ctx.control_bin().as_deref())
             .map_err(|msg| {
@@ -741,6 +724,36 @@ impl Action for AdvancedConvertAction {
 
         Ok(Outcome::Done)
     }
+}
+
+/// Encodes the local filesystem paths in `basic` into newline-delimited `wire:<WirePath>` lines
+/// for `radivine-control convert --stdin`.
+///
+/// The explicit `"wire:"` prefix allows `radivine-control convert --stdin` to distinguish
+/// already-percent-encoded [`WirePath`] lines from raw filesystem paths or `file://` URIs,
+/// preventing double percent-encoding of spaces (`%20`), `#`, `'`, `%`, Unicode, and non-UTF-8 bytes.
+pub fn encode_advanced_convert_stdin(basic: &BasicContext) -> Result<(String, usize), ActionError> {
+    let mut stdin_payload = String::new();
+    let mut count = 0usize;
+    for item in &basic.items {
+        let Some(ref path) = item.local_path else {
+            continue;
+        };
+        let wp = WirePath::from_absolute_path(path)
+            .map_err(|e| ActionError::Other(format!("Invalid source path: {e}")))?;
+        stdin_payload.push_str("wire:");
+        stdin_payload.push_str(wp.as_str());
+        stdin_payload.push('\n');
+        count += 1;
+    }
+
+    if count == 0 {
+        return Err(ActionError::NotApplicable(
+            "No local files to convert".to_string(),
+        ));
+    }
+
+    Ok((stdin_payload, count))
 }
 
 /// Resolves the `radivine-control` executable path (`RADIVINE_CONTROL_BIN`, sibling of
