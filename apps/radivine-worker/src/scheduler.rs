@@ -290,23 +290,6 @@ impl JobScheduler {
         Ok(summary)
     }
 
-    /// Clears cached cancellation/prepared state for a job when it is retried and wakes worker threads.
-    pub fn on_job_retried(&self, job_id: JobId, summary: &JobSummary) {
-        {
-            let mut st = self.inner.0.lock().unwrap();
-            st.job_cancel_flags.remove(&job_id);
-            st.prepared_jobs.remove(&job_id);
-            st.consecutive_dest_errors.remove(&job_id);
-        }
-        self.events.publish(&JobUpdate::JobStateChanged {
-            v: PROTOCOL_VERSION,
-            job_id,
-            state: summary.state,
-            summary: summary.counts,
-        });
-        self.notify_work_available();
-    }
-
     /// Initiates graceful shutdown (`SIGTERM` / idle exit), draining in-flight items for up to `drain_timeout`.
     pub fn shutdown_gracefully(&self, drain_timeout: Duration) {
         {
@@ -670,10 +653,19 @@ impl JobScheduler {
                     self.record_timeout_failure_if_needed(slot);
                     return;
                 }
-                if let Ok((item_rep, job_sum, finished)) =
+                let is_shutting_down = self.inner.0.lock().unwrap().shutting_down;
+                let res = if is_shutting_down {
+                    self.store.complete_item_interrupted(
+                        job_id,
+                        claimed.item_id,
+                        duration_ms,
+                        "Worker stopped via SIGTERM",
+                    )
+                } else {
                     self.store
                         .complete_item_cancelled(job_id, claimed.item_id, duration_ms)
-                {
+                };
+                if let Ok((item_rep, job_sum, finished)) = res {
                     self.publish_item_and_job_events(item_rep, job_sum, finished);
                 }
             }

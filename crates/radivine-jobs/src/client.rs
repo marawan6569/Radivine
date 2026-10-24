@@ -514,23 +514,43 @@ impl JobsClient {
         }
     }
 
-    /// Retries items of `job_id` according to `mode`.
+    /// Retries eligible items of terminal job `job_id` according to `mode`, creating a new
+    /// linked job (`retry_of = Some(job_id)`) and returning `(new_job_id, state, queued_items)`.
     pub fn retry(
         &mut self,
         job_id: JobId,
         mode: RetryMode,
         options_override: Option<serde_json::Value>,
-    ) -> Result<(JobState, u32), ClientError> {
+    ) -> Result<(JobId, JobState, u32), ClientError> {
+        let (new_job_id, state, reset_items, _dedup) =
+            self.retry_with_request_id(RequestId::generate(), job_id, mode, options_override)?;
+        Ok((new_job_id, state, reset_items))
+    }
+
+    /// Retries eligible items of terminal job `job_id` with an explicit idempotency `request_id`
+    /// (`AC-C2.2`, `AC-C2.10`), returning `(new_job_id, state, queued_items, deduplicated)`.
+    pub fn retry_with_request_id(
+        &mut self,
+        request_id: RequestId,
+        job_id: JobId,
+        mode: RetryMode,
+        options_override: Option<serde_json::Value>,
+    ) -> Result<(JobId, JobState, u32, bool), ClientError> {
         let resp = self.request(&WorkerRequest::Retry {
             v: PROTOCOL_VERSION,
+            request_id: Some(request_id),
             job_id,
             mode,
             options_override,
         })?;
         match resp {
             WorkerResponse::Retried {
-                state, reset_items, ..
-            } => Ok((state, reset_items)),
+                job_id: new_job_id,
+                state,
+                reset_items,
+                deduplicated,
+                ..
+            } => Ok((new_job_id, state, reset_items, deduplicated)),
             other => Err(ClientError::UnexpectedResponse(format!("{other:?}"))),
         }
     }

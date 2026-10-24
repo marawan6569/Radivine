@@ -177,6 +177,7 @@ impl JobStore {
                 id               INTEGER PRIMARY KEY AUTOINCREMENT,
                 request_id       TEXT NOT NULL UNIQUE,
                 origin           TEXT NOT NULL,
+                retry_of         INTEGER REFERENCES jobs(id) ON DELETE SET NULL,
                 kind             TEXT NOT NULL,
                 state            TEXT NOT NULL,
                 created_at_ms    INTEGER NOT NULL,
@@ -228,6 +229,23 @@ impl JobStore {
             CREATE INDEX IF NOT EXISTS idx_jobs_state_created ON jobs(state, created_at_ms);
             CREATE INDEX IF NOT EXISTS idx_job_items_job_state ON job_items(job_id, state);
             CREATE INDEX IF NOT EXISTS idx_job_items_state ON job_items(state);",
+        )?;
+
+        // Ensure forward compatibility with any v1 table created before `retry_of` column was added
+        let has_retry_of: bool = {
+            let mut stmt = conn.prepare("PRAGMA table_info(jobs)")?;
+            let cols: Vec<String> = stmt
+                .query_map([], |r| r.get::<_, String>(1))?
+                .collect::<Result<Vec<_>, _>>()?;
+            cols.iter().any(|c| c == "retry_of")
+        };
+        if !has_retry_of {
+            conn.execute_batch(
+                "ALTER TABLE jobs ADD COLUMN retry_of INTEGER REFERENCES jobs(id) ON DELETE SET NULL;",
+            )?;
+        }
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_jobs_retry_of ON jobs(retry_of) WHERE retry_of IS NOT NULL;",
         )?;
 
         Ok(())
@@ -434,7 +452,7 @@ impl JobStore {
     pub fn list_active_jobs(&self) -> Result<Vec<JobSummary>, StoreError> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, request_id, origin, kind, state, created_at_ms, started_at_ms,
+            "SELECT id, request_id, origin, retry_of, kind, state, created_at_ms, started_at_ms,
                     finished_at_ms, updated_at_ms, total_items, pending_items,
                     succeeded_items, skipped_items, failed_items, cancelled_items,
                     options, resolved, summary_text
@@ -460,7 +478,7 @@ impl JobStore {
     ) -> Result<Vec<JobSummary>, StoreError> {
         let conn = self.conn.lock().unwrap();
         let sql = if include_terminal {
-            "SELECT id, request_id, origin, kind, state, created_at_ms, started_at_ms,
+            "SELECT id, request_id, origin, retry_of, kind, state, created_at_ms, started_at_ms,
                     finished_at_ms, updated_at_ms, total_items, pending_items,
                     succeeded_items, skipped_items, failed_items, cancelled_items,
                     options, resolved, summary_text
@@ -468,7 +486,7 @@ impl JobStore {
              ORDER BY id DESC
              LIMIT ?1"
         } else {
-            "SELECT id, request_id, origin, kind, state, created_at_ms, started_at_ms,
+            "SELECT id, request_id, origin, retry_of, kind, state, created_at_ms, started_at_ms,
                     finished_at_ms, updated_at_ms, total_items, pending_items,
                     succeeded_items, skipped_items, failed_items, cancelled_items,
                     options, resolved, summary_text
@@ -501,7 +519,7 @@ impl JobStore {
     ) -> Result<Option<JobSummary>, StoreError> {
         let opt = conn
             .query_row(
-                "SELECT id, request_id, origin, kind, state, created_at_ms, started_at_ms,
+                "SELECT id, request_id, origin, retry_of, kind, state, created_at_ms, started_at_ms,
                         finished_at_ms, updated_at_ms, total_items, pending_items,
                         succeeded_items, skipped_items, failed_items, cancelled_items,
                         options, resolved, summary_text
@@ -1229,20 +1247,47 @@ impl JobStore {
         Ok(self.get_job_summary_locked(&conn, job_id)?.unwrap())
     }
 
-    /// Retries a terminal job according to `mode` and optional `options_override` (`AC-C2.10`).
+    /// Creates a new linked job (`retry_of = Some(job_id)`, `origin = Origin::Retry`) containing
+    /// only the eligible items of terminal job `job_id` according to `mode`, reusing the original
+    /// `jobs.resolved` snapshot unless `options_override` is supplied (`ADR-034`, `JOB_SYSTEM_DESIGN.md` §3.4, `AC-C2.10`).
     ///
-    /// Preserves the original `job_id`, leaves `Succeeded` items untouched (unless `RetryMode::All`),
-    /// and resets matching items to `pending`.
+    /// Leaves the original terminal job and its item history 100% immutable.
+    /// If `request_id` was already submitted, returns the existing retry job with `deduplicated = true` (`AC-C2.2`).
     pub fn retry_job(
         &self,
+        request_id: &RequestId,
         job_id: JobId,
         mode: RetryMode,
         options_override: Option<&serde_json::Value>,
-    ) -> Result<(JobSummary, u32), StoreError> {
+    ) -> Result<(JobSummary, u32, bool), StoreError> {
+        if let Err(msg) = request_id.validate() {
+            return Err(StoreError::Protocol {
+                code: WorkerErrorCode::InvalidRequestId,
+                message: msg,
+            });
+        }
+
         let conn = self.conn.lock().unwrap();
         self.with_sync_full(&conn, |c| {
             c.execute_batch("BEGIN IMMEDIATE;")?;
-            let res = (|| -> Result<(JobSummary, u32), StoreError> {
+            let res = (|| -> Result<(JobSummary, u32, bool), StoreError> {
+                // 1. Idempotency check (`AC-C2.2`)
+                if let Some(existing_retry_id) = c
+                    .query_row(
+                        "SELECT id FROM jobs WHERE request_id = ?1",
+                        params![request_id.as_str()],
+                        |r| r.get::<_, i64>(0),
+                    )
+                    .optional()?
+                {
+                    let existing_retry = self
+                        .get_job_summary_locked(c, JobId(existing_retry_id as u64))?
+                        .unwrap();
+                    let count = existing_retry.counts.total_items;
+                    return Ok((existing_retry, count, true));
+                }
+
+                // 2. Validate source job exists and is terminal
                 let Some(existing) = self.get_job_summary_locked(c, job_id)? else {
                     return Err(StoreError::Protocol {
                         code: WorkerErrorCode::JobNotFound,
@@ -1269,28 +1314,22 @@ impl JobStore {
                     }
                 };
 
-                let sql = format!(
-                    "UPDATE job_items
-                     SET state = 'pending',
-                         stage = NULL,
-                         output_path = NULL,
-                         temp_path = NULL,
-                         temp_dev = NULL,
-                         temp_ino = NULL,
-                         stage_dir_path = NULL,
-                         stage_dev = NULL,
-                         stage_ino = NULL,
-                         started_at_ms = NULL,
-                         finished_at_ms = NULL,
-                         duration_ms = NULL,
-                         output_bytes = NULL,
-                         error_code = NULL,
-                         error_class = NULL,
-                         error_message = NULL
-                     WHERE job_id = ?1 AND {state_filter}"
+                let select_sql = format!(
+                    "SELECT source_path, attempt_count
+                     FROM job_items
+                     WHERE job_id = ?1 AND {state_filter}
+                     ORDER BY item_index ASC"
                 );
-                let reset_count = c.execute(&sql, params![job_id.0 as i64])? as u32;
-                if reset_count == 0 {
+                let eligible_items: Vec<(Vec<u8>, i64)> = {
+                    let mut stmt = c.prepare(&select_sql)?;
+                    let rows = stmt.query_map(params![job_id.0 as i64], |r| {
+                        Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, i64>(1)?))
+                    })?;
+                    rows.collect::<Result<Vec<_>, _>>()?
+                };
+
+                let eligible_count = eligible_items.len() as u32;
+                if eligible_count == 0 {
                     return Err(StoreError::Protocol {
                         code: WorkerErrorCode::InvalidJobState,
                         message: format!(
@@ -1300,37 +1339,96 @@ impl JobStore {
                     });
                 }
 
-                let now = now_unix_ms();
-                if let Some(new_opts) = options_override {
-                    let opts_str =
-                        serde_json::to_string(new_opts).unwrap_or_else(|_| "{}".to_string());
-                    c.execute(
-                        "UPDATE jobs
-                         SET options = ?2,
-                             resolved = NULL,
-                             state = 'queued',
-                             finished_at_ms = NULL,
-                             summary_text = NULL,
-                             updated_at_ms = ?3
-                         WHERE id = ?1",
-                        params![job_id.0 as i64, opts_str, now],
-                    )?;
-                } else {
-                    c.execute(
-                        "UPDATE jobs
-                         SET resolved = NULL,
-                             state = 'queued',
-                             finished_at_ms = NULL,
-                             summary_text = NULL,
-                             updated_at_ms = ?2
-                         WHERE id = ?1",
-                        params![job_id.0 as i64, now],
-                    )?;
+                // 3. Enforce queue capacity caps (256 active jobs, 50,000 pending items)
+                let active_jobs: i64 = c.query_row(
+                    "SELECT COUNT(*) FROM jobs WHERE state IN ('queued', 'preparing', 'running')",
+                    [],
+                    |r| r.get(0),
+                )?;
+                if active_jobs as usize >= MAX_ACTIVE_JOBS {
+                    return Err(StoreError::Protocol {
+                        code: WorkerErrorCode::QueueFull,
+                        message: format!(
+                            "active job limit ({MAX_ACTIVE_JOBS}) reached; wait for running jobs to finish"
+                        ),
+                    });
                 }
 
-                self.recompute_and_update_job_locked(c, job_id, false)?;
-                let updated = self.get_job_summary_locked(c, job_id)?.unwrap();
-                Ok((updated, reset_count))
+                let pending_total: i64 = c.query_row(
+                    "SELECT COUNT(*) FROM job_items WHERE state IN ('pending', 'inspecting', 'running', 'committing')",
+                    [],
+                    |r| r.get(0),
+                )?;
+                if (pending_total as usize).saturating_add(eligible_items.len())
+                    > MAX_PENDING_ITEMS_TOTAL
+                {
+                    return Err(StoreError::Protocol {
+                        code: WorkerErrorCode::QueueFull,
+                        message: format!(
+                            "total pending item limit ({MAX_PENDING_ITEMS_TOTAL}) exceeded"
+                        ),
+                    });
+                }
+
+                // 4. Snapshot or merge options (`ADR-034`, `AC-C2.10`)
+                let (new_options_val, new_resolved_val) = match options_override {
+                    None => (existing.options.clone(), existing.resolved.clone()),
+                    Some(ov) => merge_retry_options_override(
+                        &existing.options,
+                        existing.resolved.as_ref(),
+                        ov,
+                    ),
+                };
+
+                let now = now_unix_ms();
+                let options_str =
+                    serde_json::to_string(&new_options_val).unwrap_or_else(|_| "{}".to_string());
+                let resolved_str = new_resolved_val
+                    .as_ref()
+                    .and_then(|v| serde_json::to_string(v).ok());
+                let total_items_i64 = i64::from(eligible_count);
+
+                // 5. Insert new linked job row (`origin = 'retry'`, `retry_of = job_id`)
+                c.execute(
+                    "INSERT INTO jobs (
+                        request_id, origin, retry_of, kind, state, created_at_ms, updated_at_ms,
+                        total_items, pending_items, options, resolved
+                     ) VALUES (?1, ?2, ?3, ?4, 'queued', ?5, ?5, ?6, ?6, ?7, ?8)",
+                    params![
+                        request_id.as_str(),
+                        Origin::Retry.as_str(),
+                        job_id.0 as i64,
+                        existing.kind,
+                        now,
+                        total_items_i64,
+                        options_str,
+                        resolved_str,
+                    ],
+                )?;
+                let new_job_id_raw = c.last_insert_rowid();
+
+                // 6. Insert only eligible items into the new job, preserving prior attempt_count
+                // so claiming the item in the retry job advances attempt_count to prev + 1.
+                {
+                    let mut stmt = c.prepare(
+                        "INSERT INTO job_items (
+                            job_id, item_index, source_path, state, attempt_count
+                         ) VALUES (?1, ?2, ?3, 'pending', ?4)",
+                    )?;
+                    for (new_idx, (src_bytes, prev_attempts)) in eligible_items.iter().enumerate() {
+                        stmt.execute(params![
+                            new_job_id_raw,
+                            new_idx as i64,
+                            src_bytes,
+                            *prev_attempts,
+                        ])?;
+                    }
+                }
+
+                let new_summary = self
+                    .get_job_summary_locked(c, JobId(new_job_id_raw as u64))?
+                    .unwrap();
+                Ok((new_summary, eligible_count, false))
             })();
 
             match res {
@@ -1346,8 +1444,53 @@ impl JobStore {
         })
     }
 
+    /// Marks an in-flight item `Interrupted` (e.g., when aborted cooperatively during `SIGTERM` drain)
+    /// and updates parent job counts.
+    pub fn complete_item_interrupted(
+        &self,
+        job_id: JobId,
+        item_id: i64,
+        duration_ms: u64,
+        reason: &str,
+    ) -> Result<(JobItemReport, JobSummary, bool), StoreError> {
+        let conn = self.conn.lock().unwrap();
+        let now = now_unix_ms();
+        conn.execute(
+            "UPDATE job_items
+             SET state = 'interrupted',
+                 stage = NULL,
+                 output_path = NULL,
+                 temp_path = NULL,
+                 temp_dev = NULL,
+                 temp_ino = NULL,
+                 stage_dir_path = NULL,
+                 stage_dev = NULL,
+                 stage_ino = NULL,
+                 finished_at_ms = ?2,
+                 duration_ms = ?3,
+                 error_code = 'interrupted',
+                 error_class = 'interrupted',
+                 error_message = ?4,
+                 retryable = 1
+             WHERE id = ?1",
+            params![item_id, now, duration_ms as i64, reason],
+        )?;
+        self.recompute_and_update_job_locked(&conn, job_id, true)?;
+        let item = conn.query_row(
+            "SELECT id, item_index, source_path, output_path, state, stage, attempt_count,
+                    source_size, output_bytes, duration_ms, error_code, error_class,
+                    error_message, retryable, warnings
+             FROM job_items WHERE id = ?1",
+            params![item_id],
+            Self::map_item_report_row,
+        )?;
+        let job = self.get_job_summary_locked(&conn, job_id)?.unwrap();
+        let job_finished = job.state.is_terminal();
+        Ok((item, job, job_finished))
+    }
+
     /// Marks all currently in-flight items (`inspecting`, `running`, `committing`) as `interrupted`
-    /// during clean `SIGTERM` shutdown when the drain window expires before they finish (`AC-C2.7`).
+    /// during clean `SIGTERM` shutdown (`AC-C2.7`).
     pub fn mark_inflight_items_interrupted_on_shutdown(
         &self,
         reason: &str,
@@ -1359,7 +1502,7 @@ impl JobStore {
                 "UPDATE job_items
                  SET state = 'interrupted',
                      stage = NULL,
-                     finished_at_ms = ?1,
+                     finished_at_ms = COALESCE(finished_at_ms, ?1),
                      error_code = 'interrupted',
                      error_class = 'interrupted',
                      error_message = ?2,
@@ -1699,26 +1842,28 @@ impl JobStore {
         let id: i64 = row.get(0)?;
         let req_id: String = row.get(1)?;
         let origin_str: String = row.get(2)?;
-        let kind: String = row.get(3)?;
-        let state_str: String = row.get(4)?;
-        let created_at_ms: i64 = row.get(5)?;
-        let started_at_ms: Option<i64> = row.get(6)?;
-        let finished_at_ms: Option<i64> = row.get(7)?;
-        let updated_at_ms: i64 = row.get(8)?;
-        let total_items: i64 = row.get(9)?;
-        let pending_items: i64 = row.get(10)?;
-        let succeeded_items: i64 = row.get(11)?;
-        let skipped_items: i64 = row.get(12)?;
-        let failed_items: i64 = row.get(13)?;
-        let cancelled_items: i64 = row.get(14)?;
-        let options_str: String = row.get(15)?;
-        let resolved_str: Option<String> = row.get(16)?;
-        let summary_text: Option<String> = row.get(17)?;
+        let retry_of: Option<i64> = row.get(3)?;
+        let kind: String = row.get(4)?;
+        let state_str: String = row.get(5)?;
+        let created_at_ms: i64 = row.get(6)?;
+        let started_at_ms: Option<i64> = row.get(7)?;
+        let finished_at_ms: Option<i64> = row.get(8)?;
+        let updated_at_ms: i64 = row.get(9)?;
+        let total_items: i64 = row.get(10)?;
+        let pending_items: i64 = row.get(11)?;
+        let succeeded_items: i64 = row.get(12)?;
+        let skipped_items: i64 = row.get(13)?;
+        let failed_items: i64 = row.get(14)?;
+        let cancelled_items: i64 = row.get(15)?;
+        let options_str: String = row.get(16)?;
+        let resolved_str: Option<String> = row.get(17)?;
+        let summary_text: Option<String> = row.get(18)?;
 
         Ok(JobSummary {
             job_id: JobId(id as u64),
             request_id: RequestId(req_id),
             origin: origin_str.parse::<Origin>().unwrap_or(Origin::Cli),
+            retry_of: retry_of.map(|r| JobId(r as u64)),
             kind,
             state: state_str.parse::<JobState>().unwrap_or(JobState::Queued),
             created_at_ms,
@@ -1817,4 +1962,149 @@ pub fn format_job_summary_text(state: JobState, counts: &JobProgressCounts) -> S
         ),
         other => format!("Job {}", other.as_str()),
     }
+}
+
+pub(crate) fn normalize_options_value(val: &serde_json::Value) -> serde_json::Value {
+    let mut out = val.clone();
+    if let Some(obj) = out.as_object_mut() {
+        if let Some(output) = obj.get_mut("output").and_then(|v| v.as_object_mut())
+            && let Some(loc) = output.get_mut("location").and_then(|v| v.as_object_mut())
+            && !loc.contains_key("kind")
+            && let Some(folder) = loc
+                .remove("folder")
+                .or_else(|| loc.remove("directory"))
+                .or_else(|| loc.remove("path"))
+        {
+            loc.insert(
+                "kind".to_string(),
+                serde_json::Value::String("directory".to_string()),
+            );
+            loc.insert("value".to_string(), folder);
+        }
+        if let Some(loc) = obj
+            .get_mut("output_location")
+            .and_then(|v| v.as_object_mut())
+            && !loc.contains_key("kind")
+            && let Some(folder) = loc
+                .remove("folder")
+                .or_else(|| loc.remove("directory"))
+                .or_else(|| loc.remove("path"))
+        {
+            loc.insert(
+                "kind".to_string(),
+                serde_json::Value::String("directory".to_string()),
+            );
+            loc.insert("value".to_string(), folder);
+        }
+    }
+    out
+}
+
+fn merge_json_non_null(target: &mut serde_json::Value, patch: &serde_json::Value) {
+    match (target, patch) {
+        (serde_json::Value::Object(t_map), serde_json::Value::Object(p_map)) => {
+            for (k, v) in p_map {
+                if v.is_null() {
+                    continue;
+                }
+                if (k == "location" || k == "output_location")
+                    && v.as_object().is_some_and(|o| o.contains_key("kind"))
+                {
+                    t_map.insert(k.clone(), v.clone());
+                    continue;
+                }
+                match t_map.get_mut(k) {
+                    Some(existing) if existing.is_object() && v.is_object() => {
+                        merge_json_non_null(existing, v);
+                    }
+                    _ => {
+                        t_map.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+        }
+        (t, p) if !p.is_null() => {
+            *t = p.clone();
+        }
+        _ => {}
+    }
+}
+
+fn apply_conversion_options_shorthands(
+    resolved_obj: &mut serde_json::Value,
+    norm_ov: &serde_json::Value,
+) {
+    let Some(ov_map) = norm_ov.as_object() else {
+        return;
+    };
+    let Some(res_map) = resolved_obj.as_object_mut() else {
+        return;
+    };
+    res_map.remove("overrides");
+    res_map.remove("preset_ref");
+
+    for src_map in [
+        Some(ov_map),
+        ov_map.get("overrides").and_then(|v| v.as_object()),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if let Some(q) = src_map.get("quality").filter(|v| !v.is_null()) {
+            res_map.insert("quality".to_string(), q.clone());
+        }
+        if let Some(r) = src_map.get("resize").filter(|v| !v.is_null()) {
+            res_map.insert("resize".to_string(), r.clone());
+        }
+        if let Some(sf) = src_map.get("same_format").filter(|v| !v.is_null()) {
+            res_map.insert("same_format".to_string(), sf.clone());
+        }
+        if let Some(loc) = src_map.get("output_location").filter(|v| !v.is_null())
+            && let Some(out_map) = res_map.get_mut("output").and_then(|v| v.as_object_mut())
+        {
+            out_map.insert("location".to_string(), normalize_options_value(loc));
+        }
+        if let Some(col) = src_map.get("collision").filter(|v| !v.is_null())
+            && let Some(out_map) = res_map.get_mut("output").and_then(|v| v.as_object_mut())
+        {
+            out_map.insert("collision".to_string(), col.clone());
+        }
+        if let Some(nam) = src_map.get("naming").filter(|v| !v.is_null())
+            && let Some(out_map) = res_map.get_mut("output").and_then(|v| v.as_object_mut())
+        {
+            out_map.insert("naming".to_string(), nam.clone());
+        }
+        if let Some(pt) = src_map.get("preserve_timestamps").filter(|v| !v.is_null())
+            && let Some(out_map) = res_map.get_mut("output").and_then(|v| v.as_object_mut())
+        {
+            out_map.insert("preserve_timestamps".to_string(), pt.clone());
+        }
+    }
+}
+
+fn merge_retry_options_override(
+    base_options: &serde_json::Value,
+    base_resolved: Option<&serde_json::Value>,
+    ov: &serde_json::Value,
+) -> (serde_json::Value, Option<serde_json::Value>) {
+    let norm_ov = normalize_options_value(ov);
+    let mut merged_opts = normalize_options_value(base_options);
+    merge_json_non_null(&mut merged_opts, &norm_ov);
+    if let Some(loc) = norm_ov
+        .get("output")
+        .and_then(|o| o.get("location"))
+        .filter(|v| !v.is_null())
+        && let Some(opts_map) = merged_opts.as_object_mut()
+        && !opts_map.contains_key("alpha")
+    {
+        opts_map.insert("output_location".to_string(), loc.clone());
+    }
+
+    let merged_resolved = base_resolved.map(|res| {
+        let mut r = normalize_options_value(res);
+        merge_json_non_null(&mut r, &norm_ov);
+        apply_conversion_options_shorthands(&mut r, &norm_ov);
+        r
+    });
+    (merged_opts, merged_resolved)
 }

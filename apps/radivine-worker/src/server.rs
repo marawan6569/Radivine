@@ -443,22 +443,40 @@ fn handle_client_connection(
                 }
             }
             WorkerRequest::Retry {
+                request_id,
                 job_id,
                 mode,
                 options_override,
                 ..
             } => {
-                let resp = match store.retry_job(job_id, mode, options_override.as_ref()) {
-                    Ok((summary, reset_items)) => {
-                        scheduler.on_job_retried(job_id, &summary);
-                        WorkerResponse::Retried {
-                            v: PROTOCOL_VERSION,
-                            job_id,
-                            state: summary.state,
-                            reset_items,
-                        }
+                let req_id = request_id.unwrap_or_else(radivine_jobs::RequestId::generate);
+                let resp = if let Err(msg) = req_id.validate() {
+                    WorkerResponse::Error {
+                        v: PROTOCOL_VERSION,
+                        code: WorkerErrorCode::InvalidRequestId,
+                        message: msg,
                     }
-                    Err(e) => map_store_error(e),
+                } else {
+                    match store.retry_job(&req_id, job_id, mode, options_override.as_ref()) {
+                        Ok((summary, reset_items, deduplicated)) => {
+                            if !deduplicated {
+                                scheduler.events().publish(&JobUpdate::JobCreated {
+                                    v: PROTOCOL_VERSION,
+                                    job: Box::new(summary.clone()),
+                                });
+                                scheduler.notify_work_available();
+                            }
+                            WorkerResponse::Retried {
+                                v: PROTOCOL_VERSION,
+                                job_id: summary.job_id,
+                                retry_of: Some(job_id),
+                                state: summary.state,
+                                reset_items,
+                                deduplicated,
+                            }
+                        }
+                        Err(e) => map_store_error(e),
+                    }
                 };
                 if write_response(&mut writer, &resp).is_err() {
                     return;

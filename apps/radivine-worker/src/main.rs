@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
-use radivine_convert::{FormatId, PresetOverrides, QualityIntent, QualitySetting};
+use radivine_convert::{FormatId, OutputLocation, PresetOverrides, QualityIntent, QualitySetting};
 use radivine_jobs::{
     CONVERT_IMAGE_KIND, JobId, JobUpdate, JobsClient, JobsSettings, Origin, RequestId, RetryMode,
     WirePath, WorkerResponse, WorkerRuntimePaths,
@@ -107,6 +107,10 @@ enum Commands {
         #[arg(long, value_enum, default_value_t = CliRetryMode::FailedOnly)]
         mode: CliRetryMode,
 
+        /// Shorthand for `--mode all`
+        #[arg(long)]
+        all: bool,
+
         /// Optional target format override (`png`, `jpeg`, `webp`)
         #[arg(long)]
         to: Option<String>,
@@ -114,6 +118,14 @@ enum Commands {
         /// Optional quality intent (`max`, `high`, `balanced`, `compact`, `lossless`) or numeric `1..=100`
         #[arg(long)]
         quality: Option<String>,
+
+        /// Optional output directory override
+        #[arg(long)]
+        output_dir: Option<PathBuf>,
+
+        /// Optional explicit idempotency request ID (`16..=64` ASCII `[0-9a-zA-Z_-]`)
+        #[arg(long)]
+        request_id: Option<String>,
 
         /// Wait for the retried job to reach a terminal state
         #[arg(long)]
@@ -137,6 +149,10 @@ enum Commands {
         /// Optional quality intent (`max`, `high`, `balanced`, `compact`, `lossless`) or numeric `1..=100`
         #[arg(long)]
         quality: Option<String>,
+
+        /// Optional output directory override
+        #[arg(long)]
+        output_dir: Option<PathBuf>,
 
         /// Optional explicit idempotency request ID (`16..=64` ASCII `[0-9a-zA-Z_-]`)
         #[arg(long)]
@@ -165,7 +181,9 @@ enum Commands {
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum CliRetryMode {
+    #[value(alias = "failed_only", alias = "failed")]
     FailedOnly,
+    #[value(alias = "failed_and_cancelled")]
     FailedAndCancelled,
     All,
 }
@@ -242,23 +260,36 @@ fn main() -> Result<()> {
         Commands::Retry {
             job_id,
             mode,
+            all,
             to,
             quality,
+            output_dir,
+            request_id,
             wait,
             json,
-        } => cmd_retry(
-            &paths,
-            JobId(job_id),
-            RetryMode::from(mode),
-            to.as_deref(),
-            quality.as_deref(),
-            wait,
-            json,
-        ),
+        } => {
+            let resolved_mode = if all {
+                RetryMode::All
+            } else {
+                RetryMode::from(mode)
+            };
+            cmd_retry(
+                &paths,
+                JobId(job_id),
+                resolved_mode,
+                to.as_deref(),
+                quality.as_deref(),
+                output_dir.as_deref(),
+                request_id,
+                wait,
+                json,
+            )
+        }
         Commands::SubmitConvert {
             to,
             preset,
             quality,
+            output_dir,
             request_id,
             wait,
             json,
@@ -268,6 +299,7 @@ fn main() -> Result<()> {
             to.as_deref(),
             preset.as_deref(),
             quality.as_deref(),
+            output_dir.as_deref(),
             request_id,
             wait,
             json,
@@ -408,6 +440,9 @@ fn cmd_show(paths: &WorkerRuntimePaths, job_id: JobId, json: bool) -> Result<()>
 
     println!("Job #{}: {} ({})", job.job_id.0, job.state, job.kind);
     println!("  Origin:      {}", job.origin);
+    if let Some(parent) = job.retry_of {
+        println!("  Retry of:    #{}", parent.0);
+    }
     println!("  Request ID:  {}", job.request_id);
     println!(
         "  Progress:    {} total ({} succeeded, {} skipped, {} failed, {} cancelled, {} interrupted, {} pending)",
@@ -461,40 +496,53 @@ fn cmd_cancel(paths: &WorkerRuntimePaths, job_id: JobId, json: bool) -> Result<(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn cmd_retry(
     paths: &WorkerRuntimePaths,
     job_id: JobId,
     mode: RetryMode,
     to: Option<&str>,
     quality: Option<&str>,
+    output_dir: Option<&std::path::Path>,
+    request_id: Option<String>,
     wait: bool,
     json: bool,
 ) -> Result<()> {
-    let options_override = if to.is_some() || quality.is_some() {
-        Some(build_convert_options_json(to, None, quality)?)
+    let options_override = if to.is_some() || quality.is_some() || output_dir.is_some() {
+        Some(build_convert_options_json(to, None, quality, output_dir)?)
     } else {
         None
     };
 
     let mut client = JobsClient::connect_or_launch(paths)?;
-    let (state, reset_items) = client.retry(job_id, mode, options_override)?;
+    let (new_job_id, state, reset_items, deduplicated) = match request_id {
+        Some(s) => client.retry_with_request_id(RequestId(s), job_id, mode, options_override)?,
+        None => {
+            let (nid, st, cnt) = client.retry(job_id, mode, options_override)?;
+            (nid, st, cnt, false)
+        }
+    };
 
     if wait {
-        wait_for_job_completion(paths, job_id)?;
-        return cmd_show(paths, job_id, json);
+        wait_for_job_completion(paths, new_job_id)?;
+        return cmd_show(paths, new_job_id, json);
     }
 
     if json {
         println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
-                "job_id": job_id,
+                "job_id": new_job_id,
+                "retry_of": job_id,
                 "state": state,
                 "reset_items": reset_items,
+                "deduplicated": deduplicated,
             }))?
         );
     } else {
-        println!("Retried job #{job_id}: reset {reset_items} item(s), state={state}");
+        println!(
+            "Created retry job #{new_job_id} (retry of job #{job_id}): queued {reset_items} item(s), state={state}"
+        );
     }
     Ok(())
 }
@@ -505,12 +553,13 @@ fn cmd_submit_convert(
     to: Option<&str>,
     preset: Option<&str>,
     quality: Option<&str>,
+    output_dir: Option<&std::path::Path>,
     request_id: Option<String>,
     wait: bool,
     json: bool,
     files: &[PathBuf],
 ) -> Result<()> {
-    let options_json = build_convert_options_json(to, preset, quality)?;
+    let options_json = build_convert_options_json(to, preset, quality, output_dir)?;
     let mut wire_items = Vec::with_capacity(files.len());
     for f in files {
         let abs = if f.is_absolute() {
@@ -619,6 +668,7 @@ fn build_convert_options_json(
     to: Option<&str>,
     preset: Option<&str>,
     quality: Option<&str>,
+    output_dir: Option<&std::path::Path>,
 ) -> Result<serde_json::Value> {
     let mut overrides = PresetOverrides::default();
     let target_opt = if let Some(t_str) = to {
@@ -632,6 +682,17 @@ fn build_convert_options_json(
     } else {
         None
     };
+
+    if let Some(dir) = output_dir {
+        let abs = if dir.is_absolute() {
+            dir.to_path_buf()
+        } else {
+            env::current_dir()
+                .context("failed to resolve current working directory")?
+                .join(dir)
+        };
+        overrides.output_location = Some(OutputLocation::Directory(abs));
+    }
 
     if let Some(q_str) = quality {
         let q = match q_str.trim().to_ascii_lowercase().as_str() {

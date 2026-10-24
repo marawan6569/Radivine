@@ -96,6 +96,7 @@ mod tests {
             job_id: JobId(1),
             request_id: RequestId("req_0123456789abcdef".to_string()),
             origin: Origin::Cli,
+            retry_of: None,
             kind: "convert.image".to_string(),
             state,
             created_at_ms: 0,

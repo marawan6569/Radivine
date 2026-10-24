@@ -76,6 +76,7 @@ pub enum Origin {
     Wheel,
     Cli,
     ControlCenter,
+    Retry,
     Test,
 }
 
@@ -86,6 +87,7 @@ impl Origin {
             Self::Wheel => "wheel",
             Self::Cli => "cli",
             Self::ControlCenter => "control_center",
+            Self::Retry => "retry",
             Self::Test => "test",
         }
     }
@@ -105,6 +107,7 @@ impl FromStr for Origin {
             "wheel" => Ok(Self::Wheel),
             "cli" => Ok(Self::Cli),
             "control_center" => Ok(Self::ControlCenter),
+            "retry" => Ok(Self::Retry),
             "test" => Ok(Self::Test),
             other => Err(format!("unknown job origin '{other}'")),
         }
@@ -116,6 +119,7 @@ impl FromStr for Origin {
 #[serde(rename_all = "snake_case")]
 pub enum RetryMode {
     #[default]
+    #[serde(alias = "failed")]
     FailedOnly,
     FailedAndCancelled,
     All,

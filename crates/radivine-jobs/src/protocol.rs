@@ -86,6 +86,8 @@ pub struct JobSummary {
     pub job_id: JobId,
     pub request_id: RequestId,
     pub origin: Origin,
+    #[serde(default)]
+    pub retry_of: Option<JobId>,
     pub kind: String,
     pub state: JobState,
     pub created_at_ms: i64,
@@ -140,8 +142,10 @@ pub enum WorkerRequest {
     Retry {
         #[serde(default = "default_protocol_v")]
         v: u32,
-        job_id: JobId,
         #[serde(default)]
+        request_id: Option<RequestId>,
+        job_id: JobId,
+        #[serde(default, alias = "scope")]
         mode: RetryMode,
         #[serde(default)]
         options_override: Option<serde_json::Value>,
@@ -237,8 +241,13 @@ pub enum WorkerResponse {
         #[serde(default = "default_protocol_v")]
         v: u32,
         job_id: JobId,
+        #[serde(default)]
+        retry_of: Option<JobId>,
         state: JobState,
+        #[serde(alias = "queued_items")]
         reset_items: u32,
+        #[serde(default)]
+        deduplicated: bool,
     },
     Subscribed {
         #[serde(default = "default_protocol_v")]

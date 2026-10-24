@@ -149,6 +149,8 @@ impl ConvertImageHandler {
         raw_options: &serde_json::Value,
         settings: &ConvertSettings,
     ) -> Result<ConversionOptions, PrepareError> {
+        let normalized_options = crate::store::normalize_options_value(raw_options);
+        let raw_options = &normalized_options;
         if raw_options.is_null()
             || raw_options
                 .as_object()
