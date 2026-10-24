@@ -2,7 +2,7 @@
 
 > *Branch into action.*
 
-Status: **Planning (pre-implementation)** · Last updated: 2026-10-22
+Status: **Accepted & Implemented (v0.1.0 – v0.2.0)** · Last updated: 2026-10-25
 
 ---
 

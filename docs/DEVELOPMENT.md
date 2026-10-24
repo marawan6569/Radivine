@@ -8,7 +8,7 @@ This guide explains how to build, run, and test Radivine (`radivine`, `radivine-
 
 When you run Radivine through the scripts in [`scripts/dev/`](../scripts/dev/), the entire stack runs from your workspace's `target/{release,debug}/` directory inside an isolated development sandbox:
 
-| Resource | Installed Package (`v0.1.1`) | Development Environment (`scripts/dev/`) |
+| Resource | Installed Package (`v0.2.0`) | Development Environment (`scripts/dev/`) |
 |---|---|---|
 | **Daemon binary** | `/usr/bin/radivine` | `<repo>/target/<profile>/radivine` (`RADIVINE_DAEMON_BIN`) |
 | **Worker binary** | `/usr/bin/radivine-worker` | `<repo>/target/<profile>/radivine-worker` (`RADIVINE_WORKER_BIN`) |

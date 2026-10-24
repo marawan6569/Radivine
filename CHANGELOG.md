@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.0] - 2026-10-25
+
+### Added
+- **Built-In Image Conversion Subsystem (`radivine-convert`, `radivine-convert-image`, `ffi/radivine-webp`):**
+  - Codec-free conversion engine (`radivine-convert`, `#![forbid(unsafe_code)]`) supporting format catalog & magic-byte sniffing (`PNG`, `JPEG`, `WebP`), capability routing (`CapabilityCatalog`), quality intents (`Small`, `Balanced`, `High`, `Lossless`) and explicit per-format codec parameters, 5 built-in presets (`web-optimized`, `balanced`, `high-quality`, `lossless`, `compact-share`), and user-defined presets in `~/.config/radivine/convert.toml`.
+  - Built-in image codec backend (`radivine-convert-image`, `#![forbid(unsafe_code)]`) with pure-Rust PNG (`png` `0.18`), JPEG (`zune-jpeg` `0.5` + SIMD `jpeg-encoder` `0.6`), and WebP (`image-webp` `0.2`) plus isolated, memory-fence-wrapped vendored `libwebp` (`1.5.0`, `sse41` + `avx2` + multi-threaded lossy encoding via `ffi/radivine-webp`).
+  - Full image pipeline: 8-bit/16-bit/grayscale/CMYK decoding, EXIF orientation auto-application (`1..=8`) with in-place tag-`0x0112` reset, ICC profile extraction and embedding across PNG (`iCCP` zlib)/JPEG (`APP2` `ICC_profile\0`)/WebP (RIFF `VP8X` + `ICCP` muxer), privacy-by-default EXIF stripping (`Strip` default; optional `Preserve` with `gps_privacy_preserved` warning), Lanczos3 aspect-preserving resize (`Width`, `Height`, `Fit`), and configurable alpha background flattening for JPEG outputs.
+  - Strict source and destination file-safety guarantees (`ADR-040`, `ADR-041`): sources opened `O_RDONLY | O_NOFOLLOW | O_NONBLOCK` + `fstat` regular-file verification; outputs staged in `0700` `.rvstage-<uid>` directory with `.part` temp files, `fsync`, and atomic `renameat2(RENAME_NOREPLACE)` / `linkat` non-overwriting commit with `stem (1).ext`..`stem (999).ext` collision numbering and cooperative cancellation cleanup.
+- **On-Demand Durable Background Job Worker (`radivine-jobs`, `apps/radivine-worker`):**
+  - Dedicated `#![forbid(unsafe_code)]` background conversion worker (`radivine-worker`) communicating over `$XDG_RUNTIME_DIR/radivine/worker.sock` (`0600` socket inside `0700` dir) with Linux `SO_PEERCRED` peer-UID authentication and newline-delimited JSON-RPC v1 framing (`MAX_FRAME_BYTES = 1 MiB`).
+  - Lossless Unix path serialization via `WirePath` (`utf8:` for valid UTF-8 paths, `hex:` for arbitrary `0x80..=0xFF` bytes) across IPC, SQLite storage, and CLI transport (`ADR-038`).
+  - Durable SQLite WAL job store (`~/.local/state/radivine/jobs.sqlite3`, `0600` mode, `schema_version = 1`) with crash-recovery journal (`active_stages`) that reconciles interrupted `Preparing`/`Running`/`Cancelling` jobs and cleans up `.rvstage-<uid>` directories on startup.
+  - Bounded item worker pool (`default_concurrency = min(num_cpus / 2, 4)`), token-bucket `ResourceGovernor` memory reservations, cooperative per-item cancellation, linked immutable retry (`FailedOnly`, `FailedAndCancelled`, `AllItems` with optional `output_dir_override`), automatic idle shutdown (`idle_exit_s = 60`), and D-Bus batch summary notifications via extracted `crates/radivine-dbus`.
+  - Hardened `/usr/lib/systemd/user/radivine-worker.service` (`NoNewPrivileges=yes`, `PrivateTmp=yes`, `PrivateNetwork=yes`, `ProtectSystem=strict`, `RestrictAddressFamilies=AF_UNIX`).
+- **Radial Wheel Integration (`Convert ▸ Image`):**
+  - New `Convert ▸ Image` submenu at index 1 in the radial wheel with **Quick Convert** (`PNG`, `JPEG`, `WebP`) and **Advanced…** (`radivine.convert.image.advanced`) actions (`ADR-042`).
+  - Dynamic context-aware wheel captions (`Action::description_for`), single-item same-format hiding for Quick Convert, mixed-selection skip summaries, and optimistic `> 64`-item / timeout-safe batch enablement (`FileFacts::is_uninspected`).
+  - Lossless RFC 8089 raw-byte percent-encoding in `radivine_core::local_path_to_file_uri` and `OsString` path support in `radivine invoke` so non-UTF-8 filenames work end-to-end.
+- **Control Center Conversion Settings, Jobs Monitor & Advanced Convert Dialog (`apps/radivine-control`):**
+  - **Conversion Page (`--page conversion`):** Full editor for `~/.config/radivine/convert.toml` and `config.toml [jobs]` (Quick Convert presets per format, output location/suffix/JPEG extension/collision/mtime policies, EXIF/ICC/orientation policies with GPS privacy banner, custom preset CRUD, resource limits, backend capability matrix, notification policy, and worker concurrency/retention).
+  - **Jobs Page (`--page jobs`):** Live conversion progress monitor (`JobsClient::subscribe`), state filter pills, 200-item-per-page paginated & `ScrollArea::show_rows`-virtualized item table, `Cancel`, linked `Retry failed` / `Retry failed & cancelled` / `Retry all` / `Retry to folder…`, D-Bus `ShowItems` `Open folder`, `Clear history`, concurrency selector, and `.rvstage-<uid>` inspection/cleanup.
+  - **Standalone Advanced Convert Window (`radivine-control convert [--stdin] [PATHS…]`):** Dedicated `640×720` dialog (`app_id = "radivine-convert"`) that bypasses `control.sock` (`ADR-C15`) and launches in an isolated user scope (`ADR-C14`) so multiple Advanced Convert windows can run alongside the Control Center and survive `radivine.service` restarts.
+- **Native System Clipboard & Arabic / Non-Latin Font Fallback:**
+  - Enabled `eframe`'s `clipboard` feature (`arboard` on X11, `smithay-clipboard` on Wayland) for native cross-application `Ctrl+C`, `Ctrl+V`, `Ctrl+X`, and copy-button integration across `radivine-control`, Advanced Convert, and `radivine-viewer`.
+  - Enabled `eframe`'s `system_fonts` feature (`egui_system_font_provider::SystemFontProvider` + `fontique`/Fontconfig) for automatic Arabic, CJK, Hebrew, Cyrillic, and Devanagari glyph fallback and HarfBuzz complex-script shaping (`cosmic-text`) while keeping `Inter-Variable.ttf` as the primary UI font.
+- **CI Dependency-Graph Guard & Security Verification:**
+  - Added `./scripts/check-dep-graph.sh` to enforce workspace dependency boundaries (`radivine` and `radivine-control` never link `rusqlite`, `libwebp-sys`, or `radivine-worker`; `radivine-worker` never links `radivine-wheel`, `radivine-render`, `x11rb`, or `eframe`).
+  - Added 8 SanitizerCoverage `libfuzzer-sys` fuzz targets (`tools/convert-fuzz`), synthetic benchmark/corpus CLI (`tools/convert-cli`), and C5 system benchmark and 1-hour reliability soak test suites.
+
+### Fixed
+- Fixed a cooperative-cancellation race in `PendingOutput::create` where a cancellation signal arriving immediately after creating `.rvstage-<uid>` or `.part` returned `Err(ConversionError::Cancelled)` before `PendingOutput::drop` could clean up the temporary staging artifacts.
+- Fixed `ReadWritePaths` in `packaging/radivine-worker.service` to prefix optional mount directories (`-/media -/mnt -/run/media`) with `-` so `systemd --user` starts the unit cleanly on distributions (including Linux Mint 22.x) where `/run/media` does not exist at boot.
+- Updated `clipboard-win` (`5.4.1 -> 5.4.3`) in `Cargo.lock` to resolve a yanked transitive crate advisory in `cargo deny check`.
+
+---
+
 ## [0.1.1] - 2026-10-23
 
 ### Added

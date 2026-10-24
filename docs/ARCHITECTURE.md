@@ -1,13 +1,13 @@
 # Radivine — Architecture
 
-Status: **Proposed (pending M0 spikes)** · Last updated: 2026-10-22
-Related: [WHEEL_ENGINE_DESIGN.md](WHEEL_ENGINE_DESIGN.md) · [PLATFORM_INTEGRATION.md](PLATFORM_INTEGRATION.md) · [ACTION_SYSTEM.md](ACTION_SYSTEM.md) · [DECISIONS.md](DECISIONS.md)
+Status: **Production architecture (`v0.2.0` Release Candidate, verified across M0–M6 and C1–C5)** · Last updated: 2026-10-25
+Related: [WHEEL_ENGINE_DESIGN.md](WHEEL_ENGINE_DESIGN.md) · [PLATFORM_INTEGRATION.md](PLATFORM_INTEGRATION.md) · [ACTION_SYSTEM.md](ACTION_SYSTEM.md) · [CONTROL_CENTER_DESIGN.md](CONTROL_CENTER_DESIGN.md) · [DECISIONS.md](DECISIONS.md)
 
 ---
 
 ## 1. System overview
 
-Radivine is a single background **daemon** process plus a separately launched **viewer** process:
+Radivine comprises four cooperating desktop binaries (`radivine` daemon/CLI, `radivine-control` Control Center & Advanced Convert window, `radivine-viewer` read-only file preview window, and `radivine-worker` on-demand background conversion & job worker):
 
 ```mermaid
 flowchart LR
@@ -21,9 +21,11 @@ flowchart LR
         W["radivine-wheel<br/>(pure engine: layout, hit-test,<br/>navigation, animation → Scene)"]
         R["radivine-render<br/>(tiny-skia: Scene → RGBA pixmap)"]
         C["radivine-core<br/>(context, action registry,<br/>menu building, dispatcher)"]
-        AC["radivine-actions<br/>(built-in actions)"]
+        AC["radivine-actions<br/>(built-in + Convert actions)"]
     end
-    V["radivine-viewer<br/>(egui window, separate process)"]
+    V["radivine-viewer<br/>(egui preview window)"]
+    CC["radivine-control<br/>(Control Center +<br/>Advanced Convert window)"]
+    WK["radivine-worker<br/>(on-demand job worker,<br/>SQLite WAL + codecs)"]
     CLI["radivine invoke …<br/>(CLI / Nemo action)"]
 
     Nemo <-- XDND / selections --> Xs
@@ -36,7 +38,11 @@ flowchart LR
     C -- MenuTree --> A
     C -- jobs --> AC
     AC -- spawn --> V
-    CLI -- Unix socket JSON --> A
+    AC -- spawn --> CC
+    AC -- worker.sock JSON --> WK
+    CC <-- worker.sock JSON --> WK
+    CC <-- radivine.sock JSON --> A
+    CLI -- radivine.sock JSON --> A
 ```
 
 Design rules:
@@ -53,28 +59,36 @@ Design rules:
 radivine/
 ├── Cargo.toml                    # [workspace], shared [workspace.package]/[workspace.dependencies], lints
 ├── deny.toml                     # cargo-deny (licences, advisories)
+├── ffi/
+│   └── radivine-webp/            # Minimal 2-function safe encode-only FFI wrapper over bundled libwebp 1.6.0
 ├── crates/
-│   ├── radivine-wheel/           # PURE wheel engine (std + smallvec only)
-│   ├── radivine-render/          # tiny-skia + cosmic-text + resvg renderer
+│   ├── radivine-wheel/           # PURE wheel engine (#![forbid(unsafe_code)], std + smallvec only)
+│   ├── radivine-render/          # tiny-skia + cosmic-text + resvg renderer (#![forbid(unsafe_code)])
 │   ├── radivine-core/            # context model, Action trait, registry, menu builder, dispatcher
-│   ├── radivine-actions/         # built-in actions (preview launchers, copy, properties, custom commands)
+│   ├── radivine-dbus/            # standalone D-Bus Notification & FileManager1 client (#![forbid(unsafe_code)])
+│   ├── radivine-convert/         # codec-free conversion core, presets, convert.toml, 2-rung atomic commit (#![forbid(unsafe_code)])
+│   ├── radivine-convert-image/   # built-in PNG/JPEG/WebP image conversion backend (#![forbid(unsafe_code)])
+│   ├── radivine-jobs/            # durable job wire protocol, WirePath, JobsClient, WorkerLauncher (#![forbid(unsafe_code)])
+│   ├── radivine-actions/         # built-in actions (preview, copy, properties, custom, Convert Quick/Advanced)
 │   └── radivine-platform/        # Platform trait + `x11` module (+ future wayland/windows/macos modules)
 ├── apps/
 │   ├── radivine/                 # daemon + CLI binary `radivine`
-│   ├── radivine-viewer/          # egui preview window binary (added in M5)
-│   └── radivine-control/         # egui Control Center desktop binary (added in v0.1.1)
+│   ├── radivine-viewer/          # egui preview window binary (`Full`, `Head`, `Tail`)
+│   ├── radivine-control/         # egui Control Center (`8` pages) + `radivine-control convert` window
+│   └── radivine-worker/          # on-demand background conversion worker (`SQLite WAL`, `C0a`–`C6` recovery)
 ├── tools/
-│   └── wheel-sandbox/            # dev tool: wheel engine + renderer in an opaque winit/softbuffer window (M1)
-├── tests/
-│   └── e2e-x11/                  # Xvfb-based end-to-end harness (GTK3 drag source script + xdotool)
+│   ├── wheel-sandbox/            # dev tool: wheel engine + renderer in an opaque winit/softbuffer window
+│   ├── convert-cli/              # standalone conversion benchmark and corpus CLI (`bench`, `gen-corpus`)
+│   └── convert-corpus/           # deterministic synthetic PNG/JPEG/WebP/EXIF/ICC test corpus generator
+├── fuzz/                         # 8 coverage-guided libFuzzer targets (`cargo-fuzz`)
+├── packaging/                    # Debian packaging (`control`, `changelog`, `copyright`, systemd units, Nemo action)
+├── scripts/                      # `build-deb.sh`, `check-dep-graph.sh`, and `scripts/dev/*` helpers
 ├── assets/
-│   ├── branding/                 # EXISTING — do not modify
-│   ├── icons/                    # EXISTING — do not modify
-│   ├── wheel-icons/              # NEW: Lucide SVG subset (ISC)
-│   ├── fonts/                    # NEW: Inter (OFL)
-│   ├── third_party/              # NEW: licence texts for bundled fonts/icons
-│   └── desktop/                  # NEW: radivine.desktop (autostart), radivine.nemo_action
-├── spikes/                       # M0 throw-away experiments (excluded from workspace)
+│   ├── branding/                 # PROTECTED — do not modify
+│   ├── icons/                    # PROTECTED — do not modify
+│   ├── wheel-icons/              # Lucide SVG subset (ISC)
+│   ├── fonts/                    # Inter Variable (OFL-1.1)
+│   └── third_party/              # licence texts for bundled fonts/icons
 └── docs/
 ```
 
@@ -129,7 +143,13 @@ flowchart TD
 | `radivine-platform` | X11 connection, atoms, extensions, overlay window lifecycle, SHM buffers, XDND target protocol, XFixes arming, XI2 raw trigger detection, invoke-mode grabs, monitors & scale, clipboard ownership service | Make product decisions (what to show, when to accept) — it reports and executes |
 | `apps/radivine` | Daemon lifecycle, calloop loop, **session state machine** (§5), config loading, IPC server, CLI, wiring, logging setup, single-instance lock | Contain geometry, rendering, or protocol code |
 | `apps/radivine-viewer` | Full/Head/Tail text viewing, search, large-file strategy | Depend on the daemon at runtime |
-| `apps/radivine-control` | Native graphical Control Center (Dashboard, General, Wheel, Actions, Diagnostics, About), background `systemd --user` / fallback service controller, format-preserving `toml_edit` configuration persistence | Block the UI thread on subprocess/IPC operations or stop the daemon on window close |
+| `apps/radivine-control` | Native graphical Control Center (`Dashboard`, `General`, `Wheel`, `Actions`, `Conversion`, `Jobs`, `Diagnostics`, `About`) + standalone `radivine-control convert` window, background `systemd --user` / fallback service controller, format-preserving `toml_edit` configuration persistence | Block the UI thread on subprocess/IPC operations, link conversion codecs or SQLite directly, or stop the daemon on window close |
+| `crates/radivine-dbus` | Pure-Rust `freedesktop` D-Bus `Notifications` and `FileManager1` client (`#![forbid(unsafe_code)]`) | Depend on any other Radivine crate |
+| `crates/radivine-convert` | Codec-free conversion core (`FormatId`, magic-byte `sniff_format`, `CapabilityCatalog`, `ConversionOptions`, `ConvertSettings`, two-rung `PendingOutput` / `commit_no_replace`, `#![forbid(unsafe_code)]`) | Link image codecs, SQLite, or GUI/X11 crates |
+| `crates/radivine-convert-image` | Built-in `builtin.image` backend (`PNG`, `JPEG`, `WebP` decode/encode, EXIF orientation 1..8, ICC `iCCP`/`APP2`/`ICCP`, Lanczos3 resize, `#![forbid(unsafe_code)]`) | Perform direct filesystem writes outside `OutputSink` |
+| `ffi/radivine-webp` | Audited 2-function encode-only wrapper (`encode_webp_lossy_rgba`, `encode_webp_lossy_rgb`) over vendored `libwebp 1.6.0` | Decode untrusted image files or expose raw C pointers |
+| `crates/radivine-jobs` | Durable job wire protocol (`WorkerRequest`, `WorkerResponse`, `JobUpdate`), lossless `WirePath`, `JobsClient`, `WorkerLauncher`, `JobsSettings` (`#![forbid(unsafe_code)]`) | Link `rusqlite`, image codecs, or GUI crates |
+| `apps/radivine-worker` | On-demand single-instance background job worker (`worker.lock` + `worker.sock`), SQLite WAL `JobStore`, `C0a`–`C6` startup crash recovery, round-robin scheduler, watchdog commit fence, `ResourceGovernor`, 60s idle exit | Link GUI (`eframe`/`egui`/`winit`), X11 (`x11rb`), or wheel crates |
 
 ## 4. Runtime architecture
 
@@ -263,6 +283,7 @@ impl Renderer {
 pub trait Action: Send + Sync + 'static {
     fn meta(&self) -> &ActionMeta;
     fn is_visible(&self, ctx: &BasicContext) -> bool;
+    fn description_for(&self, _ctx: &BasicContext) -> Option<Arc<str>> { None }
     fn enablement(&self, ctx: &Context) -> Enablement { Enablement::Enabled }
     fn run(&self, ctx: &Context, job: &JobHandle) -> Result<Outcome, ActionError>;
 }
@@ -303,10 +324,16 @@ Dispatch style:
 
 | File | Purpose |
 |------|---------|
-| `$XDG_CONFIG_HOME/radivine/config.toml` | Behaviour: trigger, wheel geometry/timings, leave grace, invoke, appearance, preview line counts, session/overlay limits, platform options (full schema §7.4) |
+| `$XDG_CONFIG_HOME/radivine/config.toml` | Behaviour: trigger, wheel geometry/timings, leave grace, invoke, appearance, preview line counts, notifications, `[jobs]` concurrency & retention (`max_parallel`, `retention_max_jobs`, `retention_days`) |
 | `$XDG_CONFIG_HOME/radivine/actions.toml` | User custom actions + menu overrides (hide/reorder) ([ACTION_SYSTEM.md §9–§10](ACTION_SYSTEM.md)) |
-| `$XDG_RUNTIME_DIR/radivine/radivine.sock` | IPC socket (mode 0600) |
-| `$XDG_STATE_HOME/radivine/radivine.log` | Optional log file (off by default; stderr when run from a terminal) |
+| `$XDG_CONFIG_HOME/radivine/convert.toml` | Conversion defaults, metadata policy (`auto_orient`, `icc`, `exif = "strip"`), output placement/naming/collision policy, resource limits, and user conversion presets |
+| `$XDG_RUNTIME_DIR/radivine/radivine.sock` | Wheel daemon IPC socket (mode `0600`) |
+| `$XDG_RUNTIME_DIR/radivine/control.sock` | Control Center single-instance activation socket (mode `0600`) |
+| `$XDG_RUNTIME_DIR/radivine/worker.sock` | Background job worker IPC socket (mode `0600`, `SO_PEERCRED` UID verified) |
+| `$XDG_RUNTIME_DIR/radivine/worker.lock` | Background job worker single-instance `flock(LOCK_EX)` file (mode `0600`) |
+| `$XDG_STATE_HOME/radivine/jobs.sqlite3` | Durable SQLite WAL job & item store with crash-recovery journals (mode `0600`, parent dir `0700`) |
+| `$XDG_STATE_HOME/radivine/daemon.log` | Daemon log file when launched in detached fallback mode |
+| `$XDG_STATE_HOME/radivine/worker.log` | Background worker log file when launched in detached fallback mode |
 
 Missing/invalid config → log a warning, fall back to defaults; never fail to start because of config. Config is reloaded on `radivine reload` (IPC); file watching is a later polish item.
 

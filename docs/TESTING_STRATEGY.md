@@ -1,6 +1,6 @@
 # Radivine — Testing Strategy
 
-Status: **Proposed** · Last updated: 2026-10-22
+Status: **Accepted & Implemented (v0.1.0 – v0.2.0 Milestone C5)** · Last updated: 2026-10-25
 
 ---
 
@@ -42,6 +42,11 @@ flowchart TB
 | `::arming` | Trigger edge logic | Pre-held Shift ignored until released; repeats deduped; L/R Shift |
 | `::shm` (pure part) | Byte-order shuffle derived from masks | LSB/MSB servers |
 | `radivine-viewer::{head,tail,index,search}` | Algorithms | Compare against reference implementations |
+| `radivine-convert::{format,options,settings,output,engine}` | Magic-byte sniffing, preset resolution (`QuickDefault`, `Named`), `convert.toml` parsing/validation, `O_RDONLY \| O_NOFOLLOW \| O_NONBLOCK` + `fstat` source validation, `.rvstage-<uid>` staging, `renameat2(RENAME_NOREPLACE)` / `linkat` atomic commit, cooperative cancellation cleanup | 9 conversion pairs, non-UTF-8 `OsStr` filenames, symlink races, decompression bomb rejection, read-only directory refusal |
+| `radivine-convert-image` | PNG/JPEG/WebP header inspection, 8-bit/16-bit/grayscale/CMYK decode, EXIF auto-orient + tag-`0x0112` reset, ICC & EXIF preservation/stripping (`gps_privacy_preserved`), alpha flattening, Lanczos3 resize, WebP RIFF `VP8X`/`ICCP`/`EXIF` muxer | Synthetic reference corpus (`tools/convert-corpus`) + adversarial malformed/polyglot/bomb inputs |
+| `radivine-jobs` | `JobState`/`ItemState` state machines, `WirePath` (`utf8:`/`hex:`) lossless codec, newline-delimited JSON-RPC framing (`MAX_FRAME_BYTES = 1 MiB`), `JobsSettings` validation, `SO_PEERCRED` UID verification | Proptest arbitrary byte round-trips for `WirePath` |
+| `radivine-worker` | SQLite WAL persistence (`jobs`, `job_items`, `active_stages`), crash recovery (`reconcile_on_startup`), bounded item worker pool, token-bucket `ResourceGovernor`, linked immutable retry (`FailedOnly`, `FailedAndCancelled`, `AllItems`), `ReloadSettings`, `InspectStaging` / `CleanupStaging`, D-Bus batch summary notifications | SIGKILL mid-item crash recovery, concurrent multi-client IPC, schema-version forward-compatibility guard |
+| `radivine-control` | 8-page UI state machine (`Dashboard`, `General`, `Wheel`, `Actions`, `Conversion`, `Jobs`, `Diagnostics`, `About`), standalone `radivine-control convert` dialog (`--stdin` / positional args), `toml_edit` format-preserving persistence (`config.toml`, `actions.toml`, `convert.toml`), native clipboard & Arabic/non-Latin system-font fallback | Headless `egui::Context::run_ui` harness + `--export-screenshots` regression suite |
 
 ## 3. Wheel scenario tests (script DSL)
 
@@ -137,17 +142,19 @@ Recorded in `docs/test-reports/Mx.md` with date, versions (`radivine doctor` out
 | Safety | Checksums/mtimes of dragged files unchanged across all cases |
 | Crash recovery | `kill -9` daemon mid-drag and mid-invoke; desktop usable; restart works |
 
-## 7. Performance testing
+## 7. Performance, Fuzzing & Reliability Testing
 
-| Kind | Tool | Targets (ARCHITECTURE §9) |
+| Kind | Tool | Targets (`ARCHITECTURE.md` §9 & `BENCHMARKS.md`) |
 |------|------|---------------------------|
 | Micro-benchmarks | `criterion` in `radivine-wheel` (`handle`, `scene`, placement) and `radivine-render` (frame for 1/2/3-level clusters at 1×/2×) | Frame p95 < 4 ms @1×, < 8 ms @2× |
-| Runtime spans | `tracing` spans → `RADIVINE_TRACE_TIMINGS=1` summary on exit (p50/p95/max) | Trigger→frame, status latency, drop→dispatch |
-| Idle | `pidstat`, `/proc/<pid>/status`, `perf trace -s` for wakeups | ≈ 0 % CPU, RSS < 25 MB |
-| Soak | Scripted E2E loop for 1 h (M6) | No crash, RSS drift < 5 MB |
+| Conversion codec benchmarks | `convert-cli bench` (`tools/convert-cli`) | PNG→JPEG, PNG→WebP, JPEG→WebP across 1 MP / 12 MP / 24 MP + 20-item & 100-item batches |
+| System conversion & UI benchmarks | `c5_benchmarks` (`apps/radivine-control/tests/c5_benchmarks.rs`) | Quick Convert dispatch p95 ≤ 12 ms, worker cold-start p95 ≤ 80 ms, cancel ack p95 ≤ 25 ms, drain p95 ≤ 300 ms, Advanced Convert ready p95 ≤ 180 ms, Jobs 1,000-row frame p95 ≤ 4 ms |
+| Coverage-guided fuzzing | `tools/convert-fuzz` (8 `libfuzzer-sys` SanitizerCoverage targets) | `sniff_format`, `inspect`, `convert_small`, `exif_orientation_reset`, `webp_riff_mux`, `convert_toml_parse`, `worker_protocol_parse`, `wirepath_roundtrip` (`≥ 1 h` per target in C5) |
+| Reliability soak | `c5_soak_test` (`apps/radivine-control/tests/c5_soak_test.rs`) | `≥ 3600 s` continuous Quick Convert, Advanced Convert, mixed/invalid batches, cancellation, linked retry, SIGTERM/SIGKILL recovery, idle exit, collisions, settings reload; 0 source mutations, 0 overwrites, 0 residual `.rvstage-*`/`.part` |
+| Idle | `pidstat`, `/proc/<pid>/status`, `perf trace -s` for wakeups | ≈ 0 % CPU, daemon RSS ≤ 25 MiB, worker RSS recovery within +8 MiB |
 | Allocation | Counting allocator test | 0 allocations per frame in steady state |
 
-Results go to `docs/BENCHMARKS.md` with machine, OS, versions, date, command lines, and raw numbers. Targets stay labelled "target" until measured.
+Results go to [`docs/BENCHMARKS.md`](BENCHMARKS.md) and [`docs/test-reports/C5.md`](test-reports/C5.md) with machine, OS, versions, date, command lines, and raw numbers.
 
 ## 8. Quality tools and CI
 
@@ -155,11 +162,14 @@ Results go to `docs/BENCHMARKS.md` with machine, OS, versions, date, command lin
 
 ```bash
 cargo fmt --all --check
+./scripts/check-dep-graph.sh
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+cargo test --workspace -- --test-threads=1
 cargo test --workspace --features x11-integration      # needs DISPLAY or xvfb-run
 cargo bench -p radivine-wheel -p radivine-render
+cargo run --release -p convert-cli -- bench --warmup 5 --runs 30
 cargo deny check
+cargo audit
 ./tests/e2e-x11/run_e2e.sh                              # needs Xvfb, python3-gi, xdotool
 ```
 

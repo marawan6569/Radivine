@@ -1,6 +1,6 @@
 # Radivine v0.1.1 / v0.2.0 — Control Center, Service Lifecycle, Conversion & Jobs Design
 
-Status: **Accepted (v0.1.1, extended in v0.2.0 Milestone C4)** · Last updated: 2026-10-24
+Status: **Accepted (v0.1.1, extended in v0.2.0 Milestones C4–C5)** · Last updated: 2026-10-25
 Related: [`ARCHITECTURE.md`](ARCHITECTURE.md) · [`DECISIONS.md`](DECISIONS.md) · [`ACTION_SYSTEM.md`](ACTION_SYSTEM.md) · [`PLATFORM_INTEGRATION.md`](PLATFORM_INTEGRATION.md) · [`planning/v0.2.0/CONVERSION_UX.md`](planning/v0.2.0/CONVERSION_UX.md)
 
 ---
@@ -9,15 +9,18 @@ Related: [`ARCHITECTURE.md`](ARCHITECTURE.md) · [`DECISIONS.md`](DECISIONS.md) 
 
 Radivine `v0.1.0` delivered the core radial wheel engine, X11 mid-drag interception (`Drag + Shift` in Nemo), `radivine invoke`, context-aware actions, and the standalone `radivine-viewer` preview window. However, starting the background daemon required running `radivine daemon` in a terminal or manually copying example service files.
 
-**Radivine `v0.1.1`** eliminates terminal dependency and introduces a native graphical **Radivine Control Center (`radivine-control`)** while preserving 100% of the approved radial wheel geometry, navigation, visual styling, and `v0.1.0` CLI/configuration contracts.
+**Radivine `v0.1.1`** eliminates terminal dependency and introduces a native graphical **Radivine Control Center (`radivine-control`)** while preserving 100% of the approved radial wheel geometry, navigation, visual styling, and `v0.1.0` CLI/configuration contracts. **Radivine `v0.2.0`** extends `radivine-control` with the **Conversion** settings page, the **Jobs** monitor/history page, the standalone **Advanced Convert** dialog (`radivine-control convert`), native desktop clipboard interoperability, and system-font fallback for Arabic and other non-Latin scripts.
 
 ---
 
 ## 2. Control Center Architecture (`apps/radivine-control`)
 
-### 2.1 Standalone Process & Crate Reuse
+### 2.1 Standalone Process, Native Clipboard, Non-Latin Font Fallback & Crate Reuse
 
-`radivine-control` is a standalone desktop binary at `apps/radivine-control` (`#![forbid(unsafe_code)]`) built with `eframe` / `egui` `0.37` (`features = ["clipboard", "default_fonts", "glow", "system_fonts", "x11", "wayland"]`, the same UI toolkit used by `radivine-viewer`). Enabling `eframe`'s `clipboard` feature activates `egui-winit/clipboard` (`arboard` on X11 for standard `CLIPBOARD` and `PRIMARY` selection semantics, and `smithay-clipboard` on Wayland), providing full system clipboard interoperability (`Ctrl+C`, `Ctrl+V`, `Ctrl+X`, and explicit copy actions) across the Control Center and Advanced Convert windows without external helper binaries. Enabling `eframe`'s `system_fonts` feature (and registering `egui_system_font_provider::SystemFontProvider` in [`install_inter_font`](../apps/radivine-control/src/ui/theme.rs)) resolves non-Latin scripts such as Arabic, CJK, Hebrew, and Devanagari on demand from installed system fonts via `fontique` / Fontconfig while keeping Radivine's bundled `Inter-Variable.ttf` as the primary Latin UI typeface.
+`radivine-control` is a standalone desktop binary at `apps/radivine-control` (`#![forbid(unsafe_code)]`) built with `eframe` / `egui` `0.37` (`features = ["clipboard", "default_fonts", "glow", "system_fonts", "x11", "wayland"]`, the same UI toolkit used by `radivine-viewer`).
+- **Native System Clipboard (`eframe/clipboard`):** Enabling `eframe`'s `clipboard` feature activates `egui-winit/clipboard` (`arboard` on X11 for standard `CLIPBOARD` and `PRIMARY` selection semantics, and `smithay-clipboard` on Wayland), providing full cross-application copy/cut/paste interoperability (`Ctrl+C`, `Ctrl+V`, `Ctrl+X`, and explicit copy actions such as Diagnostics report export and job path copying) across the Control Center, Advanced Convert, and `radivine-viewer` without external helper binaries (`xclip`/`xsel`).
+- **Arabic & Non-Latin System-Font Fallback (`eframe/system_fonts`):** Enabling `eframe`'s `system_fonts` feature (and registering `egui_system_font_provider::SystemFontProvider` in [`install_inter_font`](../apps/radivine-control/src/ui/theme.rs)) resolves non-Latin scripts such as Arabic, CJK, Hebrew, Cyrillic, and Devanagari on demand from installed system fonts via `fontique` / Fontconfig while keeping Radivine's bundled `Inter-Variable.ttf` as the primary Latin UI typeface. In `egui 0.37`, `epaint_default_fonts` uses `cosmic-text` (HarfBuzz-compatible `rustybuzz` shaping + Unicode Bidirectional Algorithm per line), so contextual Arabic letter joining (isolated/initial/medial/final forms), ligatures (e.g., `لا`), diacritics (`tashkeel`), and mixed Arabic/English runs render as properly shaped text rather than tofu boxes (`□`) or disconnected letters.
+- **Known `egui 0.37` Bidirectional Layout Limitation:** While `egui 0.37` + `cosmic-text` performs HarfBuzz glyph shaping and inline bidirectional run reordering for Arabic and mixed Arabic/English text, `egui`'s widget layout engine remains left-to-right (LTR) at the container/paragraph alignment level (e.g., `TextEdit` cursor home alignment and form label/control column direction remain LTR). Full RTL layout mirroring is a known upstream `egui 0.37` limitation and is intentionally out of scope for `v0.2.0`.
 
 To prevent duplicate schemas or competing protocol implementations, `radivine-control` reuses the existing workspace crates directly:
 - **`radivine::config`:** [`AppConfig`](../apps/radivine/src/config.rs), `ScaleSetting`, `ReducedMotionSetting`, and section structs (`TriggerSection`, `WheelSection`, `AppearanceSection`, `PreviewSection`, `InputSection`, `X11Section`).

@@ -1,7 +1,7 @@
 # Radivine — Context & Action System
 
-Status: **Implemented in M4–M5 & v0.2.0 C3 (`radivine-core`, `radivine-actions`, `radivine`, `radivine-viewer`, `radivine-jobs`)** · Last updated: 2026-10-24
-Crates: `radivine-core` (API, context, registry, dispatcher), `radivine-actions` (built-ins including Quick Convert), `radivine-jobs` (background worker IPC client), and `radivine-viewer` (preview application).
+Status: **Implemented (v0.1.0 M4–M5, v0.1.1, and v0.2.0 C1–C5)** · Last updated: 2026-10-25
+Crates: `radivine-core` (API, context, registry, dispatcher), `radivine-actions` (built-ins including Quick Convert & Advanced Convert), `radivine-dbus` (pure-Rust D-Bus client), `radivine-jobs` (background worker IPC client), and `radivine-viewer` (preview application).
 
 ---
 
@@ -12,11 +12,12 @@ Goals
 - New context types and new actions can be added without touching the wheel engine or renderer.
 - Visibility/enablement depends on context, computed **without blocking the UI thread**.
 - Actions execute off the UI thread, are cancellable, and report results/errors uniformly.
+- Short-lived actions execute directly on the daemon's `Dispatcher` thread pool, while long-running batch actions (such as image conversion in `v0.2.0`) submit durable jobs to `radivine-worker` via `radivine-jobs` (`ADR-033`) and return immediately so the wheel closes in `< 5 ms`.
 - Users can add simple custom actions declaratively.
 
-Non-goals (v0.1)
-- No dynamic library plugins, no WASM, no scripting runtime, no plugin marketplace.
-- No long-running job UI (progress windows); results are notifications.
+Non-goals
+- No dynamic library plugins, no WASM, no scripting runtime, no plugin marketplace (`ADR-013`).
+- No blocking modal progress windows inside the radial wheel daemon; durable job progress, cancellation, and retry live in the standalone Control Center **Jobs** page (`radivine-control --page jobs`).
 
 ## 2. Concepts
 
@@ -88,7 +89,7 @@ pub struct FileFacts {
     pub size: Option<u64>,
     pub readable: bool,
     pub text: TextVerdict,
-    pub sniffed_mime: Option<&'static str>, // from `infer`
+    pub sniffed_mime: Option<&'static str>, // from in-house `sniff_magic_mime` (`enrich.rs`)
     pub error: Option<String>,               // short, user-presentable
 }
 pub enum FileKind { Regular, Directory, Fifo, Socket, CharDevice, BlockDevice, BrokenSymlink, Missing, Other }
@@ -108,11 +109,11 @@ pub struct Context {
 2. Parse per RFC 2483: split on `\r\n` (accept bare `\n`), skip empty lines and lines starting with `#`, trim.
 3. For each URI: `local_path` only for `file://` with empty host or `localhost`; percent-decode the path as **bytes** into `OsString` (filenames need not be UTF-8); reject non-absolute paths.
 4. Derive `name`, `ext`, `guessed_mime`.
-5. Invoke mode: CLI arguments that are plain paths are canonicalised by the CLI into `file://` URIs before sending over IPC.
+5. Invoke mode: CLI arguments (`OsString`) that are plain paths are canonicalised by the CLI into `file://` URIs via `radivine_core::local_path_to_file_uri`, which percent-encodes raw Unix path bytes (`OsStrExt::as_bytes`) per RFC 8089 so non-UTF-8 filenames survive `radivine invoke` losslessly (`E8`).
 
 ### 4.2 Enrichment (worker thread)
 
-For the first 64 items (rest stay unenriched → `Unknown`):
+For the first 64 items (`MAX_ENRICHED_ITEMS = 64`; remaining items receive `FileFacts::cap_exceeded()` with `is_uninspected() == true`):
 
 1. `symlink_metadata(path)` → record whether it is a symlink.
 2. `metadata(path)` (follows links); `NotFound` after a symlink → `BrokenSymlink`; `NotFound` otherwise → `Missing`.
@@ -120,11 +121,11 @@ For the first 64 items (rest stay unenriched → `Unknown`):
 4. Read up to 8 KiB and compute the text verdict:
    1. Empty file → `Text(Utf8)`.
    2. BOM: `EF BB BF` → `Utf8Bom`; `FF FE` → `Utf16Le`; `FE FF` → `Utf16Be`.
-   3. `infer` recognises a binary format (image, audio, video, archive, font, ELF, PDF, …) → `Binary` (+ `sniffed_mime`).
+   3. In-house `sniff_magic_mime` (`crates/radivine-core/src/enrich.rs`) recognises a known binary magic header (PNG, JPEG, WebP, GIF, TIFF, BMP, audio, video, archive, font, ELF, PDF, …) → `Binary` (+ `sniffed_mime`).
    4. Any NUL byte → `Binary`.
    5. Valid UTF-8 (allowing an incomplete sequence at the 8 KiB boundary) → `Text(Utf8)`.
    6. More than 10 % control bytes (excluding `\t \n \r \f \x1b`) → `Binary`; else `Text(Unknown8Bit)`.
-5. Overall deadline 1500 ms; per-item results are streamed back so partial facts can be applied.
+5. Overall deadline 1500 ms (`DEFAULT_ENRICH_TIMEOUT`); per-item results are streamed back so partial facts can be applied. Items not reached before the deadline receive `FileFacts::timed_out()` (`is_uninspected() == true`).
 
 The enricher result is sent through the calloop channel; the app replaces the session's `Arc<Context>` and calls `Registry::enablement_updates`.
 
@@ -296,8 +297,8 @@ pub enum JobEvent { Finished { job: JobId, action: ActionId, result: Result<Outc
 
 | Id | Label | Visible when (BasicContext) | Enabled when (Context) | Behaviour |
 |----|-------|-----------------------------|------------------------|-----------|
-| `radivine.debug.log` | (any) | always | always | **M1–M3 placeholder**: logs `id`, `ItemPath`, mode, source, item URIs at `info`; returns `Done`. Every built-in is registered as a `LogAction` with the real metadata until its real implementation lands. |
-| `radivine.preview.full` | Full Preview | `Files`, exactly 1 item, `local_path` is `Some`, `guessed_mime` not a known non-text family (`image/`, `audio/`, `video/`, `font/`, archives, `application/pdf`, …) | `Regular`, `readable`, `text = Text(_)` | Spawn `radivine-viewer --mode full -- <path>` |
+| `custom.terminal`, `custom.scripts.*` | Open Terminal / SHA-256 / Make Executable | `Files`, ≥ 1 item (only when no user `actions.toml` is loaded) | always | Built-in `LogAction` fallback entries (`radivine-actions/src/lib.rs`) when no user `actions.toml` is configured; log selection at `info` and return `Done`. |
+| `radivine.preview.full` | Full Preview | `Files`, ≥ 1 item with `local_path` is `Some` and `guessed_mime` not a known non-text family (`image/`, `audio/`, `video/`, `font/`, archives, `application/pdf`, …) | Exactly 1 item (`"Select a single file to preview"` otherwise), `Regular`, `readable`, `text = Text(_)` | Spawn `radivine-viewer --mode full -- <path>` |
 | `radivine.preview.head` | Head | same | same | Spawn `radivine-viewer --mode head --lines <N> -- <path>` (`N` from config, default 50) |
 | `radivine.preview.tail` | Tail | same | same | Spawn `radivine-viewer --mode tail --lines <N> -- <path>` |
 | `radivine.convert.image.png` | PNG | `Files`, ≥ 1 local candidate image (`png`, `jpg`/`jpeg`, `webp`), and not a single-item selection already `.png` | ≥ 1 item confirmed convertible via `FileFacts.sniffed_mime` + `CapabilityCatalog`, OR ≥ 1 candidate item uninspected (`> 64` cap or timeout) after pending items finish | Submits a durable `convert.image` job (`target = "png"`) to `radivine-worker` via `radivine-jobs::JobsClient::connect_or_launch` |
