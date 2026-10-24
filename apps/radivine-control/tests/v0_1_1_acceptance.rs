@@ -139,7 +139,7 @@ fn ac_02_background_daemon_lifecycle_start_stop_restart_and_single_instance() {
     let snap_running = ctrl.start_daemon().expect("start detached daemon");
     assert_eq!(snap_running.health, DaemonHealthState::Running);
     let daemon1 = snap_running.daemon.as_ref().expect("live IPC status");
-    assert_eq!(daemon1.version, "0.1.1");
+    assert_eq!(daemon1.version, env!("CARGO_PKG_VERSION"));
     let pid1 = daemon1.pid;
     assert!(pid1 > 0);
 
