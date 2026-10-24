@@ -1080,4 +1080,122 @@ mod tests {
         assert!(removed_empty);
         assert!(!stage.exists());
     }
+
+    /// `AC-C1.9`: Property-based verification (`>= 500` cases) of `INV-SRC` (source never modified),
+    /// `INV-NOOVERWRITE` (existing files never overwritten), and `INV-NOTEMP` (no `.rvstage-*` or `.part`
+    /// files remain after commit or rollback) under fault injection (`ENOSPC`, `EIO`, `EINVAL`, `EPERM`,
+    /// cancellation, and simulated panic unwind).
+    #[test]
+    fn proptest_inv_src_nooverwrite_notemp_500_cases() {
+        use proptest::prelude::*;
+        use proptest::test_runner::{Config as ProptestConfig, TestRunner};
+
+        let mut runner = TestRunner::new(ProptestConfig {
+            cases: 512,
+            ..ProptestConfig::default()
+        });
+
+        runner
+            .run(
+                &(0u8..8, 0u8..3, any::<bool>(), 1usize..64),
+                |(fault_mode, collision_idx, pre_create_target, payload_len)| {
+                    let tmp = tempfile::tempdir().unwrap();
+                    let src_path = tmp.path().join("photo.png");
+                    let src_bytes = b"immutable-source-bytes-v1";
+                    fs::write(&src_path, src_bytes).unwrap();
+                    let src_meta_before = fs::metadata(&src_path).unwrap();
+
+                    let pre_existing_path = tmp.path().join("photo.webp");
+                    let pre_existing_bytes = b"pre-existing-precious-user-file";
+                    if pre_create_target {
+                        fs::write(&pre_existing_path, pre_existing_bytes).unwrap();
+                    }
+
+                    let collision = match collision_idx {
+                        0 => CollisionPolicy::Suffix,
+                        1 => CollisionPolicy::Skip,
+                        _ => CollisionPolicy::Fail,
+                    };
+                    let policy = OutputPolicy {
+                        collision,
+                        ..OutputPolicy::default()
+                    };
+
+                    let fs_ops: Arc<dyn FsOps> = match fault_mode {
+                        // 0: normal Rung A
+                        0 => Arc::new(MockFsOps::new(None, None)),
+                        // 1: Rung A EINVAL -> Rung B fallback
+                        1 => Arc::new(MockFsOps::new(Some(rustix::io::Errno::INVAL), None)),
+                        // 2: Both Rung A (EINVAL) and Rung B (EPERM) unsupported
+                        2 => Arc::new(MockFsOps::new(
+                            Some(rustix::io::Errno::INVAL),
+                            Some(rustix::io::Errno::PERM),
+                        )),
+                        // 3: ENOSPC during Rung A
+                        3 => Arc::new(MockFsOps::new(Some(rustix::io::Errno::NOSPC), None)),
+                        // 4: EIO during Rung A
+                        4 => Arc::new(MockFsOps::new(Some(rustix::io::Errno::IO), None)),
+                        _ => Arc::new(MockFsOps::new(None, None)),
+                    };
+
+                    let mut ctrl = NoopControl;
+                    let stage_name = format!(".rvstage-prop-{:016x}", random_hex16_u64());
+                    let pending_res =
+                        PendingOutput::create(tmp.path(), &stage_name, 0, &mut ctrl, fs_ops);
+
+                    if let Ok(mut pending) = pending_res {
+                        let payload = vec![0xABu8; payload_len];
+                        let _ = pending.file_mut().write_all(&payload);
+
+                        match fault_mode {
+                            // 5: Cancel before commit (drop PendingOutput directly)
+                            5 => {
+                                drop(pending);
+                            }
+                            // 6: Simulated panic unwind while PendingOutput is live
+                            6 => {
+                                let _ =
+                                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                        let _held = pending;
+                                        panic!("simulated mid-encode panic");
+                                    }));
+                            }
+                            // Other modes: validate and attempt commit
+                            _ => {
+                                if pending.sync_and_rewind_for_validation().is_ok() {
+                                    let _ = pending
+                                        .commit_with_policy("photo", "webp", &policy, &mut ctrl);
+                                }
+                            }
+                        }
+                    }
+
+                    // 1. INV-SRC: source file bytes and inode untouched
+                    prop_assert_eq!(fs::read(&src_path).unwrap(), src_bytes);
+                    let src_meta_after = fs::metadata(&src_path).unwrap();
+                    prop_assert_eq!(src_meta_before.ino(), src_meta_after.ino());
+
+                    // 2. INV-NOOVERWRITE: pre-existing destination file never overwritten
+                    if pre_create_target {
+                        prop_assert_eq!(fs::read(&pre_existing_path).unwrap(), pre_existing_bytes);
+                    }
+
+                    // 3. INV-NOTEMP: zero `.rvstage-*` directories or `.part` files left behind
+                    for entry in fs::read_dir(tmp.path()).unwrap() {
+                        let name = entry.unwrap().file_name().to_string_lossy().into_owned();
+                        prop_assert!(
+                            !name.starts_with(".rvstage-") && !name.ends_with(".part"),
+                            "leftover staging artifact: {name}"
+                        );
+                    }
+
+                    Ok(())
+                },
+            )
+            .unwrap();
+    }
+
+    fn random_hex16_u64() -> u64 {
+        u64::from_str_radix(&random_hex16(), 16).unwrap_or(1)
+    }
 }

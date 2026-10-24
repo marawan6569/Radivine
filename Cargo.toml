@@ -13,6 +13,8 @@ members = [
     "apps/radivine-viewer",
     "apps/radivine-control",
     "tools/wheel-sandbox",
+    "tools/convert-corpus",
+    "tools/convert-cli",
 ]
 exclude = [
     "spikes/xdnd-overlay",

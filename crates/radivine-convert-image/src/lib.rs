@@ -200,12 +200,18 @@ impl ConversionBackend for ImageBackend {
 
         match sniffed {
             FormatId::Png => {
-                // Pre-check PNG IHDR dimensions (bytes 16..24) before PngDecoder scans for IDAT
-                let mut hdr24 = [0u8; 24];
-                if source.read_exact(&mut hdr24).is_ok() && &hdr24[12..16] == b"IHDR" {
-                    let w = u32::from_be_bytes([hdr24[16], hdr24[17], hdr24[18], hdr24[19]]);
-                    let h = u32::from_be_bytes([hdr24[20], hdr24[21], hdr24[22], hdr24[23]]);
+                // Pre-check PNG IHDR dimensions (bytes 16..24) and APNG acTL chunk before PngDecoder scans for IDAT
+                let mut hdr64 = [0u8; 64];
+                let n = source.read(&mut hdr64).unwrap_or(0);
+                if n >= 24 && &hdr64[12..16] == b"IHDR" {
+                    let w = u32::from_be_bytes([hdr64[16], hdr64[17], hdr64[18], hdr64[19]]);
+                    let h = u32::from_be_bytes([hdr64[20], hdr64[21], hdr64[22], hdr64[23]]);
                     check_dimensions_against_limits(w, h, &self.limits)?;
+                    if n >= 41 && &hdr64[37..41] == b"acTL" {
+                        return Err(ConversionError::UnsupportedFeature {
+                            feature: UnsupportedFeature::Animation,
+                        });
+                    }
                 }
                 source
                     .seek(SeekFrom::Start(0))
@@ -224,6 +230,11 @@ impl ConversionBackend for ImageBackend {
                     });
                 }
                 let is_animated = dec.is_apng().unwrap_or(false);
+                if is_animated {
+                    return Err(ConversionError::UnsupportedFeature {
+                        feature: UnsupportedFeature::Animation,
+                    });
+                }
                 let color = dec.color_type();
                 let bit_depth = color_type_bit_depth(color);
                 let has_icc = dec

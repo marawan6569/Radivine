@@ -1,0 +1,17 @@
+[package]
+name = "convert-corpus"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Deterministic synthetic image corpus generator for Radivine conversion testing and benchmarking."
+
+[dependencies]
+radivine-webp = { path = "../../crates/radivine-webp" }
+clap.workspace = true
+image.workspace = true
+jpeg-encoder.workspace = true
+anyhow.workspace = true
+
+[lints]
+workspace = true

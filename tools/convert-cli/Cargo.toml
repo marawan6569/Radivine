@@ -1,0 +1,20 @@
+[package]
+name = "convert-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Developer CLI and benchmark runner for Radivine conversion engine (C1)."
+
+[dependencies]
+radivine-convert = { path = "../../crates/radivine-convert" }
+radivine-convert-image = { path = "../../crates/radivine-convert-image" }
+convert-corpus = { path = "../convert-corpus" }
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+anyhow.workspace = true
+
+[lints]
+workspace = true

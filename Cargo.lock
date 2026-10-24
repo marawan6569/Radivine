@@ -548,6 +548,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "convert-cli"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "convert-corpus",
+ "radivine-convert",
+ "radivine-convert-image",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "convert-corpus"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "image",
+ "jpeg-encoder",
+ "radivine-webp",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2676,6 +2701,7 @@ dependencies = [
 name = "radivine-convert-image"
 version = "0.1.1"
 dependencies = [
+ "convert-corpus",
  "image",
  "jpeg-encoder",
  "proptest",
