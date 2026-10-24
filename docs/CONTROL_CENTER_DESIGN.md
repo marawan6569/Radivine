@@ -17,7 +17,7 @@ Radivine `v0.1.0` delivered the core radial wheel engine, X11 mid-drag intercept
 
 ### 2.1 Standalone Process & Crate Reuse
 
-`radivine-control` is a standalone desktop binary at `apps/radivine-control` (`#![forbid(unsafe_code)]`) built with `eframe` / `egui` `0.37` (the same UI toolkit used by `radivine-viewer`).
+`radivine-control` is a standalone desktop binary at `apps/radivine-control` (`#![forbid(unsafe_code)]`) built with `eframe` / `egui` `0.37` (`features = ["clipboard", "default_fonts", "glow", "x11", "wayland"]`, the same UI toolkit used by `radivine-viewer`). Enabling `eframe`'s `clipboard` feature activates `egui-winit/clipboard` (`arboard` on X11 for standard `CLIPBOARD` and `PRIMARY` selection semantics, and `smithay-clipboard` on Wayland), providing full system clipboard interoperability (`Ctrl+C`, `Ctrl+V`, `Ctrl+X`, and explicit copy actions) across the Control Center and Advanced Convert windows without external helper binaries.
 
 To prevent duplicate schemas or competing protocol implementations, `radivine-control` reuses the existing workspace crates directly:
 - **`radivine::config`:** [`AppConfig`](../apps/radivine/src/config.rs), `ScaleSetting`, `ReducedMotionSetting`, and section structs (`TriggerSection`, `WheelSection`, `AppearanceSection`, `PreviewSection`, `InputSection`, `X11Section`).
