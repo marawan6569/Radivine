@@ -10,6 +10,72 @@ pub enum WheelLayout {
     Concentric,
 }
 
+/// Reason why a requested [`WheelLayout::Concentric`] session fell back to [`WheelLayout::Branching`]
+/// before mapping (`PRODUCT_SPEC.md` §P3, `ARCHITECTURE.md` §A3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LayoutFallback {
+    /// The viewport cannot fit the reserved concentric ring cluster and caption box.
+    InsufficientSpace,
+    /// Root thickness (`< 60 lp`) or sector geometry cannot accommodate the minimum `32×32 lp` target core.
+    TargetTooSmall,
+    /// Platform lacks a compositing manager required for concentric ring presentation.
+    NoCompositor,
+}
+
+/// Resolved layout selection for a [`WheelSession`], recording the requested preference,
+/// the effective layout in use for the entire session, and any startup fallback reason
+/// (`ARCHITECTURE.md` §A2, §A3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LayoutSelection {
+    /// Layout requested by [`WheelConfig::layout`].
+    pub requested: WheelLayout,
+    /// Effective layout active for the entire session.
+    pub effective: WheelLayout,
+    /// Startup fallback reason when `requested != effective`, if applicable.
+    pub fallback: Option<LayoutFallback>,
+}
+
+impl Default for LayoutSelection {
+    fn default() -> Self {
+        Self::branching()
+    }
+}
+
+impl LayoutSelection {
+    /// Selection where [`WheelLayout::Branching`] was requested and is active.
+    #[inline]
+    #[must_use]
+    pub const fn branching() -> Self {
+        Self {
+            requested: WheelLayout::Branching,
+            effective: WheelLayout::Branching,
+            fallback: None,
+        }
+    }
+
+    /// Selection where [`WheelLayout::Concentric`] was requested and is active.
+    #[inline]
+    #[must_use]
+    pub const fn concentric() -> Self {
+        Self {
+            requested: WheelLayout::Concentric,
+            effective: WheelLayout::Concentric,
+            fallback: None,
+        }
+    }
+
+    /// Selection where [`WheelLayout::Concentric`] was requested but fell back to [`WheelLayout::Branching`].
+    #[inline]
+    #[must_use]
+    pub const fn fallback_to_branching(reason: LayoutFallback) -> Self {
+        Self {
+            requested: WheelLayout::Concentric,
+            effective: WheelLayout::Branching,
+            fallback: Some(reason),
+        }
+    }
+}
+
 /// Rule controlling how submenus open when hovered or clicked.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SubmenuOpen {

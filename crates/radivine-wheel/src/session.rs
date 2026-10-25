@@ -5,7 +5,9 @@ use std::sync::Arc;
 use smallvec::SmallVec;
 
 use crate::anim::{Ease, Millis, Tween, timings};
-use crate::config::{InvokeSelect, SubmenuOpen, WheelConfig};
+use crate::config::{
+    InvokeSelect, LayoutFallback, LayoutSelection, SubmenuOpen, WheelConfig, WheelLayout,
+};
 use crate::geometry::{
     Point, SegmentSpan, Viewport, anchor_corridor_polygon, child_corridor_polygon,
     child_segment_spans, circle_tangent_points, point_in_triangle, root_segment_spans,
@@ -126,6 +128,8 @@ pub enum SessionPhase {
 /// Snapshot of internal session state for testing and debug overlays (`WHEEL_ENGINE_DESIGN.md` §16).
 #[derive(Clone, Debug)]
 pub struct DebugState {
+    /// Requested and effective layout selection for this session.
+    pub layout_selection: LayoutSelection,
     /// Current session lifecycle phase.
     pub phase: SessionPhase,
     /// Whether the pointer has moved past `activation_slop` since summon.
@@ -232,9 +236,29 @@ struct IntentProtection {
     deadline: Millis,
 }
 
+/// Layout-specific session state (`ARCHITECTURE.md` §A2).
+///
+/// Uses closed enum dispatch rather than runtime strategy trait objects (`dyn WheelLayoutStrategy`),
+/// keeping menu ownership, session lifecycle, and output contracts unified while isolating
+/// layout-specific geometry, hit testing, and navigation transitions.
+#[derive(Clone, Debug)]
+enum LayoutState {
+    /// Classic adjacent-wheel branching / vine layout.
+    Branching,
+    /// Concentric / nested full-circle annular layout (populated in Milestone N2).
+    #[allow(dead_code)]
+    Concentric(ConcentricState),
+}
+
+/// Nested-specific session state placeholder for Milestone N1 layout selection seam.
+#[derive(Clone, Debug, Default)]
+struct ConcentricState;
+
 /// Deterministic, platform-independent radial wheel session state machine (`WHEEL_ENGINE_DESIGN.md` §9).
 pub struct WheelSession {
     cfg: WheelConfig,
+    layout_selection: LayoutSelection,
+    layout_state: LayoutState,
     menu: Option<MenuTree>,
     has_hovered: bool,
     anchor: Point,
@@ -285,6 +309,7 @@ impl WheelSession {
         now: Millis,
     ) -> Self {
         let cfg = cfg.validated();
+        let (layout_selection, layout_state) = select_initial_layout(&cfg, anchor, viewport);
         let sanitized_menu = menu.map(|mut m| {
             m.sanitize(&cfg);
             m
@@ -366,6 +391,8 @@ impl WheelSession {
         let mut session = Self {
             appear_done_at: now + u64::from(appear_dur + stagger_extra),
             cfg,
+            layout_selection,
+            layout_state,
             menu: sanitized_menu,
             has_hovered: false,
             anchor,
@@ -402,6 +429,20 @@ impl WheelSession {
         session
     }
 
+    /// Returns the requested and effective [`LayoutSelection`] for this session (`ARCHITECTURE.md` §A2, §A3).
+    #[inline]
+    #[must_use]
+    pub fn layout_selection(&self) -> LayoutSelection {
+        self.layout_selection
+    }
+
+    /// Records a platform-level startup fallback reason (such as [`LayoutFallback::NoCompositor`])
+    /// when a requested [`WheelLayout::Concentric`] session is forced to run as [`WheelLayout::Branching`]
+    /// before mapping (`ARCHITECTURE.md` §A7).
+    pub fn record_layout_fallback(&mut self, reason: LayoutFallback) {
+        self.layout_selection = LayoutSelection::fallback_to_branching(reason);
+    }
+
     /// Sets an optional item count badge (`> 1`) displayed on the root wheel's center hub.
     pub fn set_root_badge(&mut self, badge: Option<u32>, now: Millis) {
         self.root_badge = badge.filter(|&b| b > 1);
@@ -412,7 +453,16 @@ impl WheelSession {
     }
 
     /// Supplies the [`MenuTree`] after session creation (only allowed once, before any item is hovered).
-    pub fn set_menu(&mut self, mut menu: MenuTree, now: Millis) {
+    pub fn set_menu(&mut self, menu: MenuTree, now: Millis) {
+        self.set_menu_at_pointer(menu, self.last_pointer, now);
+    }
+
+    /// Supplies the [`MenuTree`] after session creation along with the host's last observed pointer
+    /// position (`ARCHITECTURE.md` §A3).
+    ///
+    /// Only allowed once, before any item is hovered. For [`WheelLayout::Branching`], behavior is
+    /// identical to [`Self::set_menu`].
+    pub fn set_menu_at_pointer(&mut self, mut menu: MenuTree, _pointer: Point, now: Millis) {
         if self.menu.is_some() || self.has_hovered {
             debug_assert!(
                 false,
@@ -421,12 +471,16 @@ impl WheelSession {
             return;
         }
         menu.sanitize(&self.cfg);
-        if let Some(root_wheel) = self.wheels.first_mut() {
-            if let Some(icon) = menu.root.icon.clone() {
-                root_wheel.hub.icon = Some(icon);
-            }
-            if let Some(children) = menu.root.children() {
-                populate_root_segments(root_wheel, children, &self.cfg);
+        match self.layout_state {
+            LayoutState::Branching | LayoutState::Concentric(_) => {
+                if let Some(root_wheel) = self.wheels.first_mut() {
+                    if let Some(icon) = menu.root.icon.clone() {
+                        root_wheel.hub.icon = Some(icon);
+                    }
+                    if let Some(children) = menu.root.children() {
+                        populate_root_segments(root_wheel, children, &self.cfg);
+                    }
+                }
             }
         }
         self.menu = Some(menu);
@@ -512,46 +566,9 @@ impl WheelSession {
 
         // Interactive hover-intent timers only run in Appearing / Open
         if matches!(self.phase, SessionPhase::Appearing | SessionPhase::Open) {
-            // 1. Intent-triangle grace expiration
-            if let Some(intent) = self.intent_protection
-                && now >= intent.deadline
-            {
-                self.intent_protection = None;
-                self.truncate_after(intent.wheel, now, out);
-                // Re-evaluate hover at the last pointer position
-                if let Zone::Item { wheel, index } = self.raw_zone
-                    && wheel == intent.wheel
-                {
-                    let new_path = self.wheels[wheel as usize].path.child(index);
-                    self.set_hovered_item(Some(new_path), now, out);
-                    self.schedule_dwell_if_applicable(wheel, index, now);
-                } else {
-                    self.set_hovered_item(None, now, out);
-                }
-            }
-
-            // 2. Hub-close timer expiration
-            if let Some(hc) = self.hub_close
-                && now >= hc.deadline
-            {
-                self.hub_close = None;
-                if self.raw_zone == (Zone::Hub { wheel: hc.wheel })
-                    && (hc.wheel as usize) + 1 < self.wheels.len()
-                {
-                    self.truncate_after(hc.wheel, now, out);
-                }
-            }
-
-            // 3. Dwell submenu-open timer expiration
-            if let Some(dwell) = self.dwell
-                && now >= dwell.deadline
-            {
-                self.dwell = None;
-                if (dwell.wheel as usize) < self.wheels.len() {
-                    let expected_path = self.wheels[dwell.wheel as usize].path.child(dwell.item);
-                    if self.hovered_item.as_ref() == Some(&expected_path) {
-                        self.open_child_wheel(dwell.wheel, dwell.item, false, now, out);
-                    }
+            match self.layout_state {
+                LayoutState::Branching | LayoutState::Concentric(_) => {
+                    self.tick_interactive_branching(now, out);
                 }
             }
         }
@@ -565,42 +582,8 @@ impl WheelSession {
     /// Returns the current XDND drop target status (`WHEEL_ENGINE_DESIGN.md` §6.4).
     #[must_use]
     pub fn drop_target(&self) -> DropTarget {
-        if !self.moved_past_slop
-            || !matches!(self.phase, SessionPhase::Appearing | SessionPhase::Open)
-        {
-            return DropTarget::Reject;
-        }
-        let Some(ref path) = self.hovered_item else {
-            return DropTarget::Reject;
-        };
-        let Some(ref menu) = self.menu else {
-            return DropTarget::Reject;
-        };
-        let Some(node) = menu.node(path) else {
-            return DropTarget::Reject;
-        };
-        if !node.enabled {
-            return DropTarget::Reject;
-        }
-        match &node.kind {
-            NodeKind::Leaf => DropTarget::Accept(path.clone()),
-            NodeKind::Submenu {
-                children,
-                default_child: Some(dc),
-            } => {
-                if let Some(child) = children.get(*dc)
-                    && child.enabled
-                    && matches!(child.kind, NodeKind::Leaf)
-                {
-                    DropTarget::Accept(path.child(*dc as u8))
-                } else {
-                    DropTarget::Reject
-                }
-            }
-            NodeKind::Submenu {
-                default_child: None,
-                ..
-            } => DropTarget::Reject,
+        match self.layout_state {
+            LayoutState::Branching | LayoutState::Concentric(_) => self.drop_target_branching(),
         }
     }
 
@@ -626,6 +609,21 @@ impl WheelSession {
         enabled: bool,
         disabled_reason: Option<Arc<str>>,
     ) {
+        let now = self.wheels.first().map_or(0, |w| w.opacity.start);
+        self.set_enabled_at(path, enabled, disabled_reason, now);
+    }
+
+    /// Dynamically updates the `enabled` status and `disabled_reason` of the node at `path` at
+    /// explicit timestamp `now` (`ARCHITECTURE.md` §A3).
+    ///
+    /// Never changes layout or `description`.
+    pub fn set_enabled_at(
+        &mut self,
+        path: &ItemPath,
+        enabled: bool,
+        disabled_reason: Option<Arc<str>>,
+        now: Millis,
+    ) {
         if let Some(ref mut menu) = self.menu
             && let Some(node) = menu.node_mut(path)
         {
@@ -633,33 +631,46 @@ impl WheelSession {
             node.disabled_reason = disabled_reason;
         }
 
-        // Update any currently open wheel segment matching `path`
-        if !path.is_empty() {
-            let parent_len = path.len() - 1;
-            let seg_idx = path.as_slice()[parent_len] as usize;
-            if let Some(wheel) = self.wheels.get_mut(parent_len)
-                && wheel.path.as_slice() == &path.as_slice()[..parent_len]
-                && let Some(seg) = wheel.segments.get_mut(seg_idx)
-            {
-                seg.enabled = enabled;
-                if !enabled {
-                    seg.highlight = Tween::constant(0.0);
-                    seg.pop = Tween::constant(0.0);
+        match self.layout_state {
+            LayoutState::Branching | LayoutState::Concentric(_) => {
+                // Update any currently open wheel segment matching `path`
+                if !path.is_empty() {
+                    let parent_len = path.len() - 1;
+                    let seg_idx = path.as_slice()[parent_len] as usize;
+                    if let Some(wheel) = self.wheels.get_mut(parent_len)
+                        && wheel.path.as_slice() == &path.as_slice()[..parent_len]
+                        && let Some(seg) = wheel.segments.get_mut(seg_idx)
+                    {
+                        seg.enabled = enabled;
+                        if !enabled {
+                            seg.highlight = Tween::constant(0.0);
+                            seg.pop = Tween::constant(0.0);
+                        }
+                    }
+                }
+
+                // If a disabled item had a pending dwell timer, cancel it
+                if !enabled
+                    && let Some(dwell) = self.dwell
+                    && let Some(w) = self.wheels.get(dwell.wheel as usize)
+                    && w.path.child(dwell.item) == *path
+                {
+                    self.dwell = None;
                 }
             }
         }
 
-        // If a disabled item had a pending dwell timer, cancel it
-        if !enabled
-            && let Some(dwell) = self.dwell
-            && let Some(w) = self.wheels.get(dwell.wheel as usize)
-            && w.path.child(dwell.item) == *path
-        {
-            self.dwell = None;
-        }
-
-        let now = self.wheels.first().map_or(0, |w| w.opacity.start);
         self.rebuild_scene(now);
+    }
+
+    /// Suspends interactive selection and navigation timers for an active concentric session
+    /// while preserving scene geometry and input capture (`ARCHITECTURE.md` §A3, §A7).
+    ///
+    /// Nested-only guard; a no-op for [`WheelLayout::Branching`].
+    pub fn suspend_interaction(&mut self, _now: Millis) {
+        match self.layout_state {
+            LayoutState::Branching | LayoutState::Concentric(_) => {}
+        }
     }
 
     /// Starts the dismiss animation for `reason` (`WHEEL_ENGINE_DESIGN.md` §8.1, §9).
@@ -706,18 +717,9 @@ impl WheelSession {
         if !matches!(self.phase, SessionPhase::Appearing | SessionPhase::Open) {
             return None;
         }
-        let mut earliest: Option<Millis> = None;
-        for cand in [
-            self.dwell.map(|d| d.deadline),
-            self.hub_close.map(|h| h.deadline),
-            self.intent_protection.map(|i| i.deadline),
-        ]
-        .into_iter()
-        .flatten()
-        {
-            earliest = Some(earliest.map_or(cand, |e| e.min(cand)));
+        match self.layout_state {
+            LayoutState::Branching | LayoutState::Concentric(_) => self.next_deadline_branching(),
         }
-        earliest
     }
 
     /// Returns `true` if any wheel, stem, segment, or session tween is currently active (`WHEEL_ENGINE_DESIGN.md` §11.3).
@@ -748,6 +750,7 @@ impl WheelSession {
             .intent_protection
             .map(|ip| ([ip.p_exit, ip.tangent_a, ip.tangent_b], ip.deadline));
         DebugState {
+            layout_selection: self.layout_selection,
             phase: self.phase,
             moved_past_slop: self.moved_past_slop,
             raw_zone: self.raw_zone,
@@ -789,6 +792,14 @@ impl WheelSession {
     // --- Private helpers ---
 
     fn handle_pointer_moved(&mut self, p: Point, now: Millis, out: &mut Vec<WheelEvent>) {
+        match self.layout_state {
+            LayoutState::Branching | LayoutState::Concentric(_) => {
+                self.handle_pointer_moved_branching(p, now, out);
+            }
+        }
+    }
+
+    fn handle_pointer_moved_branching(&mut self, p: Point, now: Millis, out: &mut Vec<WheelEvent>) {
         if !self.moved_past_slop {
             if p.distance(self.summon_point) < self.cfg.activation_slop {
                 self.last_pointer = p;
@@ -937,6 +948,14 @@ impl WheelSession {
     }
 
     fn handle_pointer_release(&mut self, now: Millis, out: &mut Vec<WheelEvent>) {
+        match self.layout_state {
+            LayoutState::Branching | LayoutState::Concentric(_) => {
+                self.handle_pointer_release_branching(now, out);
+            }
+        }
+    }
+
+    fn handle_pointer_release_branching(&mut self, now: Millis, out: &mut Vec<WheelEvent>) {
         let press_zone = self.pressed_zone.take();
         let press_item = self.pressed_item.take();
 
@@ -1009,6 +1028,19 @@ impl WheelSession {
     }
 
     fn handle_nav_key(&mut self, nav_key: NavKey, now: Millis, out: &mut Vec<WheelEvent>) {
+        match self.layout_state {
+            LayoutState::Branching | LayoutState::Concentric(_) => {
+                self.handle_nav_key_branching(nav_key, now, out);
+            }
+        }
+    }
+
+    fn handle_nav_key_branching(
+        &mut self,
+        nav_key: NavKey,
+        now: Millis,
+        out: &mut Vec<WheelEvent>,
+    ) {
         if self.wheels.is_empty() {
             return;
         }
@@ -1543,6 +1575,106 @@ impl WheelSession {
         }
     }
 
+    fn tick_interactive_branching(&mut self, now: Millis, out: &mut Vec<WheelEvent>) {
+        // 1. Intent-triangle grace expiration
+        if let Some(intent) = self.intent_protection
+            && now >= intent.deadline
+        {
+            self.intent_protection = None;
+            self.truncate_after(intent.wheel, now, out);
+            // Re-evaluate hover at the last pointer position
+            if let Zone::Item { wheel, index } = self.raw_zone
+                && wheel == intent.wheel
+            {
+                let new_path = self.wheels[wheel as usize].path.child(index);
+                self.set_hovered_item(Some(new_path), now, out);
+                self.schedule_dwell_if_applicable(wheel, index, now);
+            } else {
+                self.set_hovered_item(None, now, out);
+            }
+        }
+
+        // 2. Hub-close timer expiration
+        if let Some(hc) = self.hub_close
+            && now >= hc.deadline
+        {
+            self.hub_close = None;
+            if self.raw_zone == (Zone::Hub { wheel: hc.wheel })
+                && (hc.wheel as usize) + 1 < self.wheels.len()
+            {
+                self.truncate_after(hc.wheel, now, out);
+            }
+        }
+
+        // 3. Dwell submenu-open timer expiration
+        if let Some(dwell) = self.dwell
+            && now >= dwell.deadline
+        {
+            self.dwell = None;
+            if (dwell.wheel as usize) < self.wheels.len() {
+                let expected_path = self.wheels[dwell.wheel as usize].path.child(dwell.item);
+                if self.hovered_item.as_ref() == Some(&expected_path) {
+                    self.open_child_wheel(dwell.wheel, dwell.item, false, now, out);
+                }
+            }
+        }
+    }
+
+    fn drop_target_branching(&self) -> DropTarget {
+        if !self.moved_past_slop
+            || !matches!(self.phase, SessionPhase::Appearing | SessionPhase::Open)
+        {
+            return DropTarget::Reject;
+        }
+        let Some(ref path) = self.hovered_item else {
+            return DropTarget::Reject;
+        };
+        let Some(ref menu) = self.menu else {
+            return DropTarget::Reject;
+        };
+        let Some(node) = menu.node(path) else {
+            return DropTarget::Reject;
+        };
+        if !node.enabled {
+            return DropTarget::Reject;
+        }
+        match &node.kind {
+            NodeKind::Leaf => DropTarget::Accept(path.clone()),
+            NodeKind::Submenu {
+                children,
+                default_child: Some(dc),
+            } => {
+                if let Some(child) = children.get(*dc)
+                    && child.enabled
+                    && matches!(child.kind, NodeKind::Leaf)
+                {
+                    DropTarget::Accept(path.child(*dc as u8))
+                } else {
+                    DropTarget::Reject
+                }
+            }
+            NodeKind::Submenu {
+                default_child: None,
+                ..
+            } => DropTarget::Reject,
+        }
+    }
+
+    fn next_deadline_branching(&self) -> Option<Millis> {
+        let mut earliest: Option<Millis> = None;
+        for cand in [
+            self.dwell.map(|d| d.deadline),
+            self.hub_close.map(|h| h.deadline),
+            self.intent_protection.map(|i| i.deadline),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            earliest = Some(earliest.map_or(cand, |e| e.min(cand)));
+        }
+        earliest
+    }
+
     fn sync_hit_cache(&mut self) {
         self.hit_cache.clear();
         for w in &self.wheels {
@@ -1551,6 +1683,14 @@ impl WheelSession {
     }
 
     fn rebuild_input_region(&mut self) {
+        match self.layout_state {
+            LayoutState::Branching | LayoutState::Concentric(_) => {
+                self.rebuild_input_region_branching();
+            }
+        }
+    }
+
+    fn rebuild_input_region_branching(&mut self) {
         self.input_shapes.clear();
         if !matches!(self.phase, SessionPhase::Appearing | SessionPhase::Open) {
             return;
@@ -1587,6 +1727,14 @@ impl WheelSession {
     }
 
     fn rebuild_scene(&mut self, now: Millis) {
+        match self.layout_state {
+            LayoutState::Branching | LayoutState::Concentric(_) => {
+                self.rebuild_scene_branching(now);
+            }
+        }
+    }
+
+    fn rebuild_scene_branching(&mut self, now: Millis) {
         self.scene.generation = self.scene.generation.wrapping_add(1);
         self.scene.stems.clear();
         self.scene.wheels.clear();
@@ -1750,6 +1898,27 @@ impl WheelSession {
         }
 
         self.animating_flag = any_tween_active;
+    }
+}
+
+fn select_initial_layout(
+    cfg: &WheelConfig,
+    _anchor: Point,
+    _viewport: Viewport,
+) -> (LayoutSelection, LayoutState) {
+    match cfg.layout {
+        WheelLayout::Branching => (LayoutSelection::branching(), LayoutState::Branching),
+        // Milestone N1 establishes the configuration model and layout selection seam;
+        // Milestone N2 connects `plan_concentric` preflight and `LayoutState::Concentric`.
+        // Until N2 lands, sessions requesting `Concentric` safely execute `Branching`.
+        WheelLayout::Concentric => (
+            LayoutSelection {
+                requested: WheelLayout::Concentric,
+                effective: WheelLayout::Branching,
+                fallback: None,
+            },
+            LayoutState::Branching,
+        ),
     }
 }
 
