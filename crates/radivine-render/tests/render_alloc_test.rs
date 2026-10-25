@@ -46,6 +46,8 @@ unsafe impl GlobalAlloc for CountingAlloc {
 #[global_allocator]
 static GLOBAL: CountingAlloc = CountingAlloc;
 
+static ALLOC_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn build_menu() -> MenuTree {
     MenuTree::new(vec![
         MenuNode::submenu(
@@ -184,6 +186,7 @@ fn run_navigation_trace(
 
 #[test]
 fn test_warm_renderer_zero_heap_allocations_concentric_and_baseline_comparison() {
+    let _guard = ALLOC_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let size = SizePx::new(1280, 800);
     let vp = Viewport::new(1280.0, 800.0, 1.0);
     let mut events = Vec::with_capacity(16);
@@ -369,6 +372,7 @@ fn compute_percentiles_us(samples_ns: &mut [u64]) -> (f64, f64, f64, f64) {
 #[test]
 fn t_perf1_t_perf2_t_perf3_sample_percentiles_and_damage_metrics() {
     use std::time::Instant;
+    let _guard = ALLOC_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 
     let session_bytes = std::mem::size_of::<WheelSession>();
     println!("T-PERF1/5 WheelSession stack size: {session_bytes} B (budget <= 65536 B)");
