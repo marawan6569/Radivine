@@ -23,8 +23,9 @@ use radivine_platform::{
 };
 use radivine_render::{RectPx as RenderRectPx, Renderer, SizePx, Theme};
 use radivine_wheel::{
-    DismissReason, DropTarget, InputMode, ItemPath, LayoutSelection, MenuTree, Millis, NavKey,
-    Point, Shape, Viewport, WheelConfig, WheelEvent, WheelInput, WheelLayout, WheelSession,
+    DismissReason, DropTarget, InputMode, ItemPath, LayoutFallback, LayoutSelection, MenuTree,
+    Millis, NavKey, Point, Shape, Viewport, WheelConfig, WheelEvent, WheelInput, WheelLayout,
+    WheelSession, plan_concentric,
 };
 
 use crate::config::AppConfig;
@@ -191,6 +192,9 @@ pub struct SessionController {
     last_dnd_pos: Option<PhysPoint>,
     last_dnd_accept: Option<bool>,
     pending_drop_commit: Option<PendingDropSelection>,
+    reject_until_drag_end: bool,
+    config_reloaded_during_session: bool,
+    last_layout_selection: Option<LayoutSelection>,
     bounding_region_clipped: bool,
     debug_overlay: bool,
     trace_timings: bool,
@@ -342,6 +346,9 @@ impl SessionController {
             last_dnd_pos: None,
             last_dnd_accept: None,
             pending_drop_commit: None,
+            reject_until_drag_end: false,
+            config_reloaded_during_session: false,
+            last_layout_selection: None,
             bounding_region_clipped: false,
             debug_overlay,
             trace_timings,
@@ -368,6 +375,20 @@ impl SessionController {
     #[must_use]
     pub fn pending_drop_selection(&self) -> Option<&PendingDropSelection> {
         self.pending_drop_commit.as_ref()
+    }
+
+    /// Returns `true` if an active Concentric Drag session is currently in the display-change
+    /// `reject_until_drag_end` safety guard (`ARCHITECTURE.md` §A7).
+    #[inline]
+    #[must_use]
+    pub fn is_rejecting_until_drag_end(&self) -> bool {
+        self.reject_until_drag_end
+    }
+
+    fn is_effective_concentric_session(&self) -> bool {
+        self.active_session_settings
+            .as_ref()
+            .is_some_and(|s| s.layout_selection.effective == WheelLayout::Concentric)
     }
 
     fn session_config(&self) -> &AppConfig {
@@ -404,6 +425,8 @@ impl SessionController {
     fn clear_active_session_snapshots(&mut self) {
         self.active_session_settings = None;
         self.active_menu_tree = None;
+        self.reject_until_drag_end = false;
+        self.config_reloaded_during_session = false;
         self.renderer.set_theme(self.config.resolve_theme());
         self.effective_scale = self.config.effective_scale(self.platform.scale());
     }
@@ -468,6 +491,9 @@ impl SessionController {
     /// updated for subsequent sessions while preserving the active session's scale and theme so an
     /// in-progress drag-and-drop or invoke interaction is never interrupted.
     pub fn reload_config(&mut self, config: AppConfig) {
+        if self.active_session_settings.is_some() {
+            self.config_reloaded_during_session = true;
+        }
         self.config = config;
         let reduced_motion = self
             .config
@@ -612,6 +638,30 @@ impl SessionController {
             .map(|g| g.clone())
             .unwrap_or_default();
 
+        let requested_layout = self.wheel_cfg.layout.as_str().to_string();
+        let (active_layout, layout_fallback_reason, layout_pending) = if let Some(ref settings) =
+            self.active_session_settings
+        {
+            let pending = self.config_reloaded_during_session
+                || settings.wheel_cfg.layout != self.wheel_cfg.layout;
+            (
+                settings.layout_selection.effective.as_str().to_string(),
+                settings
+                    .layout_selection
+                    .fallback
+                    .map(|f| f.as_str().to_string()),
+                pending,
+            )
+        } else {
+            let sel =
+                self.evaluate_idle_layout_selection(compositor_active, monitor_rect, active_scale);
+            (
+                sel.effective.as_str().to_string(),
+                sel.fallback.map(|f| f.as_str().to_string()),
+                false,
+            )
+        };
+
         DaemonStatus {
             pid: std::process::id(),
             overlay_window_id: self.platform.overlay_window_id(),
@@ -651,7 +701,37 @@ impl SessionController {
             compositor_active,
             translucent_overlay,
             monitor_count,
+            requested_layout,
+            active_layout,
+            layout_fallback_reason,
+            layout_pending,
         }
+    }
+
+    fn evaluate_idle_layout_selection(
+        &self,
+        compositor_active: bool,
+        monitor_rect: (i32, i32, u32, u32),
+        scale: f32,
+    ) -> LayoutSelection {
+        if self.wheel_cfg.layout == WheelLayout::Branching {
+            return LayoutSelection::branching();
+        }
+        if !compositor_active {
+            return LayoutSelection::fallback_to_branching(LayoutFallback::NoCompositor);
+        }
+        if monitor_rect.2 > 0 && monitor_rect.3 > 0 {
+            let s = scale.max(0.5);
+            let vp = Viewport::new((monitor_rect.2 as f32) / s, (monitor_rect.3 as f32) / s, s);
+            let anchor = Point::new(vp.bounds.w * 0.5, vp.bounds.h * 0.5);
+            let raw_cfg = self.config.to_wheel_config(false);
+            return match plan_concentric(anchor, vp, &raw_cfg) {
+                Ok(_) => LayoutSelection::concentric(),
+                Err(reason) => LayoutSelection::fallback_to_branching(reason),
+            };
+        }
+        self.last_layout_selection
+            .unwrap_or_else(LayoutSelection::concentric)
     }
 
     /// Summons the radial wheel in Invoke mode at `explicit_pos` (or the current X11 pointer).
@@ -672,6 +752,8 @@ impl SessionController {
         self.idle_release_deadline = None;
         self.leave_grace_deadline = None;
         self.pending_drop_commit = None;
+        self.reject_until_drag_end = false;
+        self.config_reloaded_during_session = false;
         self.session_epoch = t0;
         self.last_interaction = t0;
 
@@ -738,24 +820,22 @@ impl SessionController {
             .build_menu(&ctx, session_settings.menu_limits)
             .ok_or_else(|| anyhow::anyhow!("no actions available for context"))?;
 
-        // Milestone N2 intermediate safety guard: pure concentric geometry and navigation are
-        // active in `radivine-wheel`, while concentric desktop rendering and X11/Control Center
-        // integration land in N3/N4. Keep the desktop controller on `Branching` during N2 even if
-        // `layout = "concentric"` is manually set in config.toml.
-        let mut desktop_wheel_cfg = session_settings.wheel_cfg.clone();
-        desktop_wheel_cfg.layout = WheelLayout::Branching;
         let mut ws = WheelSession::new(
             Some(menu_tree.clone()),
             cursor_logical,
             viewport,
             InputMode::Pointer,
-            &desktop_wheel_cfg,
+            &session_settings.wheel_cfg,
             0,
         );
+        if session_settings.wheel_cfg.layout == WheelLayout::Concentric && !info.translucent {
+            ws.record_layout_fallback(LayoutFallback::NoCompositor);
+        }
         if item_count > 1 {
             ws.set_root_badge(Some(item_count), 0);
         }
         session_settings.layout_selection = ws.layout_selection();
+        self.last_layout_selection = Some(session_settings.layout_selection);
         self.active_session_settings = Some(session_settings);
 
         self.renderer.set_opaque_fallback(!info.translucent);
@@ -812,6 +892,8 @@ impl SessionController {
         self.idle_release_deadline = None;
         self.leave_grace_deadline = None;
         self.pending_drop_commit = None;
+        self.reject_until_drag_end = false;
+        self.config_reloaded_during_session = false;
         self.dnd_entered = false;
         self.offered_uri_list = false;
         self.retried_payload_after_position = false;
@@ -856,18 +938,19 @@ impl SessionController {
 
         // Start with a hub-only placeholder wheel (`menu = None`) while `request_payload` is in flight;
         // segments populate in ~0.2 ms when `SelectionNotify` arrives (`ARCHITECTURE.md` §5).
-        // Milestone N2 intermediate safety guard: keep desktop sessions on `Branching` until N3/N4.
-        let mut desktop_wheel_cfg = session_settings.wheel_cfg.clone();
-        desktop_wheel_cfg.layout = WheelLayout::Branching;
-        let ws = WheelSession::new(
+        let mut ws = WheelSession::new(
             None,
             cursor_logical,
             viewport,
             InputMode::Drag,
-            &desktop_wheel_cfg,
+            &session_settings.wheel_cfg,
             0,
         );
+        if session_settings.wheel_cfg.layout == WheelLayout::Concentric && !info.translucent {
+            ws.record_layout_fallback(LayoutFallback::NoCompositor);
+        }
         session_settings.layout_selection = ws.layout_selection();
+        self.last_layout_selection = Some(session_settings.layout_selection);
         let passthrough = session_settings.passthrough;
         self.active_session_settings = Some(session_settings);
 
@@ -1043,6 +1126,12 @@ impl SessionController {
                         continue;
                     }
 
+                    if self.reject_until_drag_end {
+                        self.last_dnd_accept = Some(false);
+                        self.platform.dnd_reply(false);
+                        continue;
+                    }
+
                     if self.state == SessionState::LeftGrace {
                         self.leave_grace_deadline = None;
                         self.state = SessionState::Active;
@@ -1062,6 +1151,17 @@ impl SessionController {
                     self.last_interaction = now;
                     self.dnd_entered = true;
                     self.last_dnd_pos = Some(at);
+
+                    if self.reject_until_drag_end {
+                        self.last_dnd_accept = Some(false);
+                        self.platform.dnd_reply(false);
+                        let status_us = pos_t0.elapsed().as_micros() as u64;
+                        self.last_dnd_status_us = Some(status_us);
+                        if self.trace_timings && self.dnd_status_samples_us.len() < 16_384 {
+                            self.dnd_status_samples_us.push(status_us);
+                        }
+                        continue;
+                    }
 
                     match self.state {
                         SessionState::Active => {
@@ -1142,7 +1242,7 @@ impl SessionController {
                     if drag_ended {
                         // Released on a reject zone, pressed Escape, or source vanished (`AC-3.8`)
                         self.dismiss_drag_session(DismissReason::DragEnded, now);
-                    } else if self.state == SessionState::Active {
+                    } else if !self.reject_until_drag_end && self.state == SessionState::Active {
                         // Pointer left the shaped wheel cluster (`passthrough = true`)
                         self.feed_wheel_input(WheelInput::PointerLeft, now);
                         self.state = SessionState::LeftGrace;
@@ -1201,7 +1301,7 @@ impl SessionController {
                     let nav = translate_platform_key(key);
                     self.feed_wheel_input(WheelInput::Nav(nav), now);
                 }
-                PlatformEvent::SettingsChanged | PlatformEvent::MonitorsChanged => {
+                PlatformEvent::SettingsChanged => {
                     self.platform.sync_graphical_state();
                     let reduced_motion = self
                         .config
@@ -1213,29 +1313,41 @@ impl SessionController {
                         self.state,
                         SessionState::Summoning | SessionState::Active | SessionState::LeftGrace
                     ) {
-                        let ref_pt = self
-                            .last_dnd_pos
-                            .or_else(|| self.overlay_info.as_ref().map(|i| i.origin))
-                            .unwrap_or_else(|| PhysPoint::new(0, 0));
-                        if let Ok(info) = self.platform.prepare_overlay(ref_pt) {
-                            let scale = self.session_config().effective_scale(info.scale);
-                            self.effective_scale = scale;
-                            if let Some(ref mut s) = self.active_session_settings {
-                                s.scale = scale;
+                        if self.is_effective_concentric_session() {
+                            // `ARCHITECTURE.md` §A7: defer Xft DPI / scale / reduced-motion changes
+                            // during an active Concentric session, unless compositor translucency was lost.
+                            let compositor_active = matches!(
+                                self.platform.capabilities().translucency,
+                                radivine_platform::Support::Yes
+                            );
+                            if !compositor_active {
+                                self.handle_concentric_display_invalidation(now);
                             }
-                            self.renderer.set_opaque_fallback(!info.translucent);
-                            self.renderer
-                                .begin_session(SizePx::new(info.size.0, info.size.1), scale);
-                            self.overlay_info = Some(info);
-                            let _ = self.sync_input_region();
-                            let _ = self.render_and_present(true);
-                            let _ = self.platform.flush();
+                        } else {
+                            self.refresh_active_branching_overlay();
                         }
                     }
-                    tracing::info!(
-                        scale = self.session_scale(),
-                        "updated display settings / monitors"
-                    );
+                    tracing::info!(scale = self.session_scale(), "updated display settings");
+                }
+                PlatformEvent::MonitorsChanged => {
+                    self.platform.sync_graphical_state();
+                    let reduced_motion = self
+                        .config
+                        .effective_reduced_motion(self.platform.reduced_motion());
+                    self.wheel_cfg = self.config.to_wheel_config(reduced_motion);
+                    if matches!(self.state, SessionState::Idle | SessionState::Armed) {
+                        self.effective_scale = self.config.effective_scale(self.platform.scale());
+                    } else if matches!(
+                        self.state,
+                        SessionState::Summoning | SessionState::Active | SessionState::LeftGrace
+                    ) {
+                        if self.is_effective_concentric_session() {
+                            self.handle_concentric_display_invalidation(now);
+                        } else {
+                            self.refresh_active_branching_overlay();
+                        }
+                    }
+                    tracing::info!(scale = self.session_scale(), "updated display monitors");
                 }
                 PlatformEvent::ConnectionLost => {
                     tracing::error!("X11 display server connection lost");
@@ -1249,11 +1361,61 @@ impl SessionController {
         }
     }
 
+    fn refresh_active_branching_overlay(&mut self) {
+        let ref_pt = self
+            .last_dnd_pos
+            .or_else(|| self.overlay_info.as_ref().map(|i| i.origin))
+            .unwrap_or_else(|| PhysPoint::new(0, 0));
+        if let Ok(info) = self.platform.prepare_overlay(ref_pt) {
+            let scale = self.session_config().effective_scale(info.scale);
+            self.effective_scale = scale;
+            if let Some(ref mut s) = self.active_session_settings {
+                s.scale = scale;
+            }
+            self.renderer.set_opaque_fallback(!info.translucent);
+            self.renderer
+                .begin_session(SizePx::new(info.size.0, info.size.1), scale);
+            self.overlay_info = Some(info);
+            let _ = self.sync_input_region();
+            let _ = self.render_and_present(true);
+            let _ = self.platform.flush();
+        }
+    }
+
+    fn handle_concentric_display_invalidation(&mut self, now: Instant) {
+        if self.active_mode == Some(InvocationMode::Invoke) {
+            tracing::info!(
+                "display or compositor changed during Concentric Invoke session; cancelling immediately"
+            );
+            self.dismiss_immediate();
+            return;
+        }
+        if self.active_mode == Some(InvocationMode::Drag) {
+            tracing::info!(
+                "display or compositor changed during Concentric Drag session; entering reject_until_drag_end guard"
+            );
+            self.reject_until_drag_end = true;
+            self.leave_grace_deadline = None;
+            if self.state == SessionState::LeftGrace {
+                self.state = SessionState::Active;
+            }
+            let ms = self.elapsed_millis(now);
+            if let Some(ref mut ws) = self.wheel_session {
+                ws.suspend_interaction(ms);
+            }
+            self.last_dnd_accept = Some(false);
+            self.platform.dnd_reply(false);
+            let _ = self.render_and_present(false);
+            let _ = self.platform.flush();
+        }
+    }
+
     fn handle_dnd_drop(&mut self, now: Instant) {
         let drop_t0 = Instant::now();
         self.drain_async_events(now);
-        if self.state != SessionState::Active {
-            // `ARCHITECTURE.md` §5: A DndDrop arriving in any state other than Active is answered with dnd_finish(false).
+        if self.reject_until_drag_end || self.state != SessionState::Active {
+            // `ARCHITECTURE.md` §5, §A7: A DndDrop arriving while `reject_until_drag_end` is active or
+            // in any state other than Active is answered with dnd_finish(false).
             self.platform.dnd_finish(false);
             self.dismiss_drag_session(DismissReason::Cancelled, now);
             return;
@@ -1412,7 +1574,9 @@ impl SessionController {
                     if item_count > 1 {
                         ws.set_root_badge(Some(item_count), ms);
                     }
-                    if let Some(pos) = initial_pos {
+                    if self.reject_until_drag_end {
+                        ws.suspend_interaction(ms);
+                    } else if let Some(pos) = initial_pos {
                         ws.handle(WheelInput::PointerMoved(pos), ms, &mut wheel_events);
                     }
                 }
@@ -1502,7 +1666,9 @@ impl SessionController {
             } else {
                 ws.set_menu(menu_tree, ms);
             }
-            if let Some(pos) = initial_pos {
+            if self.reject_until_drag_end {
+                ws.suspend_interaction(ms);
+            } else if let Some(pos) = initial_pos {
                 ws.handle(WheelInput::PointerMoved(pos), ms, &mut wheel_events);
             }
         }
@@ -1521,7 +1687,8 @@ impl SessionController {
         if self.active_mode != Some(InvocationMode::Drag) || !self.dnd_entered {
             return;
         }
-        let accept = self.state == SessionState::Active
+        let accept = !self.reject_until_drag_end
+            && self.state == SessionState::Active
             && self
                 .wheel_session
                 .as_ref()
@@ -2296,7 +2463,6 @@ mod tests {
     };
     use radivine_render::AssetSource;
 
-    #[derive(Default)]
     struct MockPlatformState {
         mapped: bool,
         grabbed: bool,
@@ -2304,6 +2470,27 @@ mod tests {
         dnd_finishes: Vec<bool>,
         requested_payloads: Vec<String>,
         input_region_is_shaped: bool,
+        translucent: bool,
+        scale: f32,
+        monitor_size: (u32, u32),
+        prepare_overlay_calls: usize,
+    }
+
+    impl Default for MockPlatformState {
+        fn default() -> Self {
+            Self {
+                mapped: false,
+                grabbed: false,
+                dnd_replies: Vec::new(),
+                dnd_finishes: Vec::new(),
+                requested_payloads: Vec::new(),
+                input_region_is_shaped: false,
+                translucent: true,
+                scale: 1.0,
+                monitor_size: (1920, 1080),
+                prepare_overlay_calls: 0,
+            }
+        }
     }
 
     struct MockPlatform {
@@ -2360,7 +2547,7 @@ mod tests {
         }
 
         fn scale(&self) -> f32 {
-            1.0
+            self.state.lock().expect("lock").scale
         }
 
         fn reduced_motion(&self) -> Option<bool> {
@@ -2376,13 +2563,34 @@ mod tests {
         }
 
         fn prepare_overlay(&mut self, _at: PhysPoint) -> Result<OverlayInfo, PlatformError> {
+            let mut st = self.state.lock().expect("lock");
+            st.prepare_overlay_calls += 1;
+            let (w, h) = st.monitor_size;
+            let scale = st.scale;
+            let translucent = st.translucent;
+            drop(st);
+            let mut monitor = self.monitors[0].clone();
+            monitor.rect = RectPx::new(0, 0, w, h);
             Ok(OverlayInfo {
                 origin: PhysPoint::new(0, 0),
-                size: (1920, 1080),
-                scale: 1.0,
-                monitor: self.monitors[0].clone(),
-                translucent: true,
+                size: (w, h),
+                scale,
+                monitor,
+                translucent,
             })
+        }
+
+        fn sync_graphical_state(&mut self) {
+            let st = self.state.lock().expect("lock");
+            let (w, h) = st.monitor_size;
+            let translucent = st.translucent;
+            drop(st);
+            self.monitors[0].rect = RectPx::new(0, 0, w, h);
+            self.caps.translucency = if translucent {
+                Support::Yes
+            } else {
+                Support::Degraded("no compositor")
+            };
         }
 
         fn map_overlay(&mut self) -> Result<(), PlatformError> {
@@ -2823,6 +3031,165 @@ hide = ["radivine.preview", "radivine.convert"]
             Some(false)
         );
         assert!(ctrl.status().last_committed_action.is_none());
+    }
+
+    #[test]
+    fn concentric_activation_fallback_and_display_change_guards() {
+        let (mock, plat_state) = MockPlatform::new();
+        let mut cfg = AppConfig::default();
+        cfg.wheel.layout = "concentric".to_string();
+        let renderer = Renderer::new(cfg.resolve_theme(), AssetSource::Embedded).expect("renderer");
+        let registry = Arc::new(builtin_registry());
+        let mut ctrl = SessionController::new(Box::new(mock), renderer, registry, cfg.clone());
+
+        // 1. Summon Concentric Drag session on 1920x1080 translucent overlay
+        ctrl.handle_platform_events(vec![
+            PlatformEvent::DragArmed {
+                source: SourceInfo {
+                    app: Some("nemo".to_string()),
+                    pid: Some(500),
+                },
+            },
+            PlatformEvent::Trigger {
+                at: PhysPoint::new(960, 500),
+            },
+            PlatformEvent::DndEnter {
+                types: vec!["text/uri-list".to_string()],
+            },
+            PlatformEvent::DndPosition {
+                at: PhysPoint::new(960, 500),
+            },
+            PlatformEvent::Payload {
+                mime: "text/uri-list".to_string(),
+                result: Ok(b"file:///tmp/demo.txt\r\n".to_vec()),
+            },
+        ]);
+        let st_active = ctrl.status();
+        assert_eq!(st_active.session_state, "Active");
+        assert_eq!(st_active.requested_layout, "concentric");
+        assert_eq!(st_active.active_layout, "concentric");
+        assert_eq!(st_active.layout_fallback_reason, None);
+        assert!(!st_active.layout_pending);
+
+        // Move onto Copy segment (`[1]`, ~+90 deg -> x=960+84, y=500) to arm selection
+        ctrl.handle_platform_events(vec![PlatformEvent::DndPosition {
+            at: PhysPoint::new(1044, 500),
+        }]);
+        assert_eq!(
+            plat_state.lock().expect("lock").dnd_replies.last().copied(),
+            Some(true)
+        );
+
+        // 2. SettingsChanged (DPI scale 1.0 -> 1.5, compositor still active) is deferred until session end
+        let prep_before = plat_state.lock().expect("lock").prepare_overlay_calls;
+        plat_state.lock().expect("lock").scale = 1.5;
+        ctrl.handle_platform_events(vec![PlatformEvent::SettingsChanged]);
+        assert_eq!(
+            plat_state.lock().expect("lock").prepare_overlay_calls,
+            prep_before,
+            "active Concentric session must not call prepare_overlay on SettingsChanged"
+        );
+        assert_eq!(ctrl.status().scale, 1.0);
+        assert!(!ctrl.is_rejecting_until_drag_end());
+
+        // 3. MonitorsChanged during active Concentric Drag session enters `reject_until_drag_end`
+        ctrl.handle_platform_events(vec![PlatformEvent::MonitorsChanged]);
+        assert!(ctrl.is_rejecting_until_drag_end());
+        assert!(plat_state.lock().expect("lock").mapped);
+        assert_eq!(
+            plat_state.lock().expect("lock").dnd_replies.last().copied(),
+            Some(false)
+        );
+
+        // Subsequent DndPosition and DndLeave(drag_ended: false) keep overlay mapped and reply false
+        ctrl.handle_platform_events(vec![
+            PlatformEvent::DndPosition {
+                at: PhysPoint::new(1044, 500),
+            },
+            PlatformEvent::DndLeave { drag_ended: false },
+        ]);
+        assert_eq!(ctrl.status().session_state, "Active");
+        assert!(plat_state.lock().expect("lock").mapped);
+        assert_eq!(
+            plat_state.lock().expect("lock").dnd_replies.last().copied(),
+            Some(false)
+        );
+
+        // DndDrop while rejecting replies dnd_finish(false), unmaps, and adopts deferred scale 1.5
+        ctrl.handle_platform_events(vec![PlatformEvent::DndDrop]);
+        assert_eq!(
+            plat_state
+                .lock()
+                .expect("lock")
+                .dnd_finishes
+                .last()
+                .copied(),
+            Some(false)
+        );
+        assert!(!plat_state.lock().expect("lock").mapped);
+        assert!(!ctrl.is_rejecting_until_drag_end());
+        assert_eq!(ctrl.status().scale, 1.5);
+        assert!(ctrl.status().last_committed_action.is_none());
+
+        // 4. InsufficientSpace fallback on 1280x720 @ 1.0x shows fallback caption and reason
+        {
+            let mut st = plat_state.lock().expect("lock");
+            st.scale = 1.0;
+            st.monitor_size = (1280, 720);
+        }
+        ctrl.summon_invoke(
+            vec!["file:///tmp/demo.txt".to_string()],
+            Some(PhysPoint::new(640, 360)),
+        )
+        .expect("summon_invoke 720p");
+        let st_720p = ctrl.status();
+        assert_eq!(st_720p.requested_layout, "concentric");
+        assert_eq!(st_720p.active_layout, "branching");
+        assert_eq!(
+            st_720p.layout_fallback_reason.as_deref(),
+            Some("insufficient_space")
+        );
+        let fallback_cap = ctrl
+            .wheel_session
+            .as_ref()
+            .and_then(|ws| ws.scene().caption.as_ref())
+            .expect("fallback caption on 720p");
+        assert_eq!(
+            fallback_cap.title.as_ref(),
+            "Using Branching: nested rings need more space"
+        );
+        ctrl.dismiss_immediate();
+
+        // 5. NoCompositor fallback (`translucent = false`) on 1920x1080 records `no_compositor`
+        {
+            let mut st = plat_state.lock().expect("lock");
+            st.monitor_size = (1920, 1080);
+            st.translucent = false;
+        }
+        ctrl.summon_invoke(
+            vec!["file:///tmp/demo.txt".to_string()],
+            Some(PhysPoint::new(960, 500)),
+        )
+        .expect("summon_invoke no compositor");
+        let st_nocomp = ctrl.status();
+        assert_eq!(st_nocomp.requested_layout, "concentric");
+        assert_eq!(st_nocomp.active_layout, "branching");
+        assert_eq!(
+            st_nocomp.layout_fallback_reason.as_deref(),
+            Some("no_compositor")
+        );
+        ctrl.dismiss_immediate();
+
+        // 6. Invoke mode Concentric session cancels immediately on MonitorsChanged
+        plat_state.lock().expect("lock").translucent = true;
+        ctrl.summon_invoke(
+            vec!["file:///tmp/demo.txt".to_string()],
+            Some(PhysPoint::new(960, 500)),
+        )
+        .expect("summon_invoke concentric");
+        assert_eq!(ctrl.status().active_layout, "concentric");
+        ctrl.handle_platform_events(vec![PlatformEvent::MonitorsChanged]);
+        assert!(!plat_state.lock().expect("lock").mapped);
     }
 
     trait TempDirPathExt {

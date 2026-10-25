@@ -2628,6 +2628,10 @@ impl ControlCenterApp {
                 compositor_active: true,
                 translucent_overlay: true,
                 monitor_count: 2,
+                requested_layout: "branching".to_string(),
+                active_layout: "branching".to_string(),
+                layout_fallback_reason: None,
+                layout_pending: false,
             }),
             systemd: SystemdUnitInfo {
                 available: true,

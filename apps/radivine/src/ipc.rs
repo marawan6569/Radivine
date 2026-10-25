@@ -146,10 +146,28 @@ pub struct DaemonStatus {
     /// Number of active monitors known to the daemon.
     #[serde(default)]
     pub monitor_count: usize,
+    /// Requested layout preference from `config.toml` (`"branching"` or `"concentric"`).
+    #[serde(default = "default_branching_layout")]
+    pub requested_layout: String,
+    /// Effective layout used by the active or probed wheel session (`"branching"` or `"concentric"`).
+    #[serde(default = "default_branching_layout")]
+    pub active_layout: String,
+    /// Fallback reason if `requested_layout == "concentric"` and `active_layout == "branching"`
+    /// (`"insufficient_space"`, `"target_too_small"`, or `"no_compositor"`).
+    #[serde(default)]
+    pub layout_fallback_reason: Option<String>,
+    /// True when `config.toml` was reloaded during an active wheel session and the new layout
+    /// preference is waiting for the next wheel activation.
+    #[serde(default)]
+    pub layout_pending: bool,
 }
 
 const fn default_true() -> bool {
     true
+}
+
+fn default_branching_layout() -> String {
+    "branching".to_string()
 }
 
 /// IPC response returned by the daemon.

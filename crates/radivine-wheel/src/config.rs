@@ -10,6 +10,18 @@ pub enum WheelLayout {
     Concentric,
 }
 
+impl WheelLayout {
+    /// Returns the canonical lowercase identifier (`"branching"` or `"concentric"`).
+    #[inline]
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Branching => "branching",
+            Self::Concentric => "concentric",
+        }
+    }
+}
+
 /// Reason why a requested [`WheelLayout::Concentric`] session fell back to [`WheelLayout::Branching`]
 /// before mapping (`PRODUCT_SPEC.md` §P3, `ARCHITECTURE.md` §A3).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -20,6 +32,19 @@ pub enum LayoutFallback {
     TargetTooSmall,
     /// Platform lacks a compositing manager required for concentric ring presentation.
     NoCompositor,
+}
+
+impl LayoutFallback {
+    /// Returns the canonical snake_case identifier (`"insufficient_space"`, `"target_too_small"`, or `"no_compositor"`).
+    #[inline]
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::InsufficientSpace => "insufficient_space",
+            Self::TargetTooSmall => "target_too_small",
+            Self::NoCompositor => "no_compositor",
+        }
+    }
 }
 
 /// Resolved layout selection for a [`WheelSession`], recording the requested preference,

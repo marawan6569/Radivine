@@ -304,6 +304,7 @@ pub struct WheelSession {
     root_badge: Option<u32>,
     default_child_hub_icon: IconKey,
     settled_path_hint: Arc<str>,
+    branching_fallback_caption: Arc<str>,
     animating_flag: bool,
 }
 
@@ -466,6 +467,7 @@ impl WheelSession {
             root_badge: None,
             default_child_hub_icon: IconKey::from("lucide:chevron-left"),
             settled_path_hint: Arc::from("Move inward to go back."),
+            branching_fallback_caption: Arc::from("Using Branching: nested rings need more space"),
             animating_flag: true,
         };
 
@@ -486,19 +488,45 @@ impl WheelSession {
     /// before mapping (`ARCHITECTURE.md` §A7).
     pub fn record_layout_fallback(&mut self, reason: LayoutFallback) {
         self.layout_selection = LayoutSelection::fallback_to_branching(reason);
+        let now = self.wheels.first().map_or(0, |w| w.opacity.start);
         if matches!(self.layout_state, LayoutState::Concentric(_)) {
             self.layout_state = LayoutState::Branching;
-            let now = self.wheels.first().map_or(0, |w| w.opacity.start);
+            let mut stagger_extra: u16 = 0;
+            let dur = if self.cfg.reduced_motion {
+                timings::REDUCED_MOTION_FADE_MS
+            } else {
+                timings::ROOT_APPEAR_MS
+            };
             if let Some(root) = self.wheels.first_mut() {
                 let root_center = place_root(self.anchor, root.r_out, self.viewport);
                 root.placement.center = root_center;
                 root.origin = self.anchor;
+                root.scale = if self.cfg.reduced_motion {
+                    Tween::constant(1.0)
+                } else {
+                    Tween::new(0.86, 1.0, now, timings::ROOT_APPEAR_MS, Ease::OutCubic)
+                };
+                root.opacity = Tween::new(0.0, 1.0, now, dur, Ease::OutCubic);
                 root.hit_geom.center = root_center;
                 root.separator_half_angle = None;
                 root.nested_content = None;
+                if let Some(ref m) = self.menu
+                    && let Some(children) = m.root.children()
+                {
+                    populate_root_segments(root, children, &self.cfg, false);
+                    if !self.cfg.reduced_motion {
+                        stagger_extra = ((children.len() as u16).saturating_sub(1)
+                            * timings::SEGMENT_STAGGER_MS)
+                            .min(timings::SEGMENT_STAGGER_MAX_MS);
+                    }
+                }
             }
+            self.appear_done_at = now + u64::from(dur + stagger_extra);
+            self.raw_zone = Zone::Outside;
             self.sync_hit_cache();
             self.rebuild_input_region();
+            self.rebuild_scene(now);
+        } else {
             self.rebuild_scene(now);
         }
     }
@@ -2147,7 +2175,7 @@ impl WheelSession {
             }
         }
 
-        // 5. Caption pill on the active wheel when an item is hovered
+        // 5. Caption pill on the active wheel when an item is hovered, or fallback notice when unhovered
         self.scene.caption = None;
         if matches!(self.phase, SessionPhase::Appearing | SessionPhase::Open)
             && let Some(ref hov_path) = self.hovered_item
@@ -2186,6 +2214,37 @@ impl WheelSession {
                 detail,
                 disabled: !node.enabled,
                 opacity: self.caption_opacity.value(now),
+            });
+        } else if matches!(self.phase, SessionPhase::Appearing | SessionPhase::Open)
+            && matches!(
+                self.layout_selection.fallback,
+                Some(LayoutFallback::InsufficientSpace | LayoutFallback::TargetTooSmall)
+            )
+            && let Some(active_w) = self.wheels.last()
+        {
+            let mut hit_discs: SmallVec<[(Point, f32); 6]> = SmallVec::new();
+            let mut stem_pts: SmallVec<[(Point, Point, Point); 6]> = SmallVec::new();
+            for w in &self.wheels {
+                hit_discs.push((w.placement.center, w.hit_geom.hit_radius));
+                if let Some(ref st) = w.stem {
+                    stem_pts.push((st.p0, st.ctrl, st.p1));
+                }
+            }
+            let (box_, align) = place_caption(
+                active_w.placement.center,
+                active_w.r_out,
+                &hit_discs,
+                &stem_pts,
+                self.viewport,
+            );
+            self.scene.caption = Some(CaptionVisual {
+                box_,
+                align,
+                breadcrumb: None,
+                title: self.branching_fallback_caption.clone(),
+                detail: None,
+                disabled: false,
+                opacity: active_w.opacity.value(now),
             });
         }
 
