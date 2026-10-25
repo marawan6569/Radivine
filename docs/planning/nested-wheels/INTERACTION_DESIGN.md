@@ -90,6 +90,8 @@ and band while approaching. Invoke keyboard navigation explicitly exits this
 guard; returning to pointer requires entering the hub first. Never warp the
 pointer toward C. This guard prevents a relocated annulus from becoming an
 accidental target under the hand.
+The guide uses `theme.stem_on_path`, 1.5 lp stroke and `0.45 * root_opacity`,
+from the original anchor to C; it carries no arrowhead or interactive endpoint.
 
 Fallback is a complete Branching session with existing placement, not a hybrid.
 Record `InsufficientSpace` or `TargetTooSmall`; platform may select the same
@@ -119,7 +121,11 @@ Test hub once, then radial intervals, then sectors. Do **not** call the existing
 deepest-wheel-first `hit_test` on concentric geometries: every child would claim
 inner ancestors as its hub. Return a dedicated `NestedHit`:
 `Hub`, `Item { level,index }`, `RadialGap { inner_level }`,
-`Separator { level }`, `OuterMargin`, `Approach`, or `Outside`.
+`RadialBoundary { level }`, `Separator { level }`, `OuterMargin`, `Approach`, or
+`Outside`. Approach guard wins first; then radial boundary epsilon bands, hub
+interior, open annulus interiors, inter-ring gaps, outer margin, and Outside in
+that order. `OuterMargin` ends at the last open radius plus `cfg.hit_margin`;
+unused reserved capacity beyond that is Outside but remains captured by XShape.
 
 Only the open annulus interiors are item zones. Exact inner/outer boundaries are
 neutral. Between annuli the entire 6 lp gap is neutral at every angle. Capture
@@ -140,6 +146,10 @@ ticks, opacity changes and enrichment do not count. The motion that opened a
 child may not also select/open one of its children. At most one hierarchy change
 per input sample. Keyboard activation bypasses this pointer-entry guard. Existing
 6 lp activation slop from the original summon point applies as well.
+Until the new-geometry guard clears, suppress pointer dwell/band on that geometry
+as well as activation. On initial payload installation the app must supply its
+last observed pointer to `set_menu_at_pointer`; replaying that cached position
+must not masquerade as fresh motion after menu creation.
 
 Once armed, eligibility does not wait for animation completion. The full-size
 ring is visible immediately and opacity animates on top of stable hit geometry.
@@ -185,6 +195,9 @@ Preserve `InvokeSelect::Click`: press and release on the same eligible leaf, or
 press hub then release on an eligible leaf. `InvokeSelect::Release` remains
 supported by the engine. Press/release identity includes path and geometry
 generation, so a sibling replacement cannot turn a held press into a new action.
+The hub-marking press is an exception: keep its hub-origin token across descendant
+openings, while still requiring fresh-motion/approach guards at release. A press
+on an actual item is never transferred across replacement generations.
 Clicking a submenu explicitly adopts/opens it, even during pending-sibling grace;
 it does not execute its default child. Clicking disabled/separator/gap is a no-op
 with no dispatch, matching the existing distinction between a non-action click
@@ -195,6 +208,8 @@ the session, rather than staying open.
 Keyboard: Next (`Right`, `Down`, `Tab`) and Prev (`Left`, `Up`, `Shift+Tab`) wrap
 within the deepest ring, including disabled items. Activate (`Enter`, `Space`)
 opens an enabled submenu and focuses its first item, or commits an enabled leaf.
+Keyboard activation also checks all ancestors' enablement; it never bypasses
+an unavailable parent merely because a child remains visible.
 Backspace closes exactly one ring and focuses its parent sector; at root it does
 nothing. Digits 1–9 activate matching items; 10–12 are reached by cycling. Escape
 cancels. Keyboard never uses pointer hover timers or auto-opens by dwell. Real
@@ -237,12 +252,16 @@ with `pop = 0`; disabled sectors keep their layout with muted icon/text. A pendi
 sibling may show a low-intensity highlight (0.25), never the armed outline.
 
 Place content at the sector midpoint, radius `inner + 0.55*thickness`, horizontal
-orientation. Use 20 lp icons and 12 lp labels (root may use 22 lp icons). Starting
+orientation. Use 20 lp icons and 12 lp labels for all nested levels. Starting
 at width 128, compute the largest axis-aligned content box whose four corners and
 edges remain inside that annular sector, with 4 lp padding. Use exact distance to
 the box for inner-circle clearance; corners alone are insufficient. Height is
 37 lp for icon+one-line label, 14 lp for label-only. If no width ≥48 fits, draw
 only the centered 20 lp icon; if no icon exists, draw a short ellipsized label.
+Find the largest whole-logical-pixel width by binary search in 24..128 with the
+box centered at the content point. For icon-only use a 20×20 box; for missing
+icons recompute width with height 14. Test box containment against all sector
+half-planes (or full-circle case), the outer circle and inner-circle clearance.
 Store these boxes in geometry for both drawing and damage. Never shrink font
 below 12 lp to fit. Cache text shaping; preserve Unicode strings and existing
 missing-glyph fallback. Do not assume Control Center's system-font fallback also

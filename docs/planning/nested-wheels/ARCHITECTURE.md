@@ -125,6 +125,8 @@ fn hit_concentric(p: Point, plan: &ConcentricPlan, open: &[RingGeometry]) -> Nes
 `ConcentricState` stores the plan, open ring geometries, strict hit, pending sibling
 `{path, entered_at, deadline}`, pointer exposure guards per level, approach state,
 keyboard/pointer source and takeover point, plus last injected timestamp.
+It also stores `interaction_suspended`, initially false, for the app's irreversible
+reject-until-drag-end guard; this is independent of the animation/session phase.
 Timers refer to paths and a monotonically increasing geometry generation; verify
 both before acting. No geometry stored in `ActionIndex`. Bound collections to six
 levels/twelve items; reject nonfinite geometry before any trigonometry or indexing.
@@ -135,12 +137,14 @@ Integration in `WheelSession`:
 |---|---|
 | `new` | Validate, preflight, select effective layout before scene/input output; allocate bounded state; create root or placeholder. |
 | `set_menu` | Keep one-shot rule; create root spans without moving center; install pointer exposure guard. |
+| New `set_menu_at_pointer(menu, pointer, now)` | Explicit one-shot installation with the host's last observed position. Nested saves that point before installing exposure guards, without treating it as motion. Existing `set_menu` delegates using its last known pointer; Branching behavior is unchanged. |
 | `handle_pointer_moved` | Dispatch to nested hit/guard/transition path or unchanged Branching path. |
 | `open_child_wheel`, `truncate_after` | Share path/events/lifecycle bookkeeping; nested constructs/drops annuli and retires at most one ghost per slot. |
 | `tick`, `next_deadline` | Include sibling adoption and guards; injected time only; no frame-driven selection. |
 | `handle_pointer_release`, `drop_target`, `commit_drop` | Nested strict eligibility; old Branching rules retained. |
 | `handle_nav_key` | Common navigation semantics with explicit input-source tracking for nested; disabled focus retained. |
 | `set_enabled` | Keep compatibility entry point. Add `set_enabled_at(path, enabled, reason, now)` for callers with a clock; nested uses now and clears invalid timers/eligibility; legacy behavior remains delegated to its current logic. |
+| New `suspend_interaction(now)` | Nested only: set the suspension flag, clear hover/press/armed targets and navigation timers, preserve scene geometry and input region. Further motion/ticks cannot arm or commit. No Finished event or automatic unmap. No resume within this session. |
 | `scene`, `input_region` | Existing borrowed output APIs remain. No allocation of a new scene on every query. |
 | `debug_state`, `item_center`, `wheel_geometry` | Preserve Branching test API; add nested diagnostics containing strict hit, guards, fallback and radii. |
 
@@ -156,15 +160,20 @@ Retain `Scene.wheels` and reuse `SegmentVisual` action metadata. Add proposed:
 
 ```rust
 enum WheelVisualKind { Branching, ConcentricRoot, ConcentricRing }
+enum SelectionVisual { None, Pending, Armed, KeyboardFocus }
+enum ContentMode { IconAndLabel, IconOnly, LabelOnly }
+struct NestedSegmentContent { rect: Rect, mode: ContentMode }
+struct OriginGuideVisual { from: Point, to: Point, opacity: f32 }
 // WheelVisual additions:
 //   kind: WheelVisualKind
 //   nested_content: Option<SmallVec<[NestedSegmentContent; 12]>>
 //   separator_half_angle: Option<f32>
-// NestedSegmentContent: rect: Rect, icon_only: bool (precomputed geometry)
+// SegmentVisual addition:
+//   selection: SelectionVisual (Branching ignores it and supplies None)
 // CaptionVisual addition:
-//   breadcrumb: Option<Arc<str>>
+//   breadcrumb: Option<SmallVec<[Arc<str>; 6]>>
 // Scene addition:
-//   origin_guide: Option<(Point, Point)> (neutral approach line)
+//   origin_guide: Option<OriginGuideVisual> (neutral approach line)
 ```
 
 `Branching` values use `None` additions, preserving existing rendering: hub,
@@ -176,9 +185,11 @@ infer kind from `r_in`, `r_out` or the absence of a bridge.
 only**, never a hub or disc shadow. Both nested kinds have scale 1 and pop 0,
 use supplied sector inset/content boxes and the I8 opacity rules. Renderer
 consumes boxes and exact spans; it must not independently place a wheel. Origin
-guide is underneath ring material, never an input item. Breadcrumbs are cached
-on path change (at menu preparation if needed for zero allocation), not joined
-from strings each frame. Caption wrapping/truncation is renderer-owned.
+guide is underneath ring material, never an input item. Breadcrumbs contain
+ancestor label Arc clones in inline storage, not a newly joined string. Renderer
+uses cached label and separator glyph runs, eliding runs to the caption width;
+do not precompute every possible path string in a large tree. Caption
+wrapping/truncation is renderer-owned.
 
 No renderer change to the platform, pixel format or SHM protocol. Reuse bundled
 font/icons, dark/light theme, missing-icon behavior. No new font/network/asset
@@ -242,6 +253,12 @@ uses this snapshot; audit `self.config` and `self.registry` reads in `session.rs
 Registry snapshot is especially necessary because even a layout-only save calls
 `load_actions_from_path`. Existing background jobs own their context independently.
 
+For initial real or provisional Drag menus, call `set_menu_at_pointer` with the
+converted `last_dnd_pos` (or summon point if none), then preserve the existing
+position replay. The replay is not a new physical observation and cannot clear
+the exposure guard. This is necessary because positions received while Summoning
+need not already have been delivered to the engine.
+
 Keep action index and context session-scoped. Replace proposed pending field
 `Option<ItemPath>` with `Option<PendingDropSelection { path, action_id }>`.
 Capture ID before requesting a deferred real payload. On completion, look up
@@ -288,10 +305,14 @@ For an **active effective Concentric** session, defer Xft scale/reduced-motion
 setting changes until its end; do not reprepare the overlay with old wheel
 geometry. Snapshot monitor origin/size. If monitor geometry or compositor
 availability changes during nested Drag, enter app-local `reject_until_drag_end`:
-cancel all engine targets, send reject, retain the currently mapped full capture
+call `suspend_interaction`, send reject, retain the currently mapped full capture
 window/region, and do not apply layout/config updates. Answer any delivered drop
 with failure and hide after source release/owner loss. Explicit Shift toggle
 remains deliberate native handoff. Invoke may cancel immediately and ungrab.
+Handle this guard before generic dismiss/timer routing: do not call engine
+`dismiss`, clear XShape, or act on a normal inactivity timeout while the source
+still owns the held drag. Source-disarmed/released events and explicit user
+handoff terminate the guard. Keep the armed-source event observation active.
 Once back to Idle/Armed, synchronize graphical state and prepare normally next
 time. Do not restart rendering with mixed old/new coordinate transforms.
 
