@@ -21,10 +21,10 @@ use radivine_platform::{
     ClipOp as PlatClipOp, ClipboardContent, FrameRef as PlatFrameRef, Key as PlatKey, OverlayInfo,
     PhysPoint, Platform, PlatformEvent, RectPx as PlatRectPx, ShapePx,
 };
-use radivine_render::{RectPx as RenderRectPx, Renderer, SizePx};
+use radivine_render::{RectPx as RenderRectPx, Renderer, SizePx, Theme};
 use radivine_wheel::{
-    DismissReason, DropTarget, InputMode, ItemPath, Millis, NavKey, Point, Shape, Viewport,
-    WheelConfig, WheelEvent, WheelInput, WheelLayout, WheelSession,
+    DismissReason, DropTarget, InputMode, ItemPath, LayoutSelection, MenuTree, Millis, NavKey,
+    Point, Shape, Viewport, WheelConfig, WheelEvent, WheelInput, WheelLayout, WheelSession,
 };
 
 use crate::config::AppConfig;
@@ -103,12 +103,52 @@ pub struct LastCommitRecord {
     pub mode: Option<String>,
 }
 
+/// Immutable per-session configuration, layout, theme, and [`ActionRegistry`] snapshot
+/// captured at wheel activation (`ARCHITECTURE.md` §A6).
+///
+/// Ensures live configuration or `actions.toml` reloads affect only future sessions and
+/// never mutate, hide, remap, or re-index an active wheel session.
+#[derive(Clone)]
+pub struct ActiveSessionSettings {
+    /// Cloned [`AppConfig`] at session start.
+    pub config: AppConfig,
+    /// Session [`WheelConfig`] derived from `config` and `reduced_motion`.
+    pub wheel_cfg: WheelConfig,
+    /// Requested and effective [`LayoutSelection`] for this session.
+    pub layout_selection: LayoutSelection,
+    /// Effective UI scale factor for this session.
+    pub scale: f32,
+    /// Resolved [`Theme`] for this session.
+    pub theme: Theme,
+    /// Effective reduced-motion preference for this session.
+    pub reduced_motion: bool,
+    /// Input passthrough policy (`input.passthrough`) captured at session start.
+    pub passthrough: bool,
+    /// Release-outside-cancels policy (`input.release_outside_cancels`) captured at session start.
+    pub release_outside_cancels: bool,
+    /// [`MenuLimits`] derived from `wheel_cfg` (`max_items_per_wheel`, `max_depth`).
+    pub menu_limits: MenuLimits,
+    /// Cloned [`ActionRegistry`] snapshot at session start.
+    pub registry: Arc<ActionRegistry>,
+}
+
+/// Captured drop selection awaiting deferred `text/uri-list` payload resolution (`ARCHITECTURE.md` §A6).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PendingDropSelection {
+    /// Menu path committed at drop time.
+    pub path: ItemPath,
+    /// Captured [`ActionId`] from the provisional [`ActionIndex`] at drop time.
+    pub action_id: Option<ActionId>,
+}
+
 /// Orchestrates the platform backend, radial wheel engine, software renderer, context enricher, and action dispatcher.
 pub struct SessionController {
     platform: Box<dyn Platform>,
     renderer: Renderer,
     wheel_cfg: WheelConfig,
     wheel_session: Option<WheelSession>,
+    active_session_settings: Option<ActiveSessionSettings>,
+    active_menu_tree: Option<MenuTree>,
     action_index: ActionIndex,
     registry: Arc<ActionRegistry>,
     convert_ctx: ConvertMenuContext,
@@ -150,7 +190,7 @@ pub struct SessionController {
     retried_payload_after_position: bool,
     last_dnd_pos: Option<PhysPoint>,
     last_dnd_accept: Option<bool>,
-    pending_drop_commit: Option<ItemPath>,
+    pending_drop_commit: Option<PendingDropSelection>,
     bounding_region_clipped: bool,
     debug_overlay: bool,
     trace_timings: bool,
@@ -258,6 +298,8 @@ impl SessionController {
             renderer,
             wheel_cfg,
             wheel_session: None,
+            active_session_settings: None,
+            active_menu_tree: None,
             action_index: ActionIndex::default(),
             registry,
             convert_ctx: ConvertMenuContext::default(),
@@ -312,6 +354,58 @@ impl SessionController {
             drop_dispatch_samples_us: Vec::new(),
             frame_render_samples_us: Vec::new(),
         }
+    }
+
+    /// Returns the immutable [`ActiveSessionSettings`] snapshot for the current wheel session, if active.
+    #[inline]
+    #[must_use]
+    pub fn active_session_settings(&self) -> Option<&ActiveSessionSettings> {
+        self.active_session_settings.as_ref()
+    }
+
+    /// Returns the pending drop selection awaiting deferred payload resolution, if any.
+    #[inline]
+    #[must_use]
+    pub fn pending_drop_selection(&self) -> Option<&PendingDropSelection> {
+        self.pending_drop_commit.as_ref()
+    }
+
+    fn session_config(&self) -> &AppConfig {
+        self.active_session_settings
+            .as_ref()
+            .map_or(&self.config, |s| &s.config)
+    }
+
+    fn session_registry(&self) -> &Arc<ActionRegistry> {
+        self.active_session_settings
+            .as_ref()
+            .map_or(&self.registry, |s| &s.registry)
+    }
+
+    fn session_scale(&self) -> f32 {
+        self.active_session_settings
+            .as_ref()
+            .map_or(self.effective_scale, |s| s.scale)
+    }
+
+    fn session_passthrough(&self) -> bool {
+        self.active_session_settings
+            .as_ref()
+            .map_or(self.config.input.passthrough, |s| s.passthrough)
+    }
+
+    fn session_menu_limits(&self) -> MenuLimits {
+        self.active_session_settings.as_ref().map_or_else(
+            || menu_limits_from_wheel_config(&self.wheel_cfg),
+            |s| s.menu_limits,
+        )
+    }
+
+    fn clear_active_session_snapshots(&mut self) {
+        self.active_session_settings = None;
+        self.active_menu_tree = None;
+        self.renderer.set_theme(self.config.resolve_theme());
+        self.effective_scale = self.config.effective_scale(self.platform.scale());
     }
 
     /// Emits a startup or diagnostic notification through the daemon notification channel.
@@ -500,17 +594,15 @@ impl SessionController {
             })
             .unwrap_or((0, 0, 0, 0));
 
+        let active_scale = self.session_scale();
         let (root_wheel_center_px, root_wheel_outer_radius_px) = self
             .wheel_session
             .as_ref()
             .and_then(|ws| ws.scene().wheels.first())
             .map_or((None, None), |rw| {
                 (
-                    Some((
-                        rw.center.x * self.effective_scale,
-                        rw.center.y * self.effective_scale,
-                    )),
-                    Some(rw.r_out * self.effective_scale),
+                    Some((rw.center.x * active_scale, rw.center.y * active_scale)),
+                    Some(rw.r_out * active_scale),
                 )
             });
 
@@ -524,7 +616,7 @@ impl SessionController {
             pid: std::process::id(),
             overlay_window_id: self.platform.overlay_window_id(),
             session_state: self.state.as_str().to_string(),
-            scale: self.effective_scale,
+            scale: active_scale,
             monitor_rect,
             root_wheel_center_px,
             root_wheel_outer_radius_px,
@@ -589,12 +681,30 @@ impl SessionController {
         };
 
         let info = self.platform.prepare_overlay(pointer_phys)?;
-        let scale = self.config.effective_scale(info.scale);
+        let config_snapshot = self.config.clone();
+        let scale = config_snapshot.effective_scale(info.scale);
         self.effective_scale = scale;
-        let reduced_motion = self
-            .config
-            .effective_reduced_motion(self.platform.reduced_motion());
-        self.wheel_cfg = self.config.to_wheel_config(reduced_motion);
+        let reduced_motion =
+            config_snapshot.effective_reduced_motion(self.platform.reduced_motion());
+        let wheel_cfg = config_snapshot.to_wheel_config(reduced_motion);
+        self.wheel_cfg = wheel_cfg.clone();
+        let theme = config_snapshot.resolve_theme();
+        self.renderer.set_theme(theme.clone());
+        let menu_limits = menu_limits_from_wheel_config(&wheel_cfg);
+        let registry_snapshot = Arc::clone(&self.registry);
+        let mut session_settings = ActiveSessionSettings {
+            passthrough: config_snapshot.input.passthrough,
+            release_outside_cancels: config_snapshot.input.release_outside_cancels,
+            config: config_snapshot,
+            wheel_cfg,
+            layout_selection: LayoutSelection::branching(),
+            scale,
+            theme,
+            reduced_motion,
+            menu_limits,
+            registry: registry_snapshot,
+        };
+        self.active_session_settings = Some(session_settings.clone());
 
         let local_phys_x = (pointer_phys.x - info.origin.x) as f32;
         let local_phys_y = (pointer_phys.y - info.origin.y) as f32;
@@ -623,19 +733,19 @@ impl SessionController {
             FAST_LOCAL_ENRICH_WINDOW,
         );
 
-        let (menu_tree, action_index) = self
+        let (menu_tree, action_index) = session_settings
             .registry
-            .build_menu(&ctx, MenuLimits::default())
+            .build_menu(&ctx, session_settings.menu_limits)
             .ok_or_else(|| anyhow::anyhow!("no actions available for context"))?;
 
         // Milestone N2 intermediate safety guard: pure concentric geometry and navigation are
         // active in `radivine-wheel`, while concentric desktop rendering and X11/Control Center
         // integration land in N3/N4. Keep the desktop controller on `Branching` during N2 even if
         // `layout = "concentric"` is manually set in config.toml.
-        let mut desktop_wheel_cfg = self.wheel_cfg.clone();
+        let mut desktop_wheel_cfg = session_settings.wheel_cfg.clone();
         desktop_wheel_cfg.layout = WheelLayout::Branching;
         let mut ws = WheelSession::new(
-            Some(menu_tree),
+            Some(menu_tree.clone()),
             cursor_logical,
             viewport,
             InputMode::Pointer,
@@ -645,12 +755,15 @@ impl SessionController {
         if item_count > 1 {
             ws.set_root_badge(Some(item_count), 0);
         }
+        session_settings.layout_selection = ws.layout_selection();
+        self.active_session_settings = Some(session_settings);
 
         self.renderer.set_opaque_fallback(!info.translucent);
         self.renderer
             .begin_session(SizePx::new(info.size.0, info.size.1), scale);
         self.overlay_info = Some(info.clone());
         self.active_context = Some(ctx);
+        self.active_menu_tree = Some(menu_tree);
         self.action_index = action_index;
         self.wheel_session = Some(ws);
         self.refresh_active_item_states();
@@ -694,6 +807,7 @@ impl SessionController {
         self.state = SessionState::Summoning;
         self.active_mode = Some(InvocationMode::Drag);
         self.active_context = None;
+        self.active_menu_tree = None;
         self.context_is_provisional = false;
         self.idle_release_deadline = None;
         self.leave_grace_deadline = None;
@@ -707,12 +821,29 @@ impl SessionController {
         self.last_interaction = t0;
 
         let info = self.platform.prepare_overlay(pointer_phys)?;
-        let scale = self.config.effective_scale(info.scale);
+        let config_snapshot = self.config.clone();
+        let scale = config_snapshot.effective_scale(info.scale);
         self.effective_scale = scale;
-        let reduced_motion = self
-            .config
-            .effective_reduced_motion(self.platform.reduced_motion());
-        self.wheel_cfg = self.config.to_wheel_config(reduced_motion);
+        let reduced_motion =
+            config_snapshot.effective_reduced_motion(self.platform.reduced_motion());
+        let wheel_cfg = config_snapshot.to_wheel_config(reduced_motion);
+        self.wheel_cfg = wheel_cfg.clone();
+        let theme = config_snapshot.resolve_theme();
+        self.renderer.set_theme(theme.clone());
+        let menu_limits = menu_limits_from_wheel_config(&wheel_cfg);
+        let registry_snapshot = Arc::clone(&self.registry);
+        let mut session_settings = ActiveSessionSettings {
+            passthrough: config_snapshot.input.passthrough,
+            release_outside_cancels: config_snapshot.input.release_outside_cancels,
+            config: config_snapshot,
+            wheel_cfg,
+            layout_selection: LayoutSelection::branching(),
+            scale,
+            theme,
+            reduced_motion,
+            menu_limits,
+            registry: registry_snapshot,
+        };
 
         let local_phys_x = (pointer_phys.x - info.origin.x) as f32;
         let local_phys_y = (pointer_phys.y - info.origin.y) as f32;
@@ -726,7 +857,7 @@ impl SessionController {
         // Start with a hub-only placeholder wheel (`menu = None`) while `request_payload` is in flight;
         // segments populate in ~0.2 ms when `SelectionNotify` arrives (`ARCHITECTURE.md` §5).
         // Milestone N2 intermediate safety guard: keep desktop sessions on `Branching` until N3/N4.
-        let mut desktop_wheel_cfg = self.wheel_cfg.clone();
+        let mut desktop_wheel_cfg = session_settings.wheel_cfg.clone();
         desktop_wheel_cfg.layout = WheelLayout::Branching;
         let ws = WheelSession::new(
             None,
@@ -736,6 +867,9 @@ impl SessionController {
             &desktop_wheel_cfg,
             0,
         );
+        session_settings.layout_selection = ws.layout_selection();
+        let passthrough = session_settings.passthrough;
+        self.active_session_settings = Some(session_settings);
 
         self.renderer.set_opaque_fallback(!info.translucent);
         self.renderer
@@ -768,7 +902,7 @@ impl SessionController {
             monitor = %info.monitor.name,
             source_app = ?self.drag_source.app,
             source_pid = ?self.drag_source.pid,
-            passthrough = self.config.input.passthrough,
+            passthrough = passthrough,
             elapsed_us = elapsed_us,
             "summoned radial wheel in Drag mode"
         );
@@ -790,6 +924,7 @@ impl SessionController {
         self.dnd_entered = false;
         self.last_dnd_accept = None;
         self.active_mode = None;
+        self.clear_active_session_snapshots();
         self.state = if self.drag_armed {
             SessionState::Armed
         } else {
@@ -867,7 +1002,7 @@ impl SessionController {
                                 | SessionState::Active
                                 | SessionState::LeftGrace
                         )
-                        && self.config.trigger.toggle_off_on_repress
+                        && self.session_config().trigger.toggle_off_on_repress
                     {
                         // Second Shift press hides the wheel and lets the Nemo drag continue (`AC-3.8`)
                         self.dismiss_drag_session(DismissReason::Toggled, now);
@@ -881,7 +1016,7 @@ impl SessionController {
                                 | SessionState::Active
                                 | SessionState::LeftGrace
                         )
-                        && self.config.trigger.hold_to_keep_open =>
+                        && self.session_config().trigger.hold_to_keep_open =>
                 {
                     self.dismiss_drag_session(DismissReason::Toggled, now);
                 }
@@ -1011,8 +1146,9 @@ impl SessionController {
                         // Pointer left the shaped wheel cluster (`passthrough = true`)
                         self.feed_wheel_input(WheelInput::PointerLeft, now);
                         self.state = SessionState::LeftGrace;
+                        let leave_grace_ms = self.session_config().wheel.leave_grace_ms;
                         self.leave_grace_deadline =
-                            Some(now + Duration::from_millis(self.config.wheel.leave_grace_ms));
+                            Some(now + Duration::from_millis(leave_grace_ms));
                     }
                 }
                 PlatformEvent::DndDrop if self.active_mode == Some(InvocationMode::Drag) => {
@@ -1071,8 +1207,9 @@ impl SessionController {
                         .config
                         .effective_reduced_motion(self.platform.reduced_motion());
                     self.wheel_cfg = self.config.to_wheel_config(reduced_motion);
-                    self.effective_scale = self.config.effective_scale(self.platform.scale());
-                    if matches!(
+                    if matches!(self.state, SessionState::Idle | SessionState::Armed) {
+                        self.effective_scale = self.config.effective_scale(self.platform.scale());
+                    } else if matches!(
                         self.state,
                         SessionState::Summoning | SessionState::Active | SessionState::LeftGrace
                     ) {
@@ -1081,8 +1218,11 @@ impl SessionController {
                             .or_else(|| self.overlay_info.as_ref().map(|i| i.origin))
                             .unwrap_or_else(|| PhysPoint::new(0, 0));
                         if let Ok(info) = self.platform.prepare_overlay(ref_pt) {
-                            let scale = self.config.effective_scale(info.scale);
+                            let scale = self.session_config().effective_scale(info.scale);
                             self.effective_scale = scale;
+                            if let Some(ref mut s) = self.active_session_settings {
+                                s.scale = scale;
+                            }
                             self.renderer.set_opaque_fallback(!info.translucent);
                             self.renderer
                                 .begin_session(SizePx::new(info.size.0, info.size.1), scale);
@@ -1093,7 +1233,7 @@ impl SessionController {
                         }
                     }
                     tracing::info!(
-                        scale = self.effective_scale,
+                        scale = self.session_scale(),
                         "updated display settings / monitors"
                     );
                 }
@@ -1101,6 +1241,7 @@ impl SessionController {
                     tracing::error!("X11 display server connection lost");
                     self.drag_armed = false;
                     self.active_mode = None;
+                    self.clear_active_session_snapshots();
                     self.state = SessionState::Idle;
                 }
                 _ => {}
@@ -1132,17 +1273,40 @@ impl SessionController {
         };
 
         if self.active_context.is_some() && !self.context_is_provisional {
+            let Some(action_id) = self.action_index.get(&path).cloned() else {
+                tracing::info!(
+                    path = ?path,
+                    "XdndDrop path missing from session ActionIndex; finishing with success=false"
+                );
+                self.platform.dnd_finish(false);
+                self.dismiss_drag_session(DismissReason::Cancelled, now);
+                return;
+            };
+            if !self.can_commit_action(&path, &action_id) {
+                tracing::info!(
+                    action_id = %action_id,
+                    path = ?path,
+                    "XdndDrop action not eligible at synchronous pre-dispatch check; finishing with success=false"
+                );
+                self.platform.dnd_finish(false);
+                self.dismiss_drag_session(DismissReason::Cancelled, now);
+                return;
+            }
             self.platform.dnd_finish(true);
-            self.commit_path(&path, now);
+            self.commit_resolved_action(&path, action_id, now);
             let drop_us = drop_t0.elapsed().as_micros() as u64;
             self.last_drop_dispatch_us = Some(drop_us);
             if self.trace_timings && self.drop_dispatch_samples_us.len() < 16_384 {
                 self.drop_dispatch_samples_us.push(drop_us);
             }
         } else {
-            // Fetch the real `text/uri-list` payload at drop time before dispatching
+            // Capture the provisional ActionId before requesting the deferred real payload (`ARCHITECTURE.md` §A6).
+            let captured_action_id = self.action_index.get(&path).cloned();
             self.state = SessionState::Committing;
-            self.pending_drop_commit = Some(path);
+            self.pending_drop_commit = Some(PendingDropSelection {
+                path,
+                action_id: captured_action_id,
+            });
             if !self.payload_in_flight {
                 self.payload_in_flight = true;
                 self.platform.request_payload("text/uri-list");
@@ -1185,8 +1349,10 @@ impl SessionController {
                     FAST_LOCAL_ENRICH_WINDOW,
                 );
 
+                let session_registry = Arc::clone(self.session_registry());
+                let menu_limits = self.session_menu_limits();
                 let Some((menu_tree, action_index)) =
-                    self.registry.build_menu(&ctx, MenuLimits::default())
+                    session_registry.build_menu(&ctx, menu_limits)
                 else {
                     tracing::info!("no applicable actions for dragged items; dismissing");
                     if self.state == SessionState::Committing {
@@ -1198,13 +1364,35 @@ impl SessionController {
 
                 self.active_context = Some(ctx);
                 self.context_is_provisional = false;
+                self.active_menu_tree = Some(menu_tree.clone());
                 self.action_index = action_index;
                 self.refresh_active_item_states();
 
                 if self.state == SessionState::Committing {
-                    if let Some(path) = self.pending_drop_commit.take() {
-                        self.platform.dnd_finish(true);
-                        self.commit_path(&path, now);
+                    if let Some(pending) = self.pending_drop_commit.take() {
+                        let resolved = pending.action_id.and_then(|target_id| {
+                            let real_path = self
+                                .action_index
+                                .entries()
+                                .iter()
+                                .find(|(_, id)| *id == target_id)
+                                .map(|(p, _)| p.clone())?;
+                            if self.can_commit_action(&real_path, &target_id) {
+                                Some((real_path, target_id))
+                            } else {
+                                None
+                            }
+                        });
+                        if let Some((real_path, target_id)) = resolved {
+                            self.platform.dnd_finish(true);
+                            self.commit_resolved_action(&real_path, target_id, now);
+                        } else {
+                            tracing::info!(
+                                "deferred payload resolved but captured action is absent or ineligible; finishing with success=false"
+                            );
+                            self.platform.dnd_finish(false);
+                            self.dismiss_drag_session(DismissReason::Cancelled, now);
+                        }
                     } else {
                         self.platform.dnd_finish(false);
                         self.dismiss_drag_session(DismissReason::Error, now);
@@ -1216,7 +1404,11 @@ impl SessionController {
                 let initial_pos = self.last_dnd_pos.map(|at| self.root_phys_to_logical(at));
                 let mut wheel_events = Vec::new();
                 if let Some(ref mut ws) = self.wheel_session {
-                    ws.set_menu(menu_tree, ms);
+                    if let Some(pos) = initial_pos {
+                        ws.set_menu_at_pointer(menu_tree, pos, ms);
+                    } else {
+                        ws.set_menu(menu_tree, ms);
+                    }
                     if item_count > 1 {
                         ws.set_root_badge(Some(item_count), ms);
                     }
@@ -1288,14 +1480,16 @@ impl SessionController {
             error: None,
         }]);
         let ctx = Arc::new(provisional_ctx);
-        let Some((menu_tree, action_index)) = self.registry.build_menu(&ctx, MenuLimits::default())
-        else {
+        let session_registry = Arc::clone(self.session_registry());
+        let menu_limits = self.session_menu_limits();
+        let Some((menu_tree, action_index)) = session_registry.build_menu(&ctx, menu_limits) else {
             self.dismiss_drag_session(DismissReason::Error, now);
             return;
         };
 
         self.active_context = Some(ctx);
         self.context_is_provisional = true;
+        self.active_menu_tree = Some(menu_tree.clone());
         self.action_index = action_index;
         self.refresh_active_item_states();
 
@@ -1303,7 +1497,11 @@ impl SessionController {
         let initial_pos = self.last_dnd_pos.map(|at| self.root_phys_to_logical(at));
         let mut wheel_events = Vec::new();
         if let Some(ref mut ws) = self.wheel_session {
-            ws.set_menu(menu_tree, ms);
+            if let Some(pos) = initial_pos {
+                ws.set_menu_at_pointer(menu_tree, pos, ms);
+            } else {
+                ws.set_menu(menu_tree, ms);
+            }
             if let Some(pos) = initial_pos {
                 ws.handle(WheelInput::PointerMoved(pos), ms, &mut wheel_events);
             }
@@ -1505,7 +1703,32 @@ impl SessionController {
         }
     }
 
+    fn can_commit_action(&self, path: &ItemPath, action_id: &ActionId) -> bool {
+        let Some(ref ctx) = self.active_context else {
+            return false;
+        };
+        if let Some(ref menu_tree) = self.active_menu_tree
+            && !menu_tree_path_and_ancestors_enabled(menu_tree, path)
+        {
+            return false;
+        }
+        let Some(action) = self.session_registry().get(action_id) else {
+            return false;
+        };
+        action.is_visible(&ctx.basic) && matches!(action.enablement(ctx), Enablement::Enabled)
+    }
+
     fn commit_path(&mut self, path: &ItemPath, now: Instant) {
+        self.drain_async_events(now);
+        let action_id: ActionId = self
+            .action_index
+            .get(path)
+            .cloned()
+            .unwrap_or_else(|| ActionId::from(format!("path:{path:?}")));
+        self.commit_resolved_action(path, action_id, now);
+    }
+
+    fn commit_resolved_action(&mut self, path: &ItemPath, action_id: ActionId, now: Instant) {
         self.drain_async_events(now);
         let was_invoke = self.active_mode == Some(InvocationMode::Invoke);
         self.state = SessionState::Committing;
@@ -1518,12 +1741,6 @@ impl SessionController {
         self.pending_drop_commit = None;
         self.dnd_entered = false;
         self.last_dnd_accept = None;
-
-        let action_id: ActionId = self
-            .action_index
-            .get(path)
-            .cloned()
-            .unwrap_or_else(|| ActionId::from(format!("path:{path:?}")));
 
         let (uris, source_app, source_pid, mode_str) = self.active_context.as_ref().map_or_else(
             || (Vec::new(), None, None, "Invoke"),
@@ -1563,7 +1780,8 @@ impl SessionController {
             guard.mode = Some(mode_str.to_string());
         }
 
-        if let Some(action) = self.registry.get(&action_id)
+        let session_registry = Arc::clone(self.session_registry());
+        if let Some(action) = session_registry.get(&action_id)
             && let Some(ref ctx) = self.active_context
         {
             // Pre-dispatch enablement re-check (`ACTION_SYSTEM.md` §7)
@@ -1597,6 +1815,7 @@ impl SessionController {
         }
 
         self.active_mode = None;
+        self.clear_active_session_snapshots();
         self.state = if self.drag_armed {
             SessionState::Armed
         } else {
@@ -1671,7 +1890,7 @@ impl SessionController {
         self.drain_async_events(now);
     }
 
-    fn process_async_event(&mut self, ev: AsyncControllerEvent, _now: Instant) {
+    fn process_async_event(&mut self, ev: AsyncControllerEvent, now: Instant) {
         match ev {
             AsyncControllerEvent::Enrich(EnrichEvent::Updated {
                 session_id,
@@ -1679,7 +1898,7 @@ impl SessionController {
                 ..
             }) => {
                 if session_id == self.active_enrich_session_id {
-                    self.apply_enrichment_context(context);
+                    self.apply_enrichment_context(context, now);
                 }
             }
             AsyncControllerEvent::Job(job_ev) => {
@@ -1688,11 +1907,11 @@ impl SessionController {
         }
     }
 
-    fn apply_enrichment_context(&mut self, new_ctx: Arc<Context>) {
+    fn apply_enrichment_context(&mut self, new_ctx: Arc<Context>, now: Instant) {
         self.active_context = Some(Arc::clone(&new_ctx));
 
         let updates = self
-            .registry
+            .session_registry()
             .enablement_updates(&new_ctx, &self.action_index);
         let new_states: Vec<ItemStateSnapshot> = updates
             .iter()
@@ -1707,19 +1926,26 @@ impl SessionController {
             })
             .collect();
 
+        let ms = self.elapsed_millis(now);
         let mut any_changed = false;
-        if let Some(ref mut ws) = self.wheel_session {
-            for u in updates {
-                let reason_str = u.disabled_reason.as_ref().map(ToString::to_string);
-                let unchanged = self.active_item_states.iter().any(|prev| {
-                    prev.path.as_slice() == u.path.as_slice()
-                        && prev.enabled == u.enabled
-                        && prev.disabled_reason == reason_str
-                });
-                if !unchanged {
-                    ws.set_enabled(&u.path, u.enabled, u.disabled_reason);
-                    any_changed = true;
+        for u in updates {
+            let reason_str = u.disabled_reason.as_ref().map(ToString::to_string);
+            let unchanged = self.active_item_states.iter().any(|prev| {
+                prev.path.as_slice() == u.path.as_slice()
+                    && prev.enabled == u.enabled
+                    && prev.disabled_reason == reason_str
+            });
+            if !unchanged {
+                if let Some(ref mut menu_tree) = self.active_menu_tree
+                    && let Some(node) = menu_tree.node_mut(&u.path)
+                {
+                    node.enabled = u.enabled;
+                    node.disabled_reason = u.disabled_reason.clone();
                 }
+                if let Some(ref mut ws) = self.wheel_session {
+                    ws.set_enabled_at(&u.path, u.enabled, u.disabled_reason, ms);
+                }
+                any_changed = true;
             }
         }
         self.active_item_states = new_states;
@@ -1740,7 +1966,9 @@ impl SessionController {
             self.active_item_states.clear();
             return;
         };
-        let updates = self.registry.enablement_updates(ctx, &self.action_index);
+        let updates = self
+            .session_registry()
+            .enablement_updates(ctx, &self.action_index);
         self.active_item_states = updates
             .iter()
             .filter_map(|u| {
@@ -1861,7 +2089,7 @@ impl SessionController {
             .overlay_info
             .as_ref()
             .map_or((0, 0), |i| (i.origin.x, i.origin.y));
-        let scale = self.effective_scale.max(0.5);
+        let scale = self.session_scale().max(0.5);
         Point::new(
             ((root_pt.x - ox) as f32) / scale,
             ((root_pt.y - oy) as f32) / scale,
@@ -1874,12 +2102,11 @@ impl SessionController {
             self.platform.set_bounding_region(None)?;
             self.bounding_region_clipped = false;
         }
+        let passthrough = self.session_passthrough();
         // Fast path: with a compositor (`translucent == true`) in Invoke mode or capture-all Drag mode
         // (`input.passthrough == false`, safe default per ADR-016 / AGENTS.md §2.4), `ShapeBounding`
         // is already unclipped and `ShapeInput` is full-window (`None`).
-        if translucent
-            && (self.active_mode == Some(InvocationMode::Invoke) || !self.config.input.passthrough)
-        {
+        if translucent && (self.active_mode == Some(InvocationMode::Invoke) || !passthrough) {
             self.platform.set_input_region(None)?;
             return Ok(());
         }
@@ -1887,7 +2114,7 @@ impl SessionController {
         let Some(ref ws) = self.wheel_session else {
             return Ok(());
         };
-        let scale = self.effective_scale;
+        let scale = self.session_scale();
         let shapes = ws.input_region();
         let mut shapes_px: Vec<ShapePx> = Vec::with_capacity(shapes.len() + 1);
         for s in shapes {
@@ -1942,7 +2169,7 @@ impl SessionController {
             self.bounding_region_clipped = true;
         }
 
-        if self.active_mode == Some(InvocationMode::Invoke) || !self.config.input.passthrough {
+        if self.active_mode == Some(InvocationMode::Invoke) || !passthrough {
             self.platform.set_input_region(None)?;
             return Ok(());
         }
@@ -1989,6 +2216,28 @@ impl SessionController {
         }
         Ok(())
     }
+}
+
+fn menu_limits_from_wheel_config(wheel_cfg: &WheelConfig) -> MenuLimits {
+    let validated = wheel_cfg.validated();
+    MenuLimits {
+        max_items_per_wheel: validated.max_items_per_wheel,
+        max_depth: validated.max_depth,
+    }
+}
+
+fn menu_tree_path_and_ancestors_enabled(menu: &MenuTree, path: &ItemPath) -> bool {
+    if path.is_empty() {
+        return menu.root.enabled;
+    }
+    let slice = path.as_slice();
+    for len in 1..=slice.len() {
+        let prefix = ItemPath::from_slice(&slice[..len]);
+        if !menu.node(&prefix).is_some_and(|n| n.enabled) {
+            return false;
+        }
+    }
+    true
 }
 
 fn query_self_rss_kib() -> Option<u64> {
@@ -2328,5 +2577,261 @@ mod tests {
         // 9. Disarm returns to Idle
         ctrl.handle_platform_events(vec![PlatformEvent::DragDisarmed]);
         assert_eq!(ctrl.status().session_state, "Idle");
+    }
+
+    #[test]
+    fn active_session_settings_snapshot_across_phases_and_reloads() {
+        let (mock, plat_state) = MockPlatform::new();
+        let mut initial_cfg = AppConfig::default();
+        initial_cfg.input.passthrough = true;
+        initial_cfg.trigger.toggle_off_on_repress = true;
+        initial_cfg.wheel.leave_grace_ms = 400;
+        let renderer =
+            Renderer::new(initial_cfg.resolve_theme(), AssetSource::Embedded).expect("renderer");
+        let registry = Arc::new(builtin_registry());
+        let mut ctrl =
+            SessionController::new(Box::new(mock), renderer, Arc::clone(&registry), initial_cfg);
+
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let actions_v1 = temp_dir.join_path_or_fallback("actions_v1.toml");
+        let actions_v2 = temp_dir.join_path_or_fallback("actions_v2.toml");
+        std::fs::write(
+            &actions_v1,
+            r#"
+version = 1
+
+[[action]]
+id = "custom.alpha"
+label = "Alpha Action"
+exec = ["true"]
+
+[menu]
+order = ["radivine.copy", "radivine.properties", "radivine.preview", "radivine.custom"]
+"#,
+        )
+        .expect("write actions_v1");
+        std::fs::write(
+            &actions_v2,
+            r#"
+version = 1
+
+[[action]]
+id = "custom.beta"
+label = "Beta Action"
+exec = ["true"]
+
+[menu]
+order = ["radivine.properties", "radivine.copy", "radivine.preview", "radivine.custom"]
+"#,
+        )
+        .expect("write actions_v2");
+
+        ctrl.load_actions_from_path(&actions_v1);
+
+        // Arm drag and summon into Summoning phase
+        ctrl.handle_platform_events(vec![
+            PlatformEvent::DragArmed {
+                source: SourceInfo {
+                    app: Some("nemo".to_string()),
+                    pid: Some(100),
+                },
+            },
+            PlatformEvent::Trigger {
+                at: PhysPoint::new(960, 540),
+            },
+        ]);
+        assert_eq!(ctrl.status().session_state, "Summoning");
+        assert!(ctrl.active_session_settings().is_some());
+        assert!(ctrl.active_session_settings().unwrap().passthrough);
+
+        // Reload config and actions during Summoning: snapshot must remain untouched
+        let mut reloaded_cfg = AppConfig::default();
+        reloaded_cfg.wheel.layout = "concentric".to_string();
+        reloaded_cfg.appearance.scale = crate::config::ScaleSetting::Fixed(2.0);
+        reloaded_cfg.input.passthrough = false;
+        reloaded_cfg.trigger.toggle_off_on_repress = false;
+        ctrl.reload_all(reloaded_cfg.clone(), &actions_v2);
+
+        let snap_summoning = ctrl
+            .active_session_settings()
+            .expect("snapshot in Summoning");
+        assert_eq!(snap_summoning.config.wheel.layout, "branching");
+        assert_eq!(snap_summoning.scale, 1.0);
+        assert!(snap_summoning.passthrough);
+        assert!(
+            snap_summoning
+                .registry
+                .get(&ActionId::from("custom.alpha"))
+                .is_some()
+        );
+        assert!(
+            snap_summoning
+                .registry
+                .get(&ActionId::from("custom.beta"))
+                .is_none()
+        );
+        assert!(plat_state.lock().expect("lock").mapped);
+
+        // Deliver payload -> Active phase; menu built from snapshotted registry (`radivine.copy` at `[0]`)
+        ctrl.handle_platform_events(vec![
+            PlatformEvent::DndEnter {
+                types: vec!["text/uri-list".to_string()],
+            },
+            PlatformEvent::Payload {
+                mime: "text/uri-list".to_string(),
+                result: Ok(b"file:///tmp/demo.txt\r\n".to_vec()),
+            },
+        ]);
+        assert_eq!(ctrl.status().session_state, "Active");
+        assert_eq!(
+            ctrl.action_index.get(&ItemPath::from_slice(&[0])),
+            Some(&ActionId::from("radivine.copy"))
+        );
+
+        // Transition to LeftGrace and reload again: still uses snapshot
+        ctrl.handle_platform_events(vec![PlatformEvent::DndLeave { drag_ended: false }]);
+        assert_eq!(ctrl.status().session_state, "LeftGrace");
+        ctrl.reload_all(reloaded_cfg.clone(), &actions_v2);
+        assert_eq!(ctrl.status().scale, 1.0);
+        assert!(plat_state.lock().expect("lock").mapped);
+
+        // Re-enter Active, move to top item `[0]` (960, 460), and drop: must commit `radivine.copy`, NOT `radivine.properties`
+        ctrl.handle_platform_events(vec![
+            PlatformEvent::DndPosition {
+                at: PhysPoint::new(960, 460),
+            },
+            PlatformEvent::DndDrop,
+        ]);
+        assert_eq!(
+            ctrl.status().last_committed_action.as_deref(),
+            Some("radivine.copy")
+        );
+        assert!(ctrl.active_session_settings().is_none());
+        assert_eq!(ctrl.status().scale, 2.0);
+    }
+
+    #[test]
+    fn deferred_payload_pins_action_id_and_rejects_when_ineligible_or_reordered() {
+        let (mock, plat_state) = MockPlatform::new();
+        let cfg = AppConfig::default();
+        let renderer = Renderer::new(cfg.resolve_theme(), AssetSource::Embedded).expect("renderer");
+        let registry = Arc::new(builtin_registry());
+        let mut ctrl = SessionController::new(Box::new(mock), renderer, registry, cfg);
+
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let real_dir = temp_dir.path().join("folder_payload");
+        std::fs::create_dir_all(&real_dir).expect("create dir");
+        let actions_path = temp_dir.path().join("actions.toml");
+        // In `radivine.custom` submenu (`[3]` when Convert is hidden for `.txt`):
+        // `custom.text_only` is visible for provisional `.txt` file at `[3, 0]`,
+        // while `custom.any_item` is at `[3, 1]` for `.txt` but moves to `[3, 0]` (or `[2, 0]`) for a directory!
+        std::fs::write(
+            &actions_path,
+            r#"
+version = 1
+
+[[action]]
+id = "custom.text_only"
+label = "Text Only"
+exec = ["true"]
+[action.when]
+extensions = ["txt"]
+
+[[action]]
+id = "custom.any_item"
+label = "Any Item"
+exec = ["true"]
+
+[menu]
+order = ["radivine.custom", "radivine.copy", "radivine.properties"]
+hide = ["radivine.preview", "radivine.convert"]
+"#,
+        )
+        .expect("write actions.toml");
+        ctrl.load_actions_from_path(&actions_path);
+
+        // Start drag and force provisional menu (source offers text/uri-list but refuses pre-drop conversion)
+        ctrl.handle_platform_events(vec![
+            PlatformEvent::DragArmed {
+                source: SourceInfo {
+                    app: Some("nemo".to_string()),
+                    pid: Some(200),
+                },
+            },
+            PlatformEvent::Trigger {
+                at: PhysPoint::new(960, 540),
+            },
+            PlatformEvent::DndEnter {
+                types: vec!["text/uri-list".to_string()],
+            },
+            PlatformEvent::DndPosition {
+                at: PhysPoint::new(960, 460),
+            },
+            PlatformEvent::Payload {
+                mime: "text/uri-list".to_string(),
+                result: Err(radivine_platform::PayloadError::Timeout),
+            },
+            PlatformEvent::Payload {
+                mime: "text/uri-list".to_string(),
+                result: Err(radivine_platform::PayloadError::Timeout),
+            },
+        ]);
+        assert_eq!(ctrl.status().session_state, "Active");
+        assert!(ctrl.context_is_provisional);
+        assert_eq!(
+            ctrl.action_index.get(&ItemPath::from_slice(&[0, 0])),
+            Some(&ActionId::from("custom.text_only"))
+        );
+
+        // Open submenu `[0]` (`Custom`) by dwelling on top segment (960, 460), then move to child `[0, 0]` and drop
+        ctrl.on_timer(Instant::now() + Duration::from_millis(200));
+        let child_pt = ctrl
+            .wheel_session
+            .as_ref()
+            .and_then(|ws| ws.item_center(&ItemPath::from_slice(&[0, 0])))
+            .expect("child [0, 0] center");
+        ctrl.handle_platform_events(vec![
+            PlatformEvent::DndPosition {
+                at: PhysPoint::new(child_pt.x.round() as i32, child_pt.y.round() as i32),
+            },
+            PlatformEvent::DndDrop,
+        ]);
+        assert_eq!(ctrl.status().session_state, "Committing");
+        assert_eq!(
+            ctrl.pending_drop_selection(),
+            Some(&PendingDropSelection {
+                path: ItemPath::from_slice(&[0, 0]),
+                action_id: Some(ActionId::from("custom.text_only")),
+            })
+        );
+
+        // Deliver real payload for a directory (`real_dir`):
+        // In the rebuilt menu for `real_dir`, `custom.text_only` is invisible and `custom.any_item`
+        // now occupies `[0, 0]`. Controller MUST reject (`dnd_finish(false)`) and NEVER execute `custom.any_item`!
+        let dir_uri = format!("file://{}\r\n", real_dir.display());
+        ctrl.handle_platform_events(vec![PlatformEvent::Payload {
+            mime: "text/uri-list".to_string(),
+            result: Ok(dir_uri.into_bytes()),
+        }]);
+        assert_eq!(
+            plat_state
+                .lock()
+                .expect("lock")
+                .dnd_finishes
+                .last()
+                .copied(),
+            Some(false)
+        );
+        assert!(ctrl.status().last_committed_action.is_none());
+    }
+
+    trait TempDirPathExt {
+        fn join_path_or_fallback(&self, name: &str) -> std::path::PathBuf;
+    }
+
+    impl TempDirPathExt for tempfile::TempDir {
+        fn join_path_or_fallback(&self, name: &str) -> std::path::PathBuf {
+            self.path().join(name)
+        }
     }
 }
