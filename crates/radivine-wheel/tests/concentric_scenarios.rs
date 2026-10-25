@@ -477,6 +477,42 @@ fn t_nav1_dwell_band_click_and_zero_duration_boundaries() {
                 .count(),
             1
         );
+
+        // Verify in DwellAndBand mode that jumping directly from center into the outer band
+        // (r = 105.0 >= 97.2) on the FIRST sample entering the sector does NOT open immediately
+        // via band (it starts dwell at t = 10 + 110 = 120), and a second sample moving outward
+        // by >= 2.0 lp on that same sector (to r = 107.0 at t = 15) opens immediately via band:
+        let cfg_db = shipped_concentric_config();
+        let mut s_db = WheelSession::new(
+            Some(normative_fixture_tree()),
+            center,
+            vp,
+            InputMode::Drag,
+            &cfg_db,
+            0,
+        );
+        events.clear();
+        s_db.handle(
+            WheelInput::PointerMoved(Point::new(960.0, 540.0 - 105.0)),
+            10,
+            &mut events,
+        );
+        assert_eq!(
+            s_db.debug_state().wheels.len(),
+            1,
+            "first sample entering sector inside outer band must start dwell, not open immediately"
+        );
+        assert_eq!(s_db.next_deadline(), Some(120));
+        s_db.handle(
+            WheelInput::PointerMoved(Point::new(960.0, 540.0 - 107.0)),
+            15,
+            &mut events,
+        );
+        assert_eq!(
+            s_db.debug_state().wheels.len(),
+            2,
+            "subsequent >= 2.0 lp outward move inside outer band on same sector must open immediately"
+        );
     }
 
     // 3. SubmenuOpen::Click mode in Pointer mode: neither dwell nor band opens; click opens
@@ -1131,6 +1167,44 @@ fn t_nav8_displaced_center_approaching_guard_and_keyboard_bypass() {
             WheelEvent::Commit(ItemPath::from_slice(&[1])),
         ]
     );
+
+    // 6. Displaced anchor that is only 10 lp from clamped center (0.5 < d < 40, inside hub radius):
+    //    must still start in Approach (even after set_menu_at_pointer at the same anchor) and
+    //    must not release until a real pointer motion sample (past activation_slop) lands in d < 40.
+    let near_edge_anchor = Point::new(324.0, 334.0); // Clamped center is (334, 334), distance = 10.0 lp
+    let mut s_near = WheelSession::new(None, near_edge_anchor, vp, InputMode::Drag, &cfg, 0);
+    assert_eq!(s_near.concentric_hit(), Some(NestedHit::Approach));
+    s_near.set_menu_at_pointer(normative_fixture_tree(), near_edge_anchor, 5);
+    assert_eq!(
+        s_near.concentric_hit(),
+        Some(NestedHit::Approach),
+        "set_menu_at_pointer at displaced anchor inside hub radius must remain Approach before real motion"
+    );
+    // Jumping straight from near_edge_anchor (324, 334) to a sector (334, 254) without a motion sample in hub stays Approach:
+    events.clear();
+    let mut s_jump = WheelSession::new(
+        Some(normative_fixture_tree()),
+        near_edge_anchor,
+        vp,
+        InputMode::Drag,
+        &cfg,
+        0,
+    );
+    s_jump.handle(
+        WheelInput::PointerMoved(Point::new(334.0, 254.0)),
+        10,
+        &mut events,
+    );
+    assert_eq!(s_jump.concentric_hit(), Some(NestedHit::Approach));
+    assert_eq!(s_jump.drop_target(), DropTarget::Reject);
+
+    // Real motion sample past activation_slop inside the hub (334, 334) releases Approach -> Hub:
+    s_near.handle(
+        WheelInput::PointerMoved(Point::new(334.0, 334.0)),
+        10,
+        &mut events,
+    );
+    assert_eq!(s_near.concentric_hit(), Some(NestedHit::Hub));
 }
 
 /// `T-NAV9`: All Invoke keys, wrap, disabled focus reason, `Back` at root/no-op, digit bounds,
@@ -1226,6 +1300,45 @@ fn t_nav9_invoke_keyboard_navigation_pointer_takeover_and_invoke_select_modes() 
         events.clear();
         session.handle(WheelInput::Nav(NavKey::Digit(3)), 50, &mut events);
         assert!(events.contains(&WheelEvent::Commit(ItemPath::from_slice(&[2]))));
+
+        // Verify pointer takeover from keyboard-first session with a >= 2.0 lp move (< 6.0 lp activation_slop),
+        // and verify keyboard Activate / Digit on an enabled child whose ancestor was disabled is rejected:
+        let mut s_takeover =
+            WheelSession::new(Some(tree.clone()), center, vp, InputMode::Pointer, &cfg, 0);
+        events.clear();
+        s_takeover.handle(WheelInput::Nav(NavKey::Digit(1)), 10, &mut events);
+        assert_eq!(
+            s_takeover.debug_state().hovered_item,
+            Some(ItemPath::from_slice(&[0, 0]))
+        );
+        // Disable parent [0] while child [0, 0] is focused by keyboard:
+        s_takeover.set_enabled_at(
+            &ItemPath::from_slice(&[0]),
+            false,
+            Some(Arc::from("Parent disabled")),
+            15,
+        );
+        events.clear();
+        s_takeover.handle(WheelInput::Nav(NavKey::Activate), 20, &mut events);
+        s_takeover.handle(WheelInput::Nav(NavKey::Digit(1)), 25, &mut events);
+        assert_no_commit(
+            &events,
+            "keyboard Activate/Digit on child with disabled ancestor",
+        );
+
+        // Now move pointer by 2.5 lp (>= 2.0 lp takeover threshold, < 6.0 lp activation_slop) inside hub:
+        // must take over from keyboard and clear keyboard hover to None (since pointer is in Hub)!
+        s_takeover.handle(
+            WheelInput::PointerMoved(Point::new(center.x + 2.5, center.y)),
+            30,
+            &mut events,
+        );
+        assert_eq!(s_takeover.concentric_hit(), Some(NestedHit::Hub));
+        assert_eq!(
+            s_takeover.debug_state().hovered_item,
+            None,
+            "2.5 lp pointer move must take over from keyboard even when < 6.0 lp initial slop"
+        );
     }
 
     // 2. Hub-marking press+drag+release in InvokeSelect::Click and release-to-select in InvokeSelect::Release
@@ -1299,14 +1412,15 @@ fn t_nav10_rapid_sibling_oscillation_soak_10000_steps() {
         now += intervals[step % intervals.len()];
         events.clear();
 
-        let pt = match step % 7 {
-            0 => center.offset_polar(102.0, -FRAC_PI_2), // root sector 0 outer band
-            1 => center.offset_polar(168.0, -FRAC_PI_2), // level 1 sector 0
-            2 => center.offset_polar(85.0, 0.0),         // root sector 1
-            3 => center.offset_polar(104.0, 0.0),        // root sector 1 outer band
-            4 => center.offset_polar(131.0, 0.5),        // radial gap
-            5 => center.offset_polar(15.0, 0.0),         // center hub
-            _ => center.offset_polar(230.0, -FRAC_PI_2), // level 2 sector 0
+        let pt = match step % 8 {
+            0 => center.offset_polar(85.0, -FRAC_PI_2), // root sector 0 interior
+            1 => center.offset_polar(102.0, -FRAC_PI_2), // root sector 0 outer band
+            2 => center.offset_polar(155.0, -FRAC_PI_2), // level 1 sector 0 interior
+            3 => center.offset_polar(180.0, -FRAC_PI_2), // level 1 sector 0 outer band
+            4 => center.offset_polar(85.0, 0.0),        // root sector 1 interior
+            5 => center.offset_polar(104.0, 0.0),       // root sector 1 outer band
+            6 => center.offset_polar(131.0, 0.5),       // radial gap
+            _ => center.offset_polar(15.0, 0.0),        // center hub
         };
 
         session.handle(WheelInput::PointerMoved(pt), now, &mut events);

@@ -6,8 +6,8 @@ use smallvec::SmallVec;
 
 use crate::anim::{Ease, Millis, Tween, timings};
 use crate::concentric::{
-    CONCENTRIC_FRESH_MOTION_LP, ConcentricPlan, NestedHit, hit_concentric, plan_concentric,
-    retain_hover_hysteresis, ring_geometry,
+    CONCENTRIC_FRESH_MOTION_LP, CONCENTRIC_RADIAL_EPS, ConcentricPlan, NestedHit, hit_concentric,
+    plan_concentric, retain_hover_hysteresis, ring_geometry,
 };
 use crate::concentric_nav::{
     ConcentricDwellTimer, ConcentricHubCloseTimer, ConcentricInputSource, ConcentricPress,
@@ -2181,15 +2181,10 @@ impl WheelSession {
             }
             if let ConcentricInputSource::Keyboard { takeover_point } = state.input_source {
                 if p.distance(takeover_point) < CONCENTRIC_FRESH_MOTION_LP {
-                    self.last_pointer = p;
                     return;
                 }
                 state.input_source = ConcentricInputSource::Pointer;
-                if !self.moved_past_slop
-                    && p.distance(self.summon_point) >= self.cfg.activation_slop
-                {
-                    self.moved_past_slop = true;
-                }
+                self.moved_past_slop = true;
             }
         }
 
@@ -2204,16 +2199,29 @@ impl WheelSession {
 
         self.last_pointer = p;
 
-        // 3. Update exposure guards (`>= 2.0 lp` from exposed_at_pointer) and evaluate strict hit
-        let (prev_strict_hit, strict_hit) = match self.layout_state {
+        // 3. Update exposure guards (`>= 2.0 lp` from exposed_at_pointer), release displaced-origin
+        //    approach guard if this real motion sample enters the hub (`d < h - 1e-4`), and evaluate strict hit.
+        let (prev_strict_hit, prev_exposure_guards, strict_hit) = match self.layout_state {
             LayoutState::Concentric(ref mut state) => {
+                let prev_guards = state.exposure_guards;
                 state.update_exposure_guards(p);
                 let prev = state.raw_hit;
+                if !state.hub_visited_by_pointer {
+                    let h = state
+                        .open_rings
+                        .first()
+                        .map(|r| r.r_in)
+                        .or_else(|| state.plan.radii.first().map(|&(r_in, _)| r_in))
+                        .unwrap_or(40.0);
+                    if p.distance(state.plan.center) < h - CONCENTRIC_RADIAL_EPS {
+                        state.hub_visited_by_pointer = true;
+                    }
+                }
                 state.plan.approach_required = !state.hub_visited_by_pointer;
                 let hit = hit_concentric(p, &state.plan, &state.open_rings);
                 state.raw_hit = hit;
                 self.raw_zone = ConcentricState::hit_to_debug_zone(hit);
-                (prev, hit)
+                (prev, prev_guards, hit)
             }
             LayoutState::Branching => return,
         };
@@ -2373,7 +2381,16 @@ impl WheelSession {
                 self.set_hovered_item_concentric(Some(item_path.clone()), now, out);
 
                 if self.is_enabled_submenu_with_ancestors(level, index) {
-                    if self.should_open_by_outer_band_concentric(level, prev_pointer, p) {
+                    let was_level_guarded = prev_exposure_guards
+                        .get(usize::from(level))
+                        .copied()
+                        .flatten()
+                        .is_some();
+                    let was_already_on_sector =
+                        !was_level_guarded && prev_strict_hit == NestedHit::Item { level, index };
+                    if was_already_on_sector
+                        && self.should_open_by_outer_band_concentric(level, prev_pointer, p)
+                    {
                         if let LayoutState::Concentric(ref mut state) = self.layout_state {
                             state.dwell = None;
                         }
@@ -2569,11 +2586,9 @@ impl WheelSession {
             if state.interaction_suspended {
                 return;
             }
-            if !matches!(state.input_source, ConcentricInputSource::Keyboard { .. }) {
-                state.input_source = ConcentricInputSource::Keyboard {
-                    takeover_point: self.last_pointer,
-                };
-            }
+            state.input_source = ConcentricInputSource::Keyboard {
+                takeover_point: self.last_pointer,
+            };
             state.dwell = None;
             state.pending_sibling = None;
             state.hub_close = None;
@@ -2859,11 +2874,7 @@ impl WheelSession {
             state.dwell = None;
             state.pending_sibling = None;
             if usize::from(level) < state.exposure_guards.len() {
-                state.exposure_guards[usize::from(level)] = if focus_first_child {
-                    None
-                } else {
-                    Some(self.last_pointer)
-                };
+                state.exposure_guards[usize::from(level)] = Some(self.last_pointer);
             }
             state.plan.approach_required = !state.hub_visited_by_pointer;
             state.raw_hit = hit_concentric(self.last_pointer, &state.plan, &state.open_rings);

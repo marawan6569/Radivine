@@ -93,7 +93,12 @@ fn t_geo1_sector_spans_counts_top_start_and_placeholder() {
 
             let expected_step = TAU / (count as f32);
             let expected_delta = separator_half_angle_for_ring(g.r_in, count);
+            let formula_delta = (2.5f32 / (2.0 * g.r_in)).min(1.0).asin();
             assert!((g.separator_half_angle - expected_delta).abs() < 1e-6);
+            assert!(
+                (g.separator_half_angle - formula_delta).abs() < 1e-6,
+                "separator_half_angle must equal asin(min(1, 2.5 / (2 * r_in)))"
+            );
             assert!(g.separator_half_angle > 0.0);
 
             // Item 0 is centered at top (3π/2)
@@ -238,16 +243,18 @@ fn t_geo3_viewport_fit_boundaries_negative_origins_scales_and_placeholder_consis
     // Test corners, edges, and interior clamping inside a 1920x1080 viewport with negative origin
     let vp = vp_with_origin(-1000.0, -500.0, 1920.0, 1080.0, 1.5);
     let anchors = [
-        (Point::new(-1000.0, -500.0), true),          // Top-left corner
-        (Point::new(920.0, -500.0), true),            // Top-right corner
-        (Point::new(-1000.0, 580.0), true),           // Bottom-left corner
-        (Point::new(920.0, 580.0), true),             // Bottom-right corner
-        (Point::new(-40.0, -500.0), true),            // Top edge
-        (Point::new(-40.0, 580.0), true),             // Bottom edge
-        (Point::new(-1000.0, 40.0), true),            // Left edge
-        (Point::new(920.0, 40.0), true),              // Right edge
-        (Point::new(-40.0, 0.0), false),              // Interior (no clamping)
-        (Point::new(-1000.0 + 334.3, -166.0), false), // Within 0.5 lp of clamped boundary
+        (Point::new(-1000.0, -500.0), true), // Top-left corner
+        (Point::new(920.0, -500.0), true),   // Top-right corner
+        (Point::new(-1000.0, 580.0), true),  // Bottom-left corner
+        (Point::new(920.0, 580.0), true),    // Bottom-right corner
+        (Point::new(-40.0, -500.0), true),   // Top edge
+        (Point::new(-40.0, 580.0), true),    // Bottom edge
+        (Point::new(-1000.0, 40.0), true),   // Left edge
+        (Point::new(920.0, 40.0), true),     // Right edge
+        (Point::new(-40.0, 0.0), false),     // Interior (no clamping)
+        (Point::new(-1000.0 + 334.0 - 0.49, -166.0), false), // Displaced by 0.49 lp (<= 0.5 lp)
+        (Point::new(-1000.0 + 334.0 - 0.50, -166.0), false), // Displaced by exactly 0.50 lp (<= 0.5 lp)
+        (Point::new(-1000.0 + 334.0 - 0.51, -166.0), true),  // Displaced by 0.51 lp (> 0.5 lp)
     ];
 
     for (anchor, expect_approach) in anchors {
@@ -302,38 +309,42 @@ fn t_geo4_shipped_app_root_standard_resolutions_and_dpi_matrix() {
     let mut cfg_6 = app_concentric_config();
     cfg_6.max_depth = 6;
 
-    // 1. Verify exact reserved radii and required dimensions for 4 and 6 rings
-    let plan_4 = plan_concentric(
-        Point::new(500.0, 400.0),
-        Viewport::new(668.0, 742.0, 1.0),
-        &cfg_4,
-    )
-    .expect("668x742 must fit 4 rings");
-    assert_eq!(plan_4.reserved_radius, 326.0);
-
-    let plan_6 = plan_concentric(
-        Point::new(500.0, 500.0),
-        Viewport::new(932.0, 1006.0, 1.0),
-        &cfg_6,
-    )
-    .expect("932x1006 must fit 6 rings");
-    assert_eq!(plan_6.reserved_radius, 458.0);
-    assert_eq!(
-        plan_concentric(
-            Point::new(500.0, 500.0),
-            Viewport::new(931.99, 1006.0, 1.0),
-            &cfg_6
-        ),
-        Err(LayoutFallback::InsufficientSpace)
-    );
-    assert_eq!(
-        plan_concentric(
-            Point::new(500.0, 500.0),
-            Viewport::new(932.0, 1005.99, 1.0),
-            &cfg_6
-        ),
-        Err(LayoutFallback::InsufficientSpace)
-    );
+    // 1. Verify exact reserved radii and required dimensions across the full I2 capacity table
+    //    for shipped app root (40 / 128): D = 1, 2, 3, 4, 6
+    let capacity_table: [(u8, f32, f32, f32); 5] = [
+        (1, 128.0, 296.0, 346.0),
+        (2, 194.0, 404.0, 478.0),
+        (3, 260.0, 536.0, 610.0),
+        (4, 326.0, 668.0, 742.0),
+        (6, 458.0, 932.0, 1006.0),
+    ];
+    for (depth, exp_r_reserve, min_w, min_h) in capacity_table {
+        let mut d_cfg = app_concentric_config();
+        d_cfg.max_depth = depth;
+        let plan = plan_concentric(
+            Point::new(min_w * 0.5, min_h * 0.5),
+            Viewport::new(min_w, min_h, 1.0),
+            &d_cfg,
+        )
+        .unwrap_or_else(|e| panic!("depth {depth} must fit in {min_w}x{min_h}: {e:?}"));
+        assert_eq!(plan.reserved_radius, exp_r_reserve);
+        assert_eq!(
+            plan_concentric(
+                Point::new(min_w * 0.5, min_h * 0.5),
+                Viewport::new(min_w - 0.01, min_h, 1.0),
+                &d_cfg
+            ),
+            Err(LayoutFallback::InsufficientSpace)
+        );
+        assert_eq!(
+            plan_concentric(
+                Point::new(min_w * 0.5, min_h * 0.5),
+                Viewport::new(min_w, min_h - 0.01, 1.0),
+                &d_cfg
+            ),
+            Err(LayoutFallback::InsufficientSpace)
+        );
+    }
 
     // 2. 1366x768 @ 1x -> fits 4 rings
     let vp_1366 = Viewport::new(1366.0, 768.0, 1.0);
@@ -432,10 +443,21 @@ fn t_geo5_target_core_containment_and_invalid_config_safety() {
     }
 
     // 2. Small / thin / invalid root radii fail with `TargetTooSmall` and fall back cleanly
+    // Exact 60.0 lp minimum root thickness succeeds for 8 items (40..100):
+    let cfg_exact_60 = WheelConfig {
+        radius_root: [40.0, 100.0],
+        max_items_per_wheel: 8,
+        ..app_concentric_config()
+    };
+    assert!(
+        plan_concentric(Point::new(960.0, 500.0), vp, &cfg_exact_60).is_ok(),
+        "root ring with exact 60.0 lp thickness [40, 100] must fit 8 items"
+    );
+
     let invalid_configs = [
-        // Root ring thinner than 60 lp
+        // Root ring thinner than 60 lp (59.99 lp)
         WheelConfig {
-            radius_root: [40.0, 99.9],
+            radius_root: [40.0, 99.99],
             ..app_concentric_config()
         },
         // Root inner radius too small for 12 items' 32x32 tangential core
@@ -832,13 +854,14 @@ fn t_geo6_strict_hit_testing_boundaries_wrap_and_hysteresis_separation() {
         "unused reserved capacity beyond last_open_r_out + hit_margin must be Outside"
     );
 
-    // 6. Displaced-center approach state: Hub interior is Hub; everything else is Approach
-    let displaced_plan =
+    // 6. Displaced-center approach state: while `approach_required` is true, Approach wins first
+    //    everywhere; once cleared (`false`), Hub interior is Hub.
+    let mut displaced_plan =
         plan_concentric(Point::new(10.0, 10.0), vp, &cfg).expect("displaced plan fits");
     assert!(displaced_plan.approach_required);
     assert_eq!(
         hit_concentric(displaced_plan.center, &displaced_plan, &open_root_only),
-        NestedHit::Hub
+        NestedHit::Approach
     );
     assert_eq!(
         hit_concentric(
@@ -847,6 +870,11 @@ fn t_geo6_strict_hit_testing_boundaries_wrap_and_hysteresis_separation() {
             &open_root_only
         ),
         NestedHit::Approach
+    );
+    displaced_plan.approach_required = false;
+    assert_eq!(
+        hit_concentric(displaced_plan.center, &displaced_plan, &open_root_only),
+        NestedHit::Hub
     );
 
     // 7. Hover hysteresis retention vs strict hit separation
@@ -861,6 +889,38 @@ fn t_geo6_strict_hit_testing_boundaries_wrap_and_hysteresis_separation() {
     assert_eq!(
         retain_hover_hysteresis(sep_pt, strict_sep, Some((0, 0)), &plan, &open, 3.5),
         Some((0, 0))
+    );
+
+    // Verify `min(cfg.hysteresis_deg, Δ * 0.15)` cap on a 12-item ring (`Δ = 30°`, `Δ * 0.15 = 4.5°`)
+    // when `hysteresis_deg` is configured to `10.0°`:
+    let open_12 = [ring_geometry(&plan, 0, 12)];
+    let rg12 = &open_12[0];
+    let usable_right_12 = rg12.spans[0].a1 - rg12.separator_half_angle;
+    let pt_within_cap = c.offset_polar(r_mid0, usable_right_12 + 4.0f32.to_radians());
+    let pt_past_cap = c.offset_polar(r_mid0, usable_right_12 + 5.0f32.to_radians());
+    assert_eq!(
+        retain_hover_hysteresis(
+            pt_within_cap,
+            NestedHit::Separator { level: 0 },
+            Some((0, 0)),
+            &plan,
+            &open_12,
+            10.0
+        ),
+        Some((0, 0)),
+        "4.0° <= min(10.0°, 30° * 0.15 = 4.5°) must retain hover"
+    );
+    assert_eq!(
+        retain_hover_hysteresis(
+            pt_past_cap,
+            NestedHit::Separator { level: 0 },
+            Some((0, 0)),
+            &plan,
+            &open_12,
+            10.0
+        ),
+        None,
+        "5.0° > min(10.0°, 30° * 0.15 = 4.5°) must clear hover despite hysteresis_deg = 10.0°"
     );
 
     // Radial hover retention into gap: < 3.0 lp retains hover, >= 3.0 lp (gap midpoint) clears hover

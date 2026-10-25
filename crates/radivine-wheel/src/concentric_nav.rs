@@ -126,7 +126,7 @@ impl ConcentricState {
             raw_hit: if initial_approach_required {
                 NestedHit::Approach
             } else {
-                NestedHit::Outside
+                NestedHit::Hub
             },
             exposure_guards: [None; 6],
             input_source: ConcentricInputSource::Pointer,

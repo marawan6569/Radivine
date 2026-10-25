@@ -524,9 +524,9 @@ pub fn sector_box_fits(
 ///
 /// Strict hit testing is stateless and independent of current hover or hysteresis:
 /// 1. Non-finite coordinates return [`NestedHit::Outside`].
-/// 2. When `plan.approach_required` is active, points inside the hub interior (`d < h - 1e-4`)
-///    return [`NestedHit::Hub`] (allowing hub entry to clear the approach guard) and all other
-///    points return [`NestedHit::Approach`].
+/// 2. When `plan.approach_required` is active, the approach guard wins first and returns
+///    [`NestedHit::Approach`] (`INTERACTION_DESIGN.md` §I4; the session releases
+///    `approach_required` only when a real pointer motion sample enters the hub interior).
 /// 3. Radial boundary epsilon bands (`|d - r_in| <= 1e-4` or `|d - r_out| <= 1e-4`) return
 ///    [`NestedHit::RadialBoundary`].
 /// 4. Hub interior (`d < h - 1e-4`) is tested once and returns [`NestedHit::Hub`].
@@ -547,19 +547,16 @@ pub fn hit_concentric(p: Point, plan: &ConcentricPlan, open: &[RingGeometry]) ->
         return NestedHit::Outside;
     }
 
+    if plan.approach_required {
+        return NestedHit::Approach;
+    }
+
     let d = p.distance(plan.center);
     let (h, r0) = open
         .first()
         .map(|r| (r.r_in, r.r_out))
         .or_else(|| plan.radii.first().copied())
         .unwrap_or((40.0, 128.0));
-
-    if plan.approach_required {
-        if d < h - CONCENTRIC_RADIAL_EPS {
-            return NestedHit::Hub;
-        }
-        return NestedHit::Approach;
-    }
 
     for ring in open {
         if (d - ring.r_in).abs() <= CONCENTRIC_RADIAL_EPS
