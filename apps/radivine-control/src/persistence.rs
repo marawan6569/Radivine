@@ -40,6 +40,8 @@ hold_to_keep_open = false
 min_drag_distance_px = 6
 
 [wheel]
+# Radial wheel layout mode: "branching" (default) or "concentric"
+layout = "branching"
 # Root wheel inner and outer radii in logical pixels
 root_inner_radius = 40.0
 root_outer_radius = 128.0
@@ -432,6 +434,7 @@ pub fn apply_app_config_to_toml_doc(
     doc["trigger"]["min_drag_distance_px"] = value(i64::from(cfg.trigger.min_drag_distance_px));
 
     ensure_table(&mut doc, "wheel");
+    doc["wheel"]["layout"] = value(cfg.wheel.layout.trim().to_ascii_lowercase());
     doc["wheel"]["root_inner_radius"] = value(f64::from(cfg.wheel.root_inner_radius));
     doc["wheel"]["root_outer_radius"] = value(f64::from(cfg.wheel.root_outer_radius));
     doc["wheel"]["child_inner_radius"] = value(f64::from(cfg.wheel.child_inner_radius));
@@ -852,5 +855,33 @@ root_outer_radius = 128.0
         assert!(dir.join("config.toml.bak").exists());
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn wheel_layout_roundtrips_and_rejects_invalid_strings() {
+        let original = r#"# User header comment
+[wheel]
+# Layout preference comment
+root_inner_radius = 40.0
+root_outer_radius = 128.0
+"#;
+        let mut cfg = AppConfig::from_toml_str(original);
+        assert_eq!(cfg.wheel.layout, "branching");
+
+        cfg.wheel.layout = "concentric".to_string();
+        let updated = apply_app_config_to_toml_doc(original, &cfg).expect("save concentric");
+        assert!(updated.contains("# User header comment"));
+        assert!(updated.contains("# Layout preference comment"));
+        assert!(updated.contains("layout = \"concentric\""));
+
+        let reloaded = AppConfig::from_toml_str(&updated);
+        assert_eq!(reloaded.wheel.layout, "concentric");
+
+        // Strict validation rejects uppercase or unknown layout strings
+        cfg.wheel.layout = "Concentric".to_string();
+        assert!(apply_app_config_to_toml_doc(&updated, &cfg).is_err());
+
+        cfg.wheel.layout = "spiral".to_string();
+        assert!(apply_app_config_to_toml_doc(&updated, &cfg).is_err());
     }
 }

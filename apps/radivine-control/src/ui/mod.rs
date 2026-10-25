@@ -287,18 +287,24 @@ impl ControlCenterApp {
                             },
                         },
                         WorkerCommand::ReloadDaemon => match worker_ctrl.reload_daemon() {
-                            Ok(snap) => WorkerEvent::StatusUpdated {
-                                snapshot: Box::new(snap),
-                                banner_ok: Some(
+                            Ok(snap) => {
+                                let msg = if snap.daemon.as_ref().is_some_and(|d| d.layout_pending)
+                                {
+                                    "Saved and reloaded configuration in running daemon. Applies to the next wheel activation. An open wheel stays as it is.".to_string()
+                                } else {
                                     "Reloaded configuration and custom actions in running daemon."
-                                        .to_string(),
-                                ),
-                                banner_err: None,
-                            },
+                                        .to_string()
+                                };
+                                WorkerEvent::StatusUpdated {
+                                    snapshot: Box::new(snap),
+                                    banner_ok: Some(msg),
+                                    banner_err: None,
+                                }
+                            }
                             Err(err) => WorkerEvent::StatusUpdated {
-                                snapshot: Box::new(worker_ctrl.query_snapshot(None)),
+                                snapshot: Box::new(worker_ctrl.query_snapshot(Some(err.clone()))),
                                 banner_ok: None,
-                                banner_err: Some(err),
+                                banner_err: Some(format!("Saved; daemon reload failed: {err}")),
                             },
                         },
                         WorkerCommand::SetAutostart(enable) => {
@@ -480,11 +486,31 @@ impl ControlCenterApp {
         self.banner_err = None;
 
         let _ = self.jobs_cmd_tx.send(JobsCommand::ReloadWorkerSettings);
-        if self.service_snapshot.health == DaemonHealthState::Running {
-            let _ = self.worker_tx.send(WorkerCommand::ReloadDaemon);
-            self.banner_ok = Some(
-                "Saved config.toml and triggered hot reload in the running daemon.".to_string(),
-            );
+        if self.service_snapshot.health == DaemonHealthState::Running
+            || self.service_ctrl.paths().ipc_socket.exists()
+        {
+            match self.service_ctrl.reload_daemon() {
+                Ok(snap) => {
+                    let deferred = snap.daemon.as_ref().is_some_and(|d| d.layout_pending);
+                    self.service_snapshot = snap;
+                    if deferred {
+                        self.banner_ok = Some(
+                            "Saved config.toml and reloaded daemon. Applies to the next wheel activation. An open wheel stays as it is."
+                                .to_string(),
+                        );
+                    } else {
+                        self.banner_ok = Some(
+                            "Saved config.toml and triggered hot reload in the running daemon."
+                                .to_string(),
+                        );
+                    }
+                }
+                Err(err) => {
+                    self.service_snapshot = self.service_ctrl.query_snapshot(Some(err.clone()));
+                    self.banner_ok = None;
+                    self.banner_err = Some(format!("Saved; daemon reload failed: {err}"));
+                }
+            }
         } else {
             self.banner_ok = Some(
                 "Saved config.toml. Settings will apply automatically when the daemon starts."
@@ -492,6 +518,82 @@ impl ControlCenterApp {
             );
         }
         Ok(())
+    }
+
+    /// Selects a draft wheel layout (`"branching"` or `"concentric"`) without saving to disk.
+    pub fn select_draft_wheel_layout(&mut self, layout: &str) {
+        self.draft_config.wheel.layout = layout.to_string();
+    }
+
+    /// Restores Wheel, Trigger, and Input draft settings to their defaults (`wheel.layout = "branching"`).
+    pub fn restore_wheel_defaults(&mut self) {
+        let def = AppConfig::default();
+        self.draft_config.wheel = def.wheel;
+        self.draft_config.trigger = def.trigger;
+        self.draft_config.input = def.input;
+    }
+
+    /// Returns `true` when Branching-specific child geometry controls should be enabled.
+    #[must_use]
+    pub fn is_branching_geometry_enabled(&self) -> bool {
+        self.draft_config.wheel.layout != "concentric"
+    }
+
+    /// Returns the current success banner message, if any.
+    #[must_use]
+    pub fn banner_ok(&self) -> Option<&str> {
+        self.banner_ok.as_deref()
+    }
+
+    /// Returns the current error banner message, if any.
+    #[must_use]
+    pub fn banner_err(&self) -> Option<&str> {
+        self.banner_err.as_deref()
+    }
+
+    /// Returns the latest cached daemon/service status snapshot.
+    #[must_use]
+    pub fn service_snapshot(&self) -> &ServiceSnapshot {
+        &self.service_snapshot
+    }
+
+    /// Synchronously refreshes the cached daemon/service status snapshot.
+    pub fn refresh_service_snapshot_sync(&mut self) {
+        self.service_snapshot = self.service_ctrl.query_snapshot(None);
+    }
+
+    /// Formats the saved vs. effective runtime wheel layout status and any active fallback reason.
+    #[must_use]
+    pub fn wheel_layout_status_message(&self) -> String {
+        if let Some(ref d) = self.service_snapshot.daemon {
+            match d.layout_fallback_reason.as_deref() {
+                Some("insufficient_space" | "target_too_small") => format!(
+                    "Saved preference: {} · Effective runtime layout: {} (Using Branching: nested rings need more space on this display).",
+                    d.requested_layout, d.active_layout
+                ),
+                Some("no_compositor") => format!(
+                    "Saved preference: {} · Effective runtime layout: {} (Using Branching: compositor translucency is unavailable on this X11 display).",
+                    d.requested_layout, d.active_layout
+                ),
+                Some(reason) => format!(
+                    "Saved preference: {} · Effective runtime layout: {} (fallback: {reason}).",
+                    d.requested_layout, d.active_layout
+                ),
+                None if d.layout_pending => format!(
+                    "Saved preference: {} · Active wheel layout: {} (Applies to the next wheel activation. An open wheel stays as it is.)",
+                    d.requested_layout, d.active_layout
+                ),
+                None => format!(
+                    "Saved preference: {} · Effective runtime layout: {}.",
+                    d.requested_layout, d.active_layout
+                ),
+            }
+        } else {
+            format!(
+                "Saved preference: {} · Daemon offline (applies when the daemon starts).",
+                self.saved_config.wheel.layout
+            )
+        }
     }
 
     /// Saves `draft_convert` (`convert.toml`) and `draft_jobs` (`config.toml [jobs]`) atomically,
@@ -1659,12 +1761,58 @@ impl ControlCenterApp {
     }
 
     fn render_wheel_page(&mut self, ui: &mut egui::Ui, pal: &BrandPalette) {
-        section_card(
-            ui,
-            pal,
-            "Branching Radial Wheel Geometry (Logical Pixels)",
-            |ui| {
-                ui.label(
+        section_card(ui, pal, "Wheel Layout", |ui| {
+            ui.label(
+                RichText::new(
+                    "Applies to the next wheel activation. An open wheel stays as it is.",
+                )
+                .size(12.0)
+                .color(pal.fg_secondary),
+            );
+            ui.add_space(8.0);
+
+            for (code, title, desc) in [
+                (
+                    "branching",
+                    "Branching (Default)",
+                    "Submenus open beside their parent, connected by vine stems.",
+                ),
+                (
+                    "concentric",
+                    "Concentric Rings",
+                    "Submenus open as rings around one center. Uses Branching when the rings cannot fit on this display.",
+                ),
+            ] {
+                let selected = self.draft_config.wheel.layout == code;
+                ui.horizontal_wrapped(|ui| {
+                    if ui.radio(selected, RichText::new(title).strong()).clicked() {
+                        self.select_draft_wheel_layout(code);
+                    }
+                    ui.label(RichText::new(desc).size(12.0).color(pal.fg_secondary));
+                });
+                ui.add_space(4.0);
+            }
+
+            ui.add_space(4.0);
+            let status_msg = self.wheel_layout_status_message();
+            let has_fallback_or_pending = self
+                .service_snapshot
+                .daemon
+                .as_ref()
+                .is_some_and(|d| d.layout_fallback_reason.is_some() || d.layout_pending);
+            let status_color = if has_fallback_or_pending {
+                pal.warn_fg
+            } else {
+                pal.fg_secondary
+            };
+            ui.label(RichText::new(status_msg).size(12.0).color(status_color));
+        });
+
+        ui.add_space(12.0);
+
+        let branching_geom_enabled = self.is_branching_geometry_enabled();
+        section_card(ui, pal, "Radial Wheel Geometry (Logical Pixels)", |ui| {
+            ui.label(
                     RichText::new(
                         "Adjust the inner dead-zone and outer ring radii of the root wheel and adjacent branching child wheels. \
                          Changes apply via hot reload without restarting the daemon or interrupting active drag sessions.",
@@ -1672,32 +1820,64 @@ impl ControlCenterApp {
                     .size(12.0)
                     .color(pal.fg_secondary),
                 );
-                ui.add_space(8.0);
+            ui.add_space(8.0);
 
-                egui::Grid::new("wheel_radii_grid")
+            egui::Grid::new("wheel_root_radii_grid")
+                .num_columns(2)
+                .spacing([24.0, 10.0])
+                .show(ui, |ui| {
+                    ui.label("Root wheel inner radius (dead-zone):");
+                    ui.add(
+                        egui::Slider::new(
+                            &mut self.draft_config.wheel.root_inner_radius,
+                            20.0..=120.0,
+                        )
+                        .suffix(" px"),
+                    );
+                    ui.end_row();
+
+                    ui.label("Root wheel outer radius:");
+                    ui.add(
+                        egui::Slider::new(
+                            &mut self.draft_config.wheel.root_outer_radius,
+                            80.0..=260.0,
+                        )
+                        .suffix(" px"),
+                    );
+                    ui.end_row();
+                });
+
+            ui.add_space(8.0);
+            ui.label(
+                RichText::new("Nested ring thickness: 60 px; gap: 6 px")
+                    .size(12.0)
+                    .color(pal.fg_secondary),
+            );
+            ui.add_space(8.0);
+
+            ui.label(RichText::new("Branching geometry").strong().color(
+                if branching_geom_enabled {
+                    pal.fg_primary
+                } else {
+                    pal.fg_secondary
+                },
+            ));
+            if !branching_geom_enabled {
+                ui.label(
+                    RichText::new(
+                        "Disabled while Concentric Rings is selected; stored values are preserved.",
+                    )
+                    .size(11.5)
+                    .color(pal.fg_secondary),
+                );
+            }
+            ui.add_space(4.0);
+
+            ui.add_enabled_ui(branching_geom_enabled, |ui| {
+                egui::Grid::new("wheel_branching_radii_grid")
                     .num_columns(2)
                     .spacing([24.0, 10.0])
                     .show(ui, |ui| {
-                        ui.label("Root wheel inner radius (dead-zone):");
-                        ui.add(
-                            egui::Slider::new(
-                                &mut self.draft_config.wheel.root_inner_radius,
-                                20.0..=120.0,
-                            )
-                            .suffix(" px"),
-                        );
-                        ui.end_row();
-
-                        ui.label("Root wheel outer radius:");
-                        ui.add(
-                            egui::Slider::new(
-                                &mut self.draft_config.wheel.root_outer_radius,
-                                80.0..=260.0,
-                            )
-                            .suffix(" px"),
-                        );
-                        ui.end_row();
-
                         ui.label("Child submenu inner radius:");
                         ui.add(
                             egui::Slider::new(
@@ -1728,8 +1908,8 @@ impl ControlCenterApp {
                         );
                         ui.end_row();
                     });
-            },
-        );
+            });
+        });
 
         ui.add_space(12.0);
 
@@ -1858,10 +2038,7 @@ impl ControlCenterApp {
                     self.draft_config = self.saved_config.clone();
                 }
                 if ui.button("Restore Wheel Defaults").clicked() {
-                    let def = AppConfig::default();
-                    self.draft_config.wheel = def.wheel;
-                    self.draft_config.trigger = def.trigger;
-                    self.draft_config.input = def.input;
+                    self.restore_wheel_defaults();
                 }
             });
         });

@@ -10,6 +10,9 @@ toggle_off_on_repress = true
 hold_to_keep_open = false
 
 [wheel]
+# Radial wheel layout mode: "branching" (default) or "concentric"
+layout = "branching"
+
 # Root wheel inner and outer radii in logical pixels (20.0..=500.0)
 root_inner_radius = 40.0
 root_outer_radius = 128.0
