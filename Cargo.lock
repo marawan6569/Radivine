@@ -561,7 +561,7 @@ dependencies = [
 
 [[package]]
 name = "convert-cli"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -575,7 +575,7 @@ dependencies = [
 
 [[package]]
 name = "convert-corpus"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2747,7 +2747,7 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "radivine"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "calloop 0.14.5",
@@ -2776,7 +2776,7 @@ dependencies = [
 
 [[package]]
 name = "radivine-actions"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "radivine-convert",
  "radivine-core",
@@ -2791,7 +2791,7 @@ dependencies = [
 
 [[package]]
 name = "radivine-control"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2819,7 +2819,7 @@ dependencies = [
 
 [[package]]
 name = "radivine-convert"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "fastrand",
  "proptest",
@@ -2835,7 +2835,7 @@ dependencies = [
 
 [[package]]
 name = "radivine-convert-image"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "convert-corpus",
  "image",
@@ -2849,7 +2849,7 @@ dependencies = [
 
 [[package]]
 name = "radivine-core"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "mime_guess",
  "percent-encoding",
@@ -2861,7 +2861,7 @@ dependencies = [
 
 [[package]]
 name = "radivine-dbus"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "tempfile",
  "thiserror 2.0.21",
@@ -2869,7 +2869,7 @@ dependencies = [
 
 [[package]]
 name = "radivine-jobs"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "fastrand",
  "percent-encoding",
@@ -2886,7 +2886,7 @@ dependencies = [
 
 [[package]]
 name = "radivine-platform"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "rustix 1.1.5",
  "smallvec",
@@ -2897,7 +2897,7 @@ dependencies = [
 
 [[package]]
 name = "radivine-render"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "cosmic-text",
  "criterion",
@@ -2910,7 +2910,7 @@ dependencies = [
 
 [[package]]
 name = "radivine-viewer"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2929,7 +2929,7 @@ dependencies = [
 
 [[package]]
 name = "radivine-webp"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "libwebp-sys",
  "thiserror 2.0.21",
@@ -2937,7 +2937,7 @@ dependencies = [
 
 [[package]]
 name = "radivine-wheel"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "criterion",
  "proptest",
@@ -2946,7 +2946,7 @@ dependencies = [
 
 [[package]]
 name = "radivine-worker"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -4537,7 +4537,7 @@ dependencies = [
 
 [[package]]
 name = "wheel-sandbox"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "cosmic-text",
  "radivine-render",

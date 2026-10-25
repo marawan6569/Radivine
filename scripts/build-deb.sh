@@ -106,8 +106,7 @@ Summon the radial wheel in Invoke mode for the specified files or URIs.
 Query the running daemon status and telemetry.
 .TP
 \fBreload\fR
-Reload \fB~/.config/radivine/config.toml\fR, \fB~/.config/radivine/actions.toml\fR,
-and \fB~/.config/radivine/convert.toml\fR.
+Reload \fB~/.config/radivine/config.toml\fR and \fB~/.config/radivine/actions.toml\fR.
 .TP
 \fBquit\fR
 Gracefully stop the running daemon.
@@ -139,7 +138,7 @@ radivine-control \- graphical Control Center and Advanced Convert window for Rad
 [\fB\-\-page\fR \fIdashboard|general|wheel|actions|conversion|jobs|diagnostics|about\fR] [\fB\-\-config\fR \fIPATH\fR] [\fB\-\-socket\fR \fIPATH\fR]
 .br
 .B radivine-control convert
-[\fB\-\-preset\fR \fIID\fR] [\fB\-\-target\fR \fIpng|jpeg|webp\fR] \fB\-\-\fR \fIPATH\fR...
+[\fB\-\-stdin\fR] [\fB\-\-\fR] [\fIPATH\fR...]
 .SH DESCRIPTION
 Opens the native Radivine Control Center desktop application to manage the
 background Radivine daemon, login autostart, radial wheel geometry, shell-free
