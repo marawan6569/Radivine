@@ -833,8 +833,35 @@ impl WheelSession {
             state.pending_sibling = None;
             state.hub_close = None;
             state.pressed = None;
-            let mut ignored = Vec::new();
-            self.set_hovered_item_concentric(None, now, &mut ignored);
+            let out_dur = if self.cfg.reduced_motion {
+                timings::REDUCED_MOTION_FADE_MS
+            } else {
+                timings::HOVER_OUT_MS
+            };
+            if let Some(ref old_path) = self.hovered_item
+                && !old_path.is_empty()
+            {
+                let w_idx = old_path.len() - 1;
+                let s_idx = old_path.as_slice()[w_idx] as usize;
+                if let Some(w) = self.wheels.get_mut(w_idx)
+                    && w.path.as_slice() == &old_path.as_slice()[..w_idx]
+                    && let Some(seg) = w.segments.get_mut(s_idx)
+                {
+                    seg.highlight.retarget(0.0, now, out_dur, Ease::OutCubic);
+                    seg.pop = Tween::constant(0.0);
+                }
+            }
+            self.caption_opacity.retarget(
+                0.0,
+                now,
+                if self.cfg.reduced_motion {
+                    timings::REDUCED_MOTION_FADE_MS
+                } else {
+                    timings::CAPTION_FADE_MS
+                },
+                Ease::Linear,
+            );
+            self.hovered_item = None;
             self.rebuild_scene(now);
         }
     }

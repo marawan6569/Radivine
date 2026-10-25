@@ -936,4 +936,188 @@ fn test_t_reg1_branching_deterministic_baseline_traces() {
     ev.clear();
     s_key.handle(WheelInput::Nav(NavKey::Digit(2)), 60, &mut ev);
     assert!(ev.contains(&WheelEvent::Commit(ItemPath::from_slice(&[1]))));
+
+    // --- 4. Independent historical v0.2.0 (`e6a342e`) trace parity verification ---
+    // Captured directly from the immutable `v0.2.0` (`e6a342e`) tag in an isolated worktree.
+    let snap = |tag: &str, s: &WheelSession, ev: &[WheelEvent]| -> String {
+        let d = s.debug_state();
+        let sc = s.scene();
+        let wheels_str: Vec<String> = sc
+            .wheels
+            .iter()
+            .map(|w| {
+                let segs: Vec<String> = w
+                    .segments
+                    .iter()
+                    .map(|sg| {
+                        format!(
+                            "{:.6}:{:.6}:{:.6}:{:.6}:{}:{}:{}",
+                            sg.a0, sg.a1, sg.highlight, sg.pop, sg.on_path, sg.enabled, sg.label
+                        )
+                    })
+                    .collect();
+                format!(
+                    "W({:.4},{:.4}|r={:.4}..{:.4}|s={:.6}|o={:.6}|role={:?}|segs=[{}])",
+                    w.center.x,
+                    w.center.y,
+                    w.r_in,
+                    w.r_out,
+                    w.scale,
+                    w.opacity,
+                    w.role,
+                    segs.join(",")
+                )
+            })
+            .collect();
+        let cap_str = match &sc.caption {
+            None => "None".to_string(),
+            Some(c) => format!(
+                "Some({:.2},{:.2},{:.2},{:.2}|title={}|detail={:?}|dis={}|op={:.6})",
+                c.box_.x, c.box_.y, c.box_.w, c.box_.h, c.title, c.detail, c.disabled, c.opacity
+            ),
+        };
+        format!(
+            "{tag}|phase={:?}|slop={}|zone={:?}|hov={:?}|chain={:?}|drop={:?}|dl={:?}|shapes={}|ev={:?}|wheels={}|cap={}",
+            d.phase,
+            d.moved_past_slop,
+            d.raw_zone,
+            d.hovered_item,
+            d.open_chain,
+            s.drop_target(),
+            s.next_deadline(),
+            s.input_region().len(),
+            ev,
+            wheels_str.join(";"),
+            cap_str
+        )
+    };
+
+    const V020_IMMUTABLE_BASELINE_TRACE: &[&str] = &[
+        "init|phase=Appearing|slop=false|zone=Outside|hov=None|chain=[ItemPath([])]|drop=Reject|dl=None|shapes=2|ev=[]|wheels=W(500.0000,400.0000|r=38.0000..116.0000|s=0.860000|o=0.000000|role=Active|segs=[3.926991:5.497787:0.000000:0.000000:false:true:File Preview,5.497787:7.068583:0.000000:0.000000:false:true:Copy,0.785398:2.356194:0.000000:0.000000:false:false:Delete,2.356194:3.926991:0.000000:0.000000:false:true:Custom Actions])|cap=None",
+        "step_a1|phase=Appearing|slop=false|zone=Outside|hov=None|chain=[ItemPath([])]|drop=Reject|dl=None|shapes=2|ev=[]|wheels=W(500.0000,400.0000|r=38.0000..116.0000|s=0.887908|o=0.199344|role=Active|segs=[3.926991:5.497787:0.000000:0.000000:false:true:File Preview,5.497787:7.068583:0.000000:0.000000:false:true:Copy,0.785398:2.356194:0.000000:0.000000:false:false:Delete,2.356194:3.926991:0.000000:0.000000:false:true:Custom Actions])|cap=None",
+        "step_a2|phase=Appearing|slop=true|zone=Hub { wheel: 0 }|hov=None|chain=[ItemPath([])]|drop=Reject|dl=None|shapes=2|ev=[]|wheels=W(500.0000,400.0000|r=38.0000..116.0000|s=0.900351|o=0.288220|role=Active|segs=[3.926991:5.497787:0.000000:0.000000:false:true:File Preview,5.497787:7.068583:0.000000:0.000000:false:true:Copy,0.785398:2.356194:0.000000:0.000000:false:false:Delete,2.356194:3.926991:0.000000:0.000000:false:true:Custom Actions])|cap=None",
+        "step_b|phase=Appearing|slop=true|zone=Hub { wheel: 0 }|hov=None|chain=[ItemPath([])]|drop=Reject|dl=None|shapes=2|ev=[]|wheels=W(500.0000,400.0000|r=38.0000..116.0000|s=0.907355|o=0.338248|role=Active|segs=[3.926991:5.497787:0.000000:0.000000:false:true:File Preview,5.497787:7.068583:0.000000:0.000000:false:true:Copy,0.785398:2.356194:0.000000:0.000000:false:false:Delete,2.356194:3.926991:0.000000:0.000000:false:true:Custom Actions])|cap=None",
+        "step_c|phase=Appearing|slop=true|zone=Item { wheel: 0, index: 0 }|hov=Some(ItemPath([0]))|chain=[ItemPath([])]|drop=Accept(ItemPath([0, 0]))|dl=Some(160)|shapes=2|ev=[HoverChanged(Some(ItemPath([0])))]|wheels=W(500.0000,400.0000|r=38.0000..116.0000|s=0.911837|o=0.370262|role=Active|segs=[3.926991:5.497787:0.000000:0.000000:false:true:File Preview,5.497787:7.068583:0.000000:0.000000:false:true:Copy,0.785398:2.356194:0.000000:0.000000:false:false:Delete,2.356194:3.926991:0.000000:0.000000:false:true:Custom Actions])|cap=Some(380.00,526.00,240.00,44.00|title=File Preview|detail=Some(\"Preview file contents\")|dis=false|op=0.000000)",
+        "step_d|phase=Appearing|slop=true|zone=Item { wheel: 0, index: 0 }|hov=Some(ItemPath([0]))|chain=[ItemPath([])]|drop=Accept(ItemPath([0, 0]))|dl=Some(160)|shapes=2|ev=[]|wheels=W(500.0000,400.0000|r=38.0000..116.0000|s=0.932092|o=0.514942|role=Active|segs=[3.926991:5.497787:0.297668:1.190672:false:true:File Preview,5.497787:7.068583:0.000000:0.000000:false:true:Copy,0.785398:2.356194:0.000000:0.000000:false:false:Delete,2.356194:3.926991:0.000000:0.000000:false:true:Custom Actions])|cap=Some(380.00,526.00,240.00,44.00|title=File Preview|detail=Some(\"Preview file contents\")|dis=false|op=0.125000)",
+        "step_e1|phase=Appearing|slop=true|zone=Item { wheel: 0, index: 0 }|hov=Some(ItemPath([0]))|chain=[ItemPath([])]|drop=Accept(ItemPath([0, 0]))|dl=Some(160)|shapes=2|ev=[]|wheels=W(500.0000,400.0000|r=38.0000..116.0000|s=1.000000|o=1.000000|role=Active|segs=[3.926991:5.497787:1.000000:4.000000:false:true:File Preview,5.497787:7.068583:0.000000:0.000000:false:true:Copy,0.785398:2.356194:0.000000:0.000000:false:false:Delete,2.356194:3.926991:0.000000:0.000000:false:true:Custom Actions])|cap=Some(380.00,526.00,240.00,44.00|title=File Preview|detail=Some(\"Preview file contents\")|dis=false|op=1.000000)",
+        "step_e2|phase=Appearing|slop=true|zone=Item { wheel: 0, index: 0 }|hov=Some(ItemPath([0]))|chain=[ItemPath([]), ItemPath([0])]|drop=Accept(ItemPath([0, 0]))|dl=None|shapes=4|ev=[SubmenuOpened(ItemPath([0])), InputRegionChanged]|wheels=W(500.0000,400.0000|r=38.0000..116.0000|s=1.000000|o=1.000000|role=Ancestor|segs=[3.926991:5.497787:1.000000:4.000000:true:true:File Preview,5.497787:7.068583:0.000000:0.000000:false:true:Copy,0.785398:2.356194:0.000000:0.000000:false:false:Delete,2.356194:3.926991:0.000000:0.000000:false:true:Custom Actions]);W(500.0000,178.0000|r=30.0000..96.0000|s=0.600000|o=0.000000|role=Active|segs=[2.827433:4.084070:0.000000:0.000000:false:true:Full Preview,4.084070:5.340708:0.000000:0.000000:false:true:Head,5.340708:6.597344:0.000000:0.000000:false:true:Tail])|cap=Some(380.00,28.00,240.00,44.00|title=File Preview|detail=Some(\"Preview file contents\")|dis=false|op=1.000000)",
+        "step_f|phase=Appearing|slop=true|zone=Item { wheel: 0, index: 0 }|hov=Some(ItemPath([0]))|chain=[ItemPath([]), ItemPath([0])]|drop=Accept(ItemPath([0, 0]))|dl=None|shapes=4|ev=[]|wheels=W(500.0000,400.0000|r=38.0000..116.0000|s=1.000000|o=0.907578|role=Ancestor|segs=[3.926991:5.497787:1.000000:4.000000:true:true:File Preview,5.497787:7.068583:0.000000:0.000000:false:true:Copy,0.785398:2.356194:0.000000:0.000000:false:false:Delete,2.356194:3.926991:0.000000:0.000000:false:true:Custom Actions]);W(500.0000,178.0000|r=30.0000..96.0000|s=0.600000|o=0.000000|role=Active|segs=[2.827433:4.084070:0.000000:0.000000:false:true:Full Preview,4.084070:5.340708:0.000000:0.000000:false:true:Head,5.340708:6.597344:0.000000:0.000000:false:true:Tail])|cap=Some(380.00,28.00,240.00,44.00|title=File Preview|detail=Some(\"Preview file contents\")|dis=false|op=1.000000)",
+        "step_g|phase=Appearing|slop=true|zone=Bridge { wheel: 1 }|hov=Some(ItemPath([0]))|chain=[ItemPath([]), ItemPath([0])]|drop=Accept(ItemPath([0, 0]))|dl=None|shapes=4|ev=[]|wheels=W(500.0000,400.0000|r=38.0000..116.0000|s=1.000000|o=0.838125|role=Ancestor|segs=[3.926991:5.497787:1.000000:4.000000:true:true:File Preview,5.497787:7.068583:0.000000:0.000000:false:true:Copy,0.785398:2.356194:0.000000:0.000000:false:false:Delete,2.356194:3.926991:0.000000:0.000000:false:true:Custom Actions]);W(500.0000,178.0000|r=30.0000..96.0000|s=0.600000|o=0.000000|role=Active|segs=[2.827433:4.084070:0.000000:0.000000:false:true:Full Preview,4.084070:5.340708:0.000000:0.000000:false:true:Head,5.340708:6.597344:0.000000:0.000000:false:true:Tail])|cap=Some(380.00,28.00,240.00,44.00|title=File Preview|detail=Some(\"Preview file contents\")|dis=false|op=1.000000)",
+        "step_h1|phase=Appearing|slop=true|zone=Item { wheel: 1, index: 1 }|hov=Some(ItemPath([0, 1]))|chain=[ItemPath([]), ItemPath([0])]|drop=Accept(ItemPath([0, 1]))|dl=None|shapes=4|ev=[HoverChanged(Some(ItemPath([0, 1])))]|wheels=W(500.0000,400.0000|r=38.0000..116.0000|s=1.000000|o=0.775579|role=Ancestor|segs=[3.926991:5.497787:1.000000:4.000000:true:true:File Preview,5.497787:7.068583:0.000000:0.000000:false:true:Copy,0.785398:2.356194:0.000000:0.000000:false:false:Delete,2.356194:3.926991:0.000000:0.000000:false:true:Custom Actions]);W(500.0000,178.0000|r=30.0000..96.0000|s=0.685389|o=0.213473|role=Active|segs=[2.827433:4.084070:0.000000:0.000000:false:true:Full Preview,4.084070:5.340708:0.000000:0.000000:false:true:Head,5.340708:6.597344:0.000000:0.000000:false:true:Tail])|cap=Some(380.00,28.00,240.00,44.00|title=Head|detail=None|dis=false|op=0.000000)",
+        "step_h2|phase=Appearing|slop=true|zone=Item { wheel: 1, index: 1 }|hov=Some(ItemPath([0, 1]))|chain=[ItemPath([]), ItemPath([0])]|drop=Reject|dl=None|shapes=4|ev=[]|wheels=W(500.0000,400.0000|r=38.0000..116.0000|s=1.000000|o=1.000000|role=Ancestor|segs=[3.926991:5.497787:1.000000:4.000000:true:true:File Preview,5.497787:7.068583:0.000000:0.000000:false:true:Copy,0.785398:2.356194:0.000000:0.000000:false:false:Delete,2.356194:3.926991:0.000000:0.000000:false:true:Custom Actions]);W(500.0000,178.0000|r=30.0000..96.0000|s=0.600000|o=0.000000|role=Active|segs=[2.827433:4.084070:0.000000:0.000000:false:true:Full Preview,4.084070:5.340708:0.000000:0.000000:false:false:Head,5.340708:6.597344:0.000000:0.000000:false:true:Tail])|cap=Some(380.00,28.00,240.00,44.00|title=Head|detail=Some(\"Binary file\")|dis=true|op=0.000000)",
+        "step_h3|phase=Appearing|slop=true|zone=Item { wheel: 1, index: 1 }|hov=Some(ItemPath([0, 1]))|chain=[ItemPath([]), ItemPath([0])]|drop=Accept(ItemPath([0, 1]))|dl=None|shapes=4|ev=[]|wheels=W(500.0000,400.0000|r=38.0000..116.0000|s=1.000000|o=1.000000|role=Ancestor|segs=[3.926991:5.497787:1.000000:4.000000:true:true:File Preview,5.497787:7.068583:0.000000:0.000000:false:true:Copy,0.785398:2.356194:0.000000:0.000000:false:false:Delete,2.356194:3.926991:0.000000:0.000000:false:true:Custom Actions]);W(500.0000,178.0000|r=30.0000..96.0000|s=0.600000|o=0.000000|role=Active|segs=[2.827433:4.084070:0.000000:0.000000:false:true:Full Preview,4.084070:5.340708:0.000000:0.000000:false:true:Head,5.340708:6.597344:0.000000:0.000000:false:true:Tail])|cap=Some(380.00,28.00,240.00,44.00|title=Head|detail=None|dis=false|op=0.000000)",
+        "step_i1|phase=Dismissing|slop=true|zone=Item { wheel: 1, index: 1 }|hov=Some(ItemPath([0, 1]))|chain=[ItemPath([]), ItemPath([0])]|drop=Reject|dl=None|shapes=0|ev=[]|wheels=W(500.0000,400.0000|r=38.0000..116.0000|s=1.000000|o=0.755000|role=Ancestor|segs=[3.926991:5.497787:0.770255:3.081019:true:true:File Preview,5.497787:7.068583:0.000000:0.000000:false:true:Copy,0.785398:2.356194:0.000000:0.000000:false:false:Delete,2.356194:3.926991:0.000000:0.000000:false:true:Custom Actions]);W(500.0000,178.0000|r=30.0000..96.0000|s=0.757670|o=0.394174|role=Active|segs=[2.827433:4.084070:0.000000:0.000000:false:true:Full Preview,4.084070:5.340708:0.000000:0.000000:false:true:Head,5.340708:6.597344:0.000000:0.000000:false:true:Tail])|cap=None",
+        "step_i2|phase=Dismissing|slop=true|zone=Item { wheel: 1, index: 1 }|hov=Some(ItemPath([0, 1]))|chain=[ItemPath([]), ItemPath([0])]|drop=Reject|dl=None|shapes=0|ev=[]|wheels=W(500.0000,400.0000|r=38.0000..116.0000|s=0.965000|o=0.094375|role=Ancestor|segs=[3.926991:5.497787:0.125000:0.500000:true:true:File Preview,5.497787:7.068583:0.000000:0.000000:false:true:Copy,0.785398:2.356194:0.000000:0.000000:false:false:Delete,2.356194:3.926991:0.000000:0.000000:false:true:Custom Actions]);W(500.0000,178.0000|r=30.0000..96.0000|s=0.934709|o=0.049272|role=Active|segs=[2.827433:4.084070:0.000000:0.000000:false:true:Full Preview,4.084070:5.340708:0.000000:0.000000:false:true:Head,5.340708:6.597344:0.000000:0.000000:false:true:Tail])|cap=None",
+        "step_i3|phase=Finished|slop=true|zone=Item { wheel: 1, index: 1 }|hov=Some(ItemPath([0, 1]))|chain=[ItemPath([]), ItemPath([0])]|drop=Reject|dl=None|shapes=0|ev=[Finished]|wheels=W(500.0000,400.0000|r=38.0000..116.0000|s=0.960000|o=0.000000|role=Ancestor|segs=[3.926991:5.497787:0.000579:0.002315:true:true:File Preview,5.497787:7.068583:0.000000:0.000000:false:true:Copy,0.785398:2.356194:0.000000:0.000000:false:false:Delete,2.356194:3.926991:0.000000:0.000000:false:true:Custom Actions]);W(500.0000,178.0000|r=30.0000..96.0000|s=0.960000|o=0.000000|role=Active|segs=[2.827433:4.084070:0.000000:0.000000:false:true:Full Preview,4.084070:5.340708:0.000000:0.000000:false:true:Head,5.340708:6.597344:0.000000:0.000000:false:true:Tail])|cap=None",
+    ];
+
+    let mut s_v020 = WheelSession::new(
+        Some(branching_regression_menu()),
+        anchor,
+        vp,
+        InputMode::Drag,
+        &cfg_default,
+        0,
+    );
+    let mut ev_v020 = Vec::new();
+    let mut recorded = Vec::new();
+    recorded.push(snap("init", &s_v020, &ev_v020));
+
+    s_v020.handle(
+        WheelInput::PointerMoved(Point::new(500.0, 394.5)),
+        10,
+        &mut ev_v020,
+    );
+    recorded.push(snap("step_a1", &s_v020, &ev_v020));
+    ev_v020.clear();
+
+    s_v020.handle(
+        WheelInput::PointerMoved(Point::new(500.0, 394.0)),
+        15,
+        &mut ev_v020,
+    );
+    recorded.push(snap("step_a2", &s_v020, &ev_v020));
+    ev_v020.clear();
+
+    s_v020.handle(
+        WheelInput::PointerMoved(Point::new(500.0, 400.0 - 39.5)),
+        18,
+        &mut ev_v020,
+    );
+    recorded.push(snap("step_b", &s_v020, &ev_v020));
+    ev_v020.clear();
+
+    s_v020.handle(
+        WheelInput::PointerMoved(Point::new(500.0, 330.0)),
+        20,
+        &mut ev_v020,
+    );
+    recorded.push(snap("step_c", &s_v020, &ev_v020));
+    ev_v020.clear();
+
+    s_v020.handle(WheelInput::PointerMoved(p_317_deg), 30, &mut ev_v020);
+    recorded.push(snap("step_d", &s_v020, &ev_v020));
+    ev_v020.clear();
+
+    s_v020.tick(159, &mut ev_v020);
+    recorded.push(snap("step_e1", &s_v020, &ev_v020));
+    ev_v020.clear();
+
+    s_v020.tick(160, &mut ev_v020);
+    recorded.push(snap("step_e2", &s_v020, &ev_v020));
+    ev_v020.clear();
+
+    s_v020.handle(
+        WheelInput::PointerMoved(Point::new(500.0, 285.0)),
+        175,
+        &mut ev_v020,
+    );
+    recorded.push(snap("step_f", &s_v020, &ev_v020));
+    ev_v020.clear();
+
+    s_v020.handle(
+        WheelInput::PointerMoved(Point::new(500.0, 270.0)),
+        190,
+        &mut ev_v020,
+    );
+    recorded.push(snap("step_g", &s_v020, &ev_v020));
+    ev_v020.clear();
+
+    let p_head_v020 = s_v020.item_center(&ItemPath::from_slice(&[0, 1])).unwrap();
+    s_v020.handle(WheelInput::PointerMoved(p_head_v020), 210, &mut ev_v020);
+    recorded.push(snap("step_h1", &s_v020, &ev_v020));
+    ev_v020.clear();
+
+    s_v020.set_enabled(
+        &ItemPath::from_slice(&[0, 1]),
+        false,
+        Some(Arc::from("Binary file")),
+    );
+    recorded.push(snap("step_h2", &s_v020, &ev_v020));
+
+    s_v020.set_enabled(&ItemPath::from_slice(&[0, 1]), true, None);
+    recorded.push(snap("step_h3", &s_v020, &ev_v020));
+
+    s_v020.dismiss(DismissReason::Cancelled, 220);
+    recorded.push(snap("step_i1", &s_v020, &ev_v020));
+
+    s_v020.tick(270, &mut ev_v020);
+    recorded.push(snap("step_i2", &s_v020, &ev_v020));
+    ev_v020.clear();
+
+    s_v020.tick(320, &mut ev_v020);
+    recorded.push(snap("step_i3", &s_v020, &ev_v020));
+
+    assert_eq!(recorded.len(), V020_IMMUTABLE_BASELINE_TRACE.len());
+    for (idx, (actual, expected)) in recorded
+        .iter()
+        .zip(V020_IMMUTABLE_BASELINE_TRACE.iter())
+        .enumerate()
+    {
+        assert_eq!(
+            actual.as_str(),
+            *expected,
+            "v0.2.0 (`e6a342e`) historical trace mismatch at step {idx}"
+        );
+    }
 }
