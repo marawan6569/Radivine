@@ -210,3 +210,15 @@ Or run the steps individually:
 # 3. Start the installed systemd user service:
 systemctl --user start radivine.service
 ```
+
+---
+
+## 11. Testing Concentric vs. Branching Layouts in Isolated `Xvfb`
+
+To run the full real-X11 protocol, `XShape`, `XDND`, and `668×742` viewport fallback suites without touching your live Cinnamon desktop or installed `radivine.service`:
+
+```bash
+xvfb-run -a -s "-screen 0 1920x1080x24 +extension COMPOSITE +extension RANDR" \
+  cargo test -p radivine --test nested_acceptance \
+  t_x111_to_t_x118_live_xvfb_concentric_safety_and_protocol_gates -- --nocapture --test-threads=1
+```

@@ -474,4 +474,4 @@ These are **engineering targets, not measurements**. Nothing has been benchmarke
 
 - `tracing` spans for: `startup`, `arm`, `trigger`, `summon`, `payload`, `menu_build`, `frame`, `dnd_status`, `commit`, `dispatch`, `dismiss`.
 - `RADIVINE_LOG=radivine=debug` enables verbose logs; `RADIVINE_DEBUG_OVERLAY=1` draws hit regions, input shape, and frame timings in the overlay (developer aid).
-- `radivine doctor` capability report.
+- `radivine doctor` capability report, and `radivine status --json` exposes `requested_layout`, `active_layout`, `layout_fallback_reason`, `layout_pending`, and `root_wheel_center_px` for both `Branching` (default) and optional `Concentric` (`v0.3.0-rc.1`) wheel layouts.

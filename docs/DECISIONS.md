@@ -309,3 +309,18 @@ To change a decision: add a new ADR that supersedes the old one; never silently 
 **Status:** Accepted (Verified in C1–C5, `P2`, `P5`)
 **Decision:** Default to `OrientationPolicy::AutoOrient` (pixels rotated/flipped, EXIF orientation tag normalized to `1` when EXIF is preserved), `IccPolicy::Preserve` (byte-exact when backend reports `ICC_EMBED`, otherwise `Warning::IccNotPreserved`), `ExifPolicy::Strip` (`D5`), XMP/IPTC dropped, new mtime by default, and output mode `0o600` staging promoted via atomic commit.
 
+---
+
+## v0.3.0-rc.1 Architecture Decisions (`ADR-045` / `ADR-NW-001`)
+
+## ADR-045 (`ADR-NW-001`) — Optional Concentric (Nested Rings) Wheel Layout & Non-Actionable Safety Envelope (`v0.3.0-rc.1`)
+**Status:** Proposed (Pending Final Owner Desktop Acceptance — Published in `v0.3.0-rc.1` Public Pre-release; `ADR-010` historical default preserved)
+**Context:** `ADR-010` selected Branching / Vine offset child wheels for `v0.1.0`–`v0.2.0` and recorded Concentric radial menus for future evaluation. Users with deeper submenus (`File Preview`, `Convert ▸ Image`, `Custom Actions`) requested an optional single-center concentric rings layout (`wheel.layout = "concentric"`) that eliminates multi-wheel screen travel while preserving 100% of `Branching` behavior as the default (`wheel.layout = "branching"`).
+**Decision:**
+1. **Default Preserved (`wheel.layout = "branching"`):** Missing or invalid `wheel.layout` defaults to `Branching` with byte-identical rendering and historical trace parity (`T-REN5`, `T-PERF1`).
+2. **Concentric Annular Geometry (`wheel.layout = "concentric"`):** All open submenu levels `L in 0..D` share a single immobile root center `C_0` (`R_hub = 50 lp`, root ring `50..118 lp`, outer ring `L >= 1` inner radius `118 + 66·(L-1) lp`, thickness `60 lp`, inter-ring gap `6 lp`, minimum sector sweep `30°` with overflow pagination).
+3. **Reserved 4-Ring + Fixed Caption Viewport Contract (`668 × 742` Logical Pixels):** Before mapping the overlay, Concentric mode reserves 4 rings (`R_reserve(4) = 326 lp`, `±334 lp` horizontal/top with `8 lp` screen margin) plus the fixed bottom caption box (`Cy + 326..388 lp`, `+408 lp` bottom extent with `20 lp` margin), requiring a minimum workarea of **`668 × 742` logical pixels**. Viewports meeting `668 × 742` logical pixels (including `1366×768@1x` and `1920×1080@1.25x`) activate Concentric; smaller logical viewports (`1280×720@1x`, `1920×1080@1.5x`) automatically fall back to `Branching` (`LayoutFallbackReason::InsufficientViewportSpace`) for that session without mutating `config.toml`.
+4. **Strict Non-Actionable Drop & Click Safety Envelope (`T-SAFE1`–`T-SAFE10`):** Central hub (`r < 50 lp`), inter-ring radial gaps (`6 lp`), angular separator gaps, outer ring margin (`r > R_out(D)`), displaced-center approach corridor, protected pending-switch sibling sectors (`90 ms` outer-ring steering guard), submenu parent sectors on drag release, and the fixed bottom caption box never arm or commit an action (`hover_action = None`, `XdndStatus(accept=0)`, `XdndFinished(success=0)`), and `DndDrop` re-evaluates the final pointer coordinate before committing.
+5. **Portable Arabic Font Fallback in Packaging:** `packaging/debian/control` declares `Depends: ..., fonts-dejavu-core, libfontconfig1` and `Recommends: ..., fonts-noto-core` so `radivine-render` (`/usr/share/fonts/truetype/dejavu/DejaVuSans*.ttf`) and `radivine-control`/`radivine-viewer` (`egui_system_font_provider`) render shaped Arabic text out of the box on clean Debian/Ubuntu/Linux Mint systems.
+
+

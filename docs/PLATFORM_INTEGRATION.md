@@ -341,3 +341,9 @@ Icon-Name=radivine
 Selection=notnone
 Extensions=any;
 ```
+
+## 9. Concentric Layout X11 Overlay & Input-Shape Invariants (`v0.3.0-rc.1`)
+
+- **Single Overlay Window (`T-X111`):** Both `Branching` and `Concentric` modes render into the single pre-created full-monitor `_NET_WM_WINDOW_TYPE_DND` overlay window (`0` child subwindows).
+- **Default Capture-All Input Mask (`input.passthrough = false`, `T-X112`):** In Drag mode, the default `ShapeInput` region covers the full active monitor so releasing anywhere outside an actionable leaf sector (central hub, inter-ring radial gap, angular separator, outer margin, caption box, or outside the cluster) sends `XdndStatus(accept=0)` and `XdndFinished(success=0)` (`0` accidental native file moves or drops).
+- **Opt-In Pass-Through Input Mask (`input.passthrough = true`, `T-X112`):** When explicitly enabled, Concentric `ShapeInput` is a single solid disc of radius `R_reserve(4) + hit_margin = 334 lp` centered at `C_0` unioned with the displaced-anchor approach corridor (`0` annular holes between rings, invariant across submenu open/close) while excluding the fixed bottom caption box (`Cy + 326..388 lp`).

@@ -244,5 +244,25 @@ RADIVINE_C5_SOAK_SECS=3605 RADIVINE_C5_SOAK_REPORT_JSON=/tmp/c5_soak_report.json
 | **Worker Baseline → Final → Peak RSS (`VmRSS`)** | **`9.28 MiB → 9.40 MiB`** (peak `9.64 MiB`, delta **`+0.125 MiB`**) | Within `±5.0 MiB` of baseline | **PASS (40× within tolerance)** |
 | **Leaked Worker Processes After Shutdown** | **`0`** | `0` process leaks | **PASS** |
 
+---
+
+## 11. Milestone N5/N6 (`v0.3.0-rc.1` Pre-release) — Concentric (Nested Rings) Engine, Renderer, Live `Xvfb` X11 & 1-Hour Mixed-Layout Endurance Suite
+
+Measured on 2026-10-25 on the reference Linux Mint 22.3 desktop (`11th Gen Intel® Core™ i5-11400F @ 2.60 GHz`, `46 GiB DDR4`, `Linux 6.8.0-147-generic x86_64`, `rustc 1.95.0`, `--release` profile). Full tables and traceability in [`docs/test-reports/N5.md`](test-reports/N5.md) and [`docs/test-reports/N6.md`](test-reports/N6.md).
+
+### 11.1 Engine, Renderer & Live `Xvfb` End-to-End Benchmarks (`T-PERF1`–`T-PERF5`)
+
+| Benchmark / Gate (`TEST_MATRIX.md` §T6) | Measured `--release` Value (`p50` / `p95` / `p99`) | Target Budget | Status |
+|---|---|---|---|
+| **`T-PERF1` Branching Non-Regression (`wheel_bench` / `render_bench`)** | Engine move: **`413.54 ns`** (`-1.43%` vs `419.54 ns`) \| Warm 1080p@1x render: **`149.01 µs`** (`-29.67%`) \| Warm 4K@2x render: **`485.90 µs`** (`-23.91%`) | `<= +5%` vs baseline, `0` engine allocs | **PASS** |
+| **`T-PERF2` Concentric Engine (`6`-level `handle`+`tick`+`scene`, `1,200` samples, `30` trials)** | `mean = 4.90 µs`, **`p50 = 4.85 µs`, `p95 = 4.92 µs`, `p99 = 6.00 µs`**, **`0` heap allocations** | `p95 < 50 µs`, `0` heap allocations | **PASS** |
+| **`T-PERF3` Concentric Renderer (`4`-level `1920×1080@1x`, `1,020` samples, `30` trials)** | Cold: **`11.06 ms`** \| Warm hover: **`p50 = 0.171 ms`, `p95 = 0.296 ms`, `p99 = 0.314 ms`** \| Ring-replace: **`p50 = 0.762 ms`, `p95 = 0.858 ms`, `p99 = 0.998 ms`** \| **`0` warm allocs**, `3` dmg rects (`4.56%`) | Cold `< 12 ms`, warm `p95 < 2.0 ms`, `p99 < 3.5 ms`, ring-replace `p95 < 3.0 ms`, `0` warm allocs | **PASS** |
+| **`T-PERF3` Concentric Renderer (`4`-level `3840×2160@2x`, `1,020` samples, `30` trials)** | Cold: `29.90 ms` \| Warm hover: **`p50 = 0.527 ms`, `p95 = 0.765 ms`, `p99 = 0.863 ms`** \| Ring-replace: **`p50 = 2.828 ms`, `p95 = 3.428 ms`, `p99 = 4.117 ms`** \| **`0` warm allocs**, `3` dmg rects (`4.53%`) | Warm `p95 < 4.0 ms`, `p99 < 6.5 ms`, ring-replace `p95 < 6.0 ms`, `0` warm allocs | **PASS** |
+| **`T-PERF4` Live `Xvfb` End-to-End (`1920×1080@1x`, `30` trials + `30.05 s` trace, `1,947` frames)** | Trigger→Present: **`p50 = 2.64 ms`, `p95 = 3.45 ms`, `p99 = 3.69 ms`** \| `XdndPosition→Status`: **`p50 = 91 µs`, `p95 = 162 µs`, `p99 = 189 µs`** \| Frame Render+Present: **`p50 = 240 µs`, `p95 = 325 µs`, `p99 = 418 µs`, `0` missed `60 Hz`** \| Cached Drop→Dispatch: **`p50 = 55 µs`, `p95 = 131 µs`, `p99 = 139 µs`** | Trigger `p95 < 50 ms`, Status `p95 < 2 ms`, Frame `p95 < 4 ms` (`0` missed `60 Hz`), Drop `p95 < 30 ms` | **PASS (`Xvfb`)** |
+| **`T-PERF4` Live `Xvfb` End-to-End (`3840×2160@2x`, `30` trials + `18.05 s` trace, `1,143` frames)** | Trigger→Present: **`p50 = 14.34 ms`, `p95 = 16.58 ms`, `p99 = 18.91 ms`** \| `XdndPosition→Status`: **`p50 = 101 µs`, `p95 = 176 µs`, `p99 = 207 µs`** \| Frame Render+Present: **`p50 = 812 µs`, `p95 = 988 µs`, `p99 = 1,352 µs`, `0` missed `60 Hz`** | Trigger `p95 < 50 ms`, Status `p95 < 2 ms`, Frame `p95 < 8 ms` (`0` missed `60 Hz`) | **PASS (`Xvfb`)** |
+| **`T-PERF5` Memory & Idle CPU (`1920×1080@1x` & `3840×1080@1x`)** | `1080p@1x` active: **`13.71 MiB`** (`-0.66 MiB` vs Branching) \| Post-32s idle: **`11.18 MiB`** (`+0.41 MiB` vs Branching) \| `3840×1080@1x` active: **`14.02 MiB`** (`-1.43 MiB` vs Branching) \| Idle CPU: **`0.00%`** (`0` ticks / `10 s`) \| `WheelSession = 30,776 B` | Idle `< 25 MiB` (`< +1 MiB`), active `< +8 MiB`, ultrawide `< 45 MiB`, idle CPU `< 0.1%`, session `<= 64 KiB` | **PASS** |
+| **`T-PERF6` 1-Hour Mixed-Layout Soak (`3,605.40 s`, `84,455` sessions) + `2×600 s` Fuzz + `3,606.25 s` C5 Soak** | M6 soak: `4,445` cycles (`66,675` Branching + `17,780` Concentric, `17,780` layout switches, `13,335` menu reloads, `44,450` cancellations), post-warmup RSS **`+664 KiB`** (`+0.65 MiB <= 2.00 MiB`), `9 -> 9` FDs (`0` leaks), `0` zombies, `0` source modifications \| Fuzz: **`503,711,000` iterations, `0` panics** \| C5 soak: `2,861` cycles (`80,108` items ok), worker RSS **`+0.11 MiB`** | `>= 3,605 s` soaks, `>= 600 s`/phase fuzz, `<= 2 MiB` daemon RSS growth, `0` leaks/modifications | **PASS** |
+
+
 
 
