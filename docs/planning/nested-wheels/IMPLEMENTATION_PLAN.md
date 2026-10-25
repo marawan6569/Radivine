@@ -79,6 +79,7 @@ Branching traces are documented and all checkpoint checks pass.
 
 ## N2 — Pure concentric geometry and hierarchy navigation
 
+**Status:** **Completed (2026-10-25; see [`docs/test-reports/N2.md`](../../test-reports/N2.md)). Stopped awaiting explicit N3 authorization.**  
 **Dependency:** N1 accepted; explicit N2 authorization.
 
 Expected files:
