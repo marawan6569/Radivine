@@ -688,6 +688,7 @@ impl IsolatedDaemon {
         let mut cmd = Command::new(radivine_bin());
         cmd.env("DISPLAY", display)
             .env_remove("WAYLAND_DISPLAY")
+            .env_remove("RADIVINE_FORCE_ARGB")
             .env("XDG_SESSION_TYPE", "x11")
             .env("RADIVINE_DRY_RUN_VIEWER", "1")
             .env("RADIVINE_DRY_RUN_PROPERTIES", "1")

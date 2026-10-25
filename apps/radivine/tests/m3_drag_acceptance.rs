@@ -1279,7 +1279,7 @@ fn m3_real_gtk3_drag_retargeting() {
         is_window_mapped(&conn, overlay_xid),
         "Radivine overlay must map on Shift during live GTK3 drag"
     );
-    thread::sleep(Duration::from_millis(60));
+    thread::sleep(Duration::from_millis(120));
 
     let active_st = daemon.status_json();
     let wheel_center = active_st["root_wheel_center_px"]
@@ -1303,12 +1303,20 @@ fn m3_real_gtk3_drag_retargeting() {
             &preview_pt.1.to_string(),
         ])
         .status();
-    thread::sleep(Duration::from_millis(140));
+    thread::sleep(Duration::from_millis(220));
 
     let _ = Command::new("xdotool")
         .args(["mousemove", &head_pt.0.to_string(), &head_pt.1.to_string()])
         .status();
     thread::sleep(Duration::from_millis(60));
+    let _ = Command::new("xdotool")
+        .args([
+            "mousemove",
+            &(head_pt.0 + 1).to_string(),
+            &head_pt.1.to_string(),
+        ])
+        .status();
+    thread::sleep(Duration::from_millis(100));
 
     // Release mouse button 1 -> GTK3 sends XdndDrop -> Radivine commits `radivine.preview.head`!
     let _ = Command::new("xdotool").args(["mouseup", "1"]).status();

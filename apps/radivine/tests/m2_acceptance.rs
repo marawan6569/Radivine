@@ -222,12 +222,21 @@ fn m2_live_acceptance_suite() {
     // -------------------------------------------------------------------------
     // AC-2.4: Esc, click outside, and root-hub click all cancel and unmap
     // -------------------------------------------------------------------------
+    let wait_until_unmapped = || {
+        for _ in 0..50 {
+            if !is_window_mapped(&conn, overlay_xid) {
+                return true;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        !is_window_mapped(&conn, overlay_xid)
+    };
+
     // 1) Escape key cancel
     daemon.cli(&["invoke", "--at", "960,540", "/tmp/a.txt"]);
     assert!(is_window_mapped(&conn, overlay_xid));
     let _ = Command::new("xdotool").args(["key", "Escape"]).status();
-    thread::sleep(Duration::from_millis(25));
-    assert!(!is_window_mapped(&conn, overlay_xid));
+    assert!(wait_until_unmapped());
 
     // 2) Click outside wheel cluster (at 200, 200 when wheel is at 960, 540)
     daemon.cli(&["invoke", "--at", "960,540", "/tmp/a.txt"]);
@@ -235,8 +244,7 @@ fn m2_live_acceptance_suite() {
     let _ = Command::new("xdotool")
         .args(["mousemove", "200", "200", "click", "1"])
         .status();
-    thread::sleep(Duration::from_millis(25));
-    assert!(!is_window_mapped(&conn, overlay_xid));
+    assert!(wait_until_unmapped());
 
     // 3) Click on root hub (at 960, 540)
     daemon.cli(&["invoke", "--at", "960,540", "/tmp/a.txt"]);
@@ -244,8 +252,7 @@ fn m2_live_acceptance_suite() {
     let _ = Command::new("xdotool")
         .args(["mousemove", "960", "540", "click", "1"])
         .status();
-    thread::sleep(Duration::from_millis(25));
-    assert!(!is_window_mapped(&conn, overlay_xid));
+    assert!(wait_until_unmapped());
 
     // -------------------------------------------------------------------------
     // AC-2.5: 50 scripted invoke/cancel cycles -> no stuck grabs
@@ -254,14 +261,7 @@ fn m2_live_acceptance_suite() {
         let out = daemon.cli(&["invoke", "--at", "960,540", "/tmp/cycle.txt"]);
         assert!(out.status.success());
         let _ = Command::new("xdotool").args(["key", "Escape"]).status();
-        // Wait briefly for unmap
-        for _ in 0..20 {
-            if !is_window_mapped(&conn, overlay_xid) {
-                break;
-            }
-            thread::sleep(Duration::from_millis(5));
-        }
-        assert!(!is_window_mapped(&conn, overlay_xid));
+        assert!(wait_until_unmapped());
     }
 
     // Verify xdotool mouse & keyboard input reach a normal X11 test window after 50 cycles
