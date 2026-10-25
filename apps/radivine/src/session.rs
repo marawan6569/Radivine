@@ -24,7 +24,7 @@ use radivine_platform::{
 use radivine_render::{RectPx as RenderRectPx, Renderer, SizePx};
 use radivine_wheel::{
     DismissReason, DropTarget, InputMode, ItemPath, Millis, NavKey, Point, Shape, Viewport,
-    WheelConfig, WheelEvent, WheelInput, WheelSession,
+    WheelConfig, WheelEvent, WheelInput, WheelLayout, WheelSession,
 };
 
 use crate::config::AppConfig;
@@ -628,12 +628,18 @@ impl SessionController {
             .build_menu(&ctx, MenuLimits::default())
             .ok_or_else(|| anyhow::anyhow!("no actions available for context"))?;
 
+        // Milestone N2 intermediate safety guard: pure concentric geometry and navigation are
+        // active in `radivine-wheel`, while concentric desktop rendering and X11/Control Center
+        // integration land in N3/N4. Keep the desktop controller on `Branching` during N2 even if
+        // `layout = "concentric"` is manually set in config.toml.
+        let mut desktop_wheel_cfg = self.wheel_cfg.clone();
+        desktop_wheel_cfg.layout = WheelLayout::Branching;
         let mut ws = WheelSession::new(
             Some(menu_tree),
             cursor_logical,
             viewport,
             InputMode::Pointer,
-            &self.wheel_cfg,
+            &desktop_wheel_cfg,
             0,
         );
         if item_count > 1 {
@@ -719,12 +725,15 @@ impl SessionController {
 
         // Start with a hub-only placeholder wheel (`menu = None`) while `request_payload` is in flight;
         // segments populate in ~0.2 ms when `SelectionNotify` arrives (`ARCHITECTURE.md` §5).
+        // Milestone N2 intermediate safety guard: keep desktop sessions on `Branching` until N3/N4.
+        let mut desktop_wheel_cfg = self.wheel_cfg.clone();
+        desktop_wheel_cfg.layout = WheelLayout::Branching;
         let ws = WheelSession::new(
             None,
             cursor_logical,
             viewport,
             InputMode::Drag,
-            &self.wheel_cfg,
+            &desktop_wheel_cfg,
             0,
         );
 

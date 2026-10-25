@@ -5,12 +5,14 @@ use std::sync::Arc;
 use smallvec::SmallVec;
 
 use crate::anim::{Ease, Millis, Tween, timings};
+use crate::concentric::{ConcentricPlan, plan_concentric};
 use crate::config::{
     InvokeSelect, LayoutFallback, LayoutSelection, SubmenuOpen, WheelConfig, WheelLayout,
 };
 use crate::geometry::{
     Point, SegmentSpan, Viewport, anchor_corridor_polygon, child_corridor_polygon,
     child_segment_spans, circle_tangent_points, point_in_triangle, root_segment_spans,
+    segment_content_radius,
 };
 use crate::hit::{WheelHitGeometry, Zone, hit_test};
 use crate::layout::{
@@ -250,9 +252,11 @@ enum LayoutState {
     Concentric(ConcentricState),
 }
 
-/// Nested-specific session state placeholder for Milestone N1 layout selection seam.
-#[derive(Clone, Debug, Default)]
-struct ConcentricState;
+/// Nested-specific session state (`ARCHITECTURE.md` §A2, §A3).
+#[derive(Clone, Debug)]
+struct ConcentricState {
+    plan: ConcentricPlan,
+}
 
 /// Deterministic, platform-independent radial wheel session state machine (`WHEEL_ENGINE_DESIGN.md` §9).
 pub struct WheelSession {
@@ -305,30 +309,47 @@ impl WheelSession {
         anchor: Point,
         viewport: Viewport,
         mode: InputMode,
-        cfg: &WheelConfig,
+        raw_cfg: &WheelConfig,
         now: Millis,
     ) -> Self {
-        let cfg = cfg.validated();
-        let (layout_selection, layout_state) = select_initial_layout(&cfg, anchor, viewport);
+        let cfg = raw_cfg.validated();
+        let (layout_selection, layout_state) =
+            select_initial_layout(raw_cfg, &cfg, anchor, viewport);
         let sanitized_menu = menu.map(|mut m| {
             m.sanitize(&cfg);
             m
         });
 
         let (r_in_root, r_out_root) = nominal_radii(0, &cfg);
-        let root_center = place_root(anchor, r_out_root, viewport);
-
-        let appear_dur = if cfg.reduced_motion {
-            timings::REDUCED_MOTION_FADE_MS
-        } else {
-            timings::ROOT_APPEAR_MS
-        };
-        let scale_tween = if cfg.reduced_motion {
-            Tween::constant(1.0)
-        } else {
-            Tween::new(0.86, 1.0, now, timings::ROOT_APPEAR_MS, Ease::OutCubic)
-        };
-        let opacity_tween = Tween::new(0.0, 1.0, now, appear_dur, Ease::OutCubic);
+        let (root_center, root_origin, appear_dur, scale_tween, opacity_tween, is_concentric) =
+            match &layout_state {
+                LayoutState::Branching => {
+                    let center = place_root(anchor, r_out_root, viewport);
+                    let dur = if cfg.reduced_motion {
+                        timings::REDUCED_MOTION_FADE_MS
+                    } else {
+                        timings::ROOT_APPEAR_MS
+                    };
+                    let scale = if cfg.reduced_motion {
+                        Tween::constant(1.0)
+                    } else {
+                        Tween::new(0.86, 1.0, now, timings::ROOT_APPEAR_MS, Ease::OutCubic)
+                    };
+                    let opacity = Tween::new(0.0, 1.0, now, dur, Ease::OutCubic);
+                    (center, anchor, dur, scale, opacity, false)
+                }
+                LayoutState::Concentric(state) => {
+                    let center = state.plan.center;
+                    let dur = if cfg.reduced_motion {
+                        timings::REDUCED_MOTION_FADE_MS
+                    } else {
+                        timings::CHILD_EMERGE_MS
+                    };
+                    let scale = Tween::constant(1.0);
+                    let opacity = Tween::new(0.35, 1.0, now, dur, Ease::OutCubic);
+                    (center, center, dur, scale, opacity, true)
+                }
+            };
 
         let mut root_wheel = WheelInstance {
             path: ItemPath::root(),
@@ -341,7 +362,7 @@ impl WheelSession {
             },
             r_in: r_in_root,
             r_out: r_out_root,
-            origin: anchor,
+            origin: root_origin,
             scale: scale_tween,
             opacity: opacity_tween,
             role: WheelRole::Active,
@@ -373,7 +394,7 @@ impl WheelSession {
             && let Some(children) = m.root.children()
         {
             populate_root_segments(&mut root_wheel, children, &cfg);
-            if !cfg.reduced_motion {
+            if !cfg.reduced_motion && !is_concentric {
                 stagger_extra = ((children.len() as u16).saturating_sub(1)
                     * timings::SEGMENT_STAGGER_MS)
                     .min(timings::SEGMENT_STAGGER_MAX_MS);
@@ -441,6 +462,19 @@ impl WheelSession {
     /// before mapping (`ARCHITECTURE.md` §A7).
     pub fn record_layout_fallback(&mut self, reason: LayoutFallback) {
         self.layout_selection = LayoutSelection::fallback_to_branching(reason);
+        if matches!(self.layout_state, LayoutState::Concentric(_)) {
+            self.layout_state = LayoutState::Branching;
+            let now = self.wheels.first().map_or(0, |w| w.opacity.start);
+            if let Some(root) = self.wheels.first_mut() {
+                let root_center = place_root(self.anchor, root.r_out, self.viewport);
+                root.placement.center = root_center;
+                root.origin = self.anchor;
+                root.hit_geom.center = root_center;
+            }
+            self.sync_hit_cache();
+            self.rebuild_input_region();
+            self.rebuild_scene(now);
+        }
     }
 
     /// Sets an optional item count badge (`> 1`) displayed on the root wheel's center hub.
@@ -776,7 +810,10 @@ impl WheelSession {
             return None;
         }
         let span = w.hit_geom.spans.get(item_idx)?;
-        let r_mid = (w.r_in + w.r_out) * 0.5;
+        let r_mid = match self.layout_state {
+            LayoutState::Branching => (w.r_in + w.r_out) * 0.5,
+            LayoutState::Concentric(_) => segment_content_radius(w.r_in, w.r_out),
+        };
         Some(w.placement.center.offset_polar(r_mid, span.center))
     }
 
@@ -1902,23 +1939,23 @@ impl WheelSession {
 }
 
 fn select_initial_layout(
-    cfg: &WheelConfig,
-    _anchor: Point,
-    _viewport: Viewport,
+    raw_cfg: &WheelConfig,
+    validated_cfg: &WheelConfig,
+    anchor: Point,
+    viewport: Viewport,
 ) -> (LayoutSelection, LayoutState) {
-    match cfg.layout {
+    match validated_cfg.layout {
         WheelLayout::Branching => (LayoutSelection::branching(), LayoutState::Branching),
-        // Milestone N1 establishes the configuration model and layout selection seam;
-        // Milestone N2 connects `plan_concentric` preflight and `LayoutState::Concentric`.
-        // Until N2 lands, sessions requesting `Concentric` safely execute `Branching`.
-        WheelLayout::Concentric => (
-            LayoutSelection {
-                requested: WheelLayout::Concentric,
-                effective: WheelLayout::Branching,
-                fallback: None,
-            },
-            LayoutState::Branching,
-        ),
+        WheelLayout::Concentric => match plan_concentric(anchor, viewport, raw_cfg) {
+            Ok(plan) => (
+                LayoutSelection::concentric(),
+                LayoutState::Concentric(ConcentricState { plan }),
+            ),
+            Err(reason) => (
+                LayoutSelection::fallback_to_branching(reason),
+                LayoutState::Branching,
+            ),
+        },
     }
 }
 

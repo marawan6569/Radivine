@@ -497,7 +497,8 @@ fn test_n1_layout_selection_state_and_fallback_queries() {
         LayoutSelection::branching()
     );
 
-    // 2. Explicit Concentric config in N1 records requested Concentric and effective Branching
+    // 2. Explicit Concentric config in a fitting viewport selects Concentric;
+    //    platform-level or preflight fallback records the exact reason and switches to Branching.
     let conc_cfg = WheelConfig {
         layout: WheelLayout::Concentric,
         ..WheelConfig::default()
@@ -513,11 +514,7 @@ fn test_n1_layout_selection_state_and_fallback_queries() {
     );
     assert_eq!(
         session_conc.layout_selection(),
-        LayoutSelection {
-            requested: WheelLayout::Concentric,
-            effective: WheelLayout::Branching,
-            fallback: None,
-        }
+        LayoutSelection::concentric()
     );
 
     // 3. Platform-level fallback recording (`NoCompositor` / `InsufficientSpace` / `TargetTooSmall`)

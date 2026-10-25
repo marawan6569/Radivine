@@ -6,6 +6,7 @@
 #![forbid(unsafe_code)]
 
 pub mod anim;
+pub mod concentric;
 pub mod config;
 pub mod geometry;
 pub mod hit;
@@ -15,6 +16,14 @@ pub mod scene;
 pub mod session;
 
 pub use anim::{Ease, Millis, Tween};
+pub use concentric::{
+    CONCENTRIC_ANGULAR_EPS, CONCENTRIC_CAPTION_GAP, CONCENTRIC_CAPTION_H, CONCENTRIC_CAPTION_W,
+    CONCENTRIC_CONTENT_PAD, CONCENTRIC_EDGE_PAD, CONCENTRIC_MIN_TARGET_CORE, CONCENTRIC_RADIAL_EPS,
+    CONCENTRIC_RING_GAP, CONCENTRIC_RING_THICKNESS, CONCENTRIC_SEPARATOR_WIDTH, ConcentricPlan,
+    ContentMode, NestedSegmentContent, RingGeometry, compute_sector_content, concentric_ring_radii,
+    plan_concentric, ring_geometry, sector_box_fits, separator_half_angle_for_ring,
+    target_core_fits_ring,
+};
 pub use config::{
     InvokeSelect, LayoutFallback, LayoutSelection, SubmenuOpen, WheelConfig, WheelLayout,
 };
