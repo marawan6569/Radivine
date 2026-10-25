@@ -420,3 +420,523 @@ fn test_menu_sanitization_overflow_depth_and_empty_pruning() {
         Some("Too deeply nested")
     );
 }
+
+fn branching_regression_menu() -> MenuTree {
+    MenuTree::new(vec![
+        MenuNode::submenu(
+            "radivine.preview",
+            "File Preview",
+            vec![
+                MenuNode::leaf("radivine.preview.full", "Full Preview").with_icon("lucide:eye"),
+                MenuNode::leaf("radivine.preview.head", "Head")
+                    .with_icon("lucide:arrow-up-to-line"),
+                MenuNode::leaf("radivine.preview.tail", "Tail")
+                    .with_icon("lucide:arrow-down-to-line"),
+            ],
+        )
+        .with_default_child(0)
+        .with_icon("lucide:eye")
+        .with_description("Preview file contents"),
+        MenuNode::leaf("radivine.copy", "Copy")
+            .with_icon("lucide:copy")
+            .with_description("Copy file to clipboard"),
+        MenuNode::leaf("radivine.delete", "Delete")
+            .with_disabled("Read-only filesystem")
+            .with_icon("lucide:trash"),
+        MenuNode::submenu(
+            "radivine.custom",
+            "Custom Actions",
+            vec![
+                MenuNode::leaf("custom.terminal", "Open in Terminal").with_icon("lucide:terminal"),
+                MenuNode::submenu(
+                    "custom.scripts",
+                    "Scripts",
+                    vec![
+                        MenuNode::leaf("custom.scripts.sha256", "Compute SHA-256")
+                            .with_icon("lucide:code"),
+                        MenuNode::leaf("custom.scripts.chmod", "Make Executable")
+                            .with_icon("lucide:sparkles"),
+                    ],
+                )
+                .with_icon("lucide:code"),
+            ],
+        )
+        .with_icon("lucide:sparkles")
+        .with_description("Run custom tools"),
+    ])
+}
+
+#[test]
+fn test_n1_layout_selection_state_and_fallback_queries() {
+    use radivine_wheel::{InputMode, LayoutFallback, LayoutSelection, WheelLayout, WheelSession};
+
+    let vp = Viewport::new(1920.0, 1080.0, 1.0);
+    let anchor = Point::new(500.0, 400.0);
+
+    // 1. Default config selects Branching with no fallback
+    let def_cfg = WheelConfig::default();
+    assert_eq!(def_cfg.layout, WheelLayout::Branching);
+    let session_def = WheelSession::new(
+        Some(branching_regression_menu()),
+        anchor,
+        vp,
+        InputMode::Drag,
+        &def_cfg,
+        0,
+    );
+    assert_eq!(
+        session_def.layout_selection(),
+        LayoutSelection {
+            requested: WheelLayout::Branching,
+            effective: WheelLayout::Branching,
+            fallback: None,
+        }
+    );
+    assert_eq!(
+        session_def.debug_state().layout_selection,
+        LayoutSelection::branching()
+    );
+
+    // 2. Explicit Concentric config in N1 records requested Concentric and effective Branching
+    let conc_cfg = WheelConfig {
+        layout: WheelLayout::Concentric,
+        ..WheelConfig::default()
+    };
+    assert_eq!(conc_cfg.validated().layout, WheelLayout::Concentric);
+    let mut session_conc = WheelSession::new(
+        Some(branching_regression_menu()),
+        anchor,
+        vp,
+        InputMode::Drag,
+        &conc_cfg,
+        0,
+    );
+    assert_eq!(
+        session_conc.layout_selection(),
+        LayoutSelection {
+            requested: WheelLayout::Concentric,
+            effective: WheelLayout::Branching,
+            fallback: None,
+        }
+    );
+
+    // 3. Platform-level fallback recording (`NoCompositor` / `InsufficientSpace` / `TargetTooSmall`)
+    session_conc.record_layout_fallback(LayoutFallback::NoCompositor);
+    assert_eq!(
+        session_conc.layout_selection(),
+        LayoutSelection::fallback_to_branching(LayoutFallback::NoCompositor)
+    );
+    assert_eq!(
+        LayoutSelection::concentric(),
+        LayoutSelection {
+            requested: WheelLayout::Concentric,
+            effective: WheelLayout::Concentric,
+            fallback: None,
+        }
+    );
+    assert_eq!(
+        LayoutSelection::fallback_to_branching(LayoutFallback::InsufficientSpace).fallback,
+        Some(LayoutFallback::InsufficientSpace)
+    );
+    assert_eq!(
+        LayoutSelection::fallback_to_branching(LayoutFallback::TargetTooSmall).fallback,
+        Some(LayoutFallback::TargetTooSmall)
+    );
+}
+
+#[test]
+fn test_t_reg1_branching_deterministic_baseline_traces() {
+    use radivine_wheel::{
+        DismissReason, DropTarget, InputMode, NavKey, SessionPhase, WheelEvent, WheelInput,
+        WheelLayout, WheelSession,
+    };
+    use std::sync::Arc;
+
+    let vp = Viewport::new(1920.0, 1080.0, 1.0);
+    let anchor = Point::new(500.0, 400.0);
+    let cfg_default = WheelConfig::default();
+    let cfg_explicit_branching = WheelConfig {
+        layout: WheelLayout::Branching,
+        ..WheelConfig::default()
+    };
+
+    // --- 1. Slop, defaults, hysteresis, child overlap, bridge, enablement, and interrupted animation ---
+    // Run identically on both implicit default and explicit Branching configs and assert step-by-step parity.
+    let mut s_def = WheelSession::new(
+        Some(branching_regression_menu()),
+        anchor,
+        vp,
+        InputMode::Drag,
+        &cfg_default,
+        0,
+    );
+    let mut s_exp = WheelSession::new(
+        Some(branching_regression_menu()),
+        anchor,
+        vp,
+        InputMode::Drag,
+        &cfg_explicit_branching,
+        0,
+    );
+
+    let assert_sessions_identical = |a: &WheelSession, b: &WheelSession| {
+        assert_eq!(a.layout_selection(), b.layout_selection());
+        assert_eq!(a.drop_target(), b.drop_target());
+        assert_eq!(a.next_deadline(), b.next_deadline());
+        assert_eq!(a.is_animating(), b.is_animating());
+        assert_eq!(a.is_finished(), b.is_finished());
+        assert_eq!(a.input_region(), b.input_region());
+        assert_eq!(a.scene(), b.scene());
+        let da = a.debug_state();
+        let db = b.debug_state();
+        assert_eq!(da.phase, db.phase);
+        assert_eq!(da.moved_past_slop, db.moved_past_slop);
+        assert_eq!(da.raw_zone, db.raw_zone);
+        assert_eq!(da.hovered_item, db.hovered_item);
+        assert_eq!(da.open_chain, db.open_chain);
+        assert_eq!(da.wheels.len(), db.wheels.len());
+        for (wa, wb) in da.wheels.iter().zip(db.wheels.iter()) {
+            assert_eq!(wa.index, wb.index);
+            assert_eq!(wa.parent_index, wb.parent_index);
+            assert_eq!(wa.center, wb.center);
+            assert_eq!(wa.r_in, wb.r_in);
+            assert_eq!(wa.r_out, wb.r_out);
+            assert_eq!(wa.hit_radius, wb.hit_radius);
+            assert_eq!(wa.bridge, wb.bridge);
+            assert_eq!(wa.spans, wb.spans);
+            assert_eq!(wa.corridor, wb.corridor);
+        }
+        assert_eq!(da.intent_triangle, db.intent_triangle);
+        assert_eq!(da.dwell_deadline, db.dwell_deadline);
+        assert_eq!(da.hub_close_deadline, db.hub_close_deadline);
+    };
+
+    assert_sessions_identical(&s_def, &s_exp);
+    assert_eq!(s_def.scene().wheels.len(), 1);
+    assert_eq!(s_def.scene().wheels[0].center, anchor);
+    assert_eq!(s_def.scene().wheels[0].r_in, 38.0);
+    assert_eq!(s_def.scene().wheels[0].r_out, 116.0);
+
+    let mut ev_def = Vec::new();
+    let mut ev_exp = Vec::new();
+
+    // Step A: Slop guard (< 6.0 lp from anchor (500, 400))
+    s_def.handle(
+        WheelInput::PointerMoved(Point::new(500.0, 394.5)),
+        10,
+        &mut ev_def,
+    );
+    s_exp.handle(
+        WheelInput::PointerMoved(Point::new(500.0, 394.5)),
+        10,
+        &mut ev_exp,
+    );
+    assert_eq!(ev_def, ev_exp);
+    assert!(ev_def.is_empty());
+    assert!(!s_def.debug_state().moved_past_slop);
+    assert_eq!(s_def.drop_target(), DropTarget::Reject);
+    assert_sessions_identical(&s_def, &s_exp);
+
+    // Cross slop at 6.0 lp into Hub(0)
+    s_def.handle(
+        WheelInput::PointerMoved(Point::new(500.0, 394.0)),
+        15,
+        &mut ev_def,
+    );
+    s_exp.handle(
+        WheelInput::PointerMoved(Point::new(500.0, 394.0)),
+        15,
+        &mut ev_exp,
+    );
+    assert_eq!(ev_def, ev_exp);
+    assert!(s_def.debug_state().moved_past_slop);
+    assert_eq!(s_def.debug_state().raw_zone, Zone::Hub { wheel: 0 });
+    assert_sessions_identical(&s_def, &s_exp);
+
+    // Step B: Radial hub hysteresis (+3 lp: d = 39.5 <= 41.0 stays in Hub(0))
+    s_def.handle(
+        WheelInput::PointerMoved(Point::new(500.0, 400.0 - 39.5)),
+        18,
+        &mut ev_def,
+    );
+    s_exp.handle(
+        WheelInput::PointerMoved(Point::new(500.0, 400.0 - 39.5)),
+        18,
+        &mut ev_exp,
+    );
+    assert_eq!(s_def.debug_state().raw_zone, Zone::Hub { wheel: 0 });
+    assert_sessions_identical(&s_def, &s_exp);
+
+    // Step C: Enter submenu [0] ("File Preview", default_child = Some(0)) below outer-band threshold
+    // Verify default_child acceptance and dwell timer scheduling (20 + 140 = 160 ms)
+    ev_def.clear();
+    ev_exp.clear();
+    s_def.handle(
+        WheelInput::PointerMoved(Point::new(500.0, 330.0)),
+        20,
+        &mut ev_def,
+    );
+    s_exp.handle(
+        WheelInput::PointerMoved(Point::new(500.0, 330.0)),
+        20,
+        &mut ev_exp,
+    );
+    assert_eq!(
+        ev_def,
+        vec![WheelEvent::HoverChanged(Some(ItemPath::from_slice(&[0])))]
+    );
+    assert_eq!(ev_def, ev_exp);
+    assert_eq!(
+        s_def.drop_target(),
+        DropTarget::Accept(ItemPath::from_slice(&[0, 0]))
+    );
+    assert_eq!(s_def.next_deadline(), Some(160));
+    assert_sessions_identical(&s_def, &s_exp);
+
+    // Step D: Angular segment hysteresis (±4° across 315° boundary between item 0 and item 1)
+    let p_317_deg = anchor.offset_polar(75.0, 317.0_f32.to_radians());
+    ev_def.clear();
+    ev_exp.clear();
+    s_def.handle(WheelInput::PointerMoved(p_317_deg), 30, &mut ev_def);
+    s_exp.handle(WheelInput::PointerMoved(p_317_deg), 30, &mut ev_exp);
+    assert!(ev_def.is_empty());
+    assert_eq!(
+        s_def.debug_state().raw_zone,
+        Zone::Item { wheel: 0, index: 0 }
+    );
+    assert_sessions_identical(&s_def, &s_exp);
+
+    // Step E: Advance to dwell deadline (t = 160) -> child wheel [0] opens at (500, 178)
+    ev_def.clear();
+    ev_exp.clear();
+    s_def.tick(159, &mut ev_def);
+    s_exp.tick(159, &mut ev_exp);
+    assert!(ev_def.is_empty());
+    assert_eq!(s_def.debug_state().open_chain.len(), 1);
+
+    s_def.tick(160, &mut ev_def);
+    s_exp.tick(160, &mut ev_exp);
+    assert_eq!(
+        ev_def,
+        vec![
+            WheelEvent::SubmenuOpened(ItemPath::from_slice(&[0])),
+            WheelEvent::InputRegionChanged,
+        ]
+    );
+    assert_eq!(ev_def, ev_exp);
+    assert_eq!(s_def.debug_state().open_chain.len(), 2);
+    let child_geom = s_def.wheel_geometry(&ItemPath::from_slice(&[0])).unwrap();
+    assert!((child_geom.center.x - 500.0).abs() < 1e-4);
+    assert!((child_geom.center.y - 178.0).abs() < 1e-4);
+    assert_eq!(child_geom.r_in, 30.0);
+    assert_eq!(child_geom.r_out, 96.0);
+    assert_sessions_identical(&s_def, &s_exp);
+
+    // Step F: M0 S-1 Submenu Hit-Margin Overlap Guard at (500, 285)
+    // Inside parent drawn ring (d_root = 115 <= 116) and child hit_margin (d_child = 107 <= 108)
+    ev_def.clear();
+    ev_exp.clear();
+    s_def.handle(
+        WheelInput::PointerMoved(Point::new(500.0, 285.0)),
+        175,
+        &mut ev_def,
+    );
+    s_exp.handle(
+        WheelInput::PointerMoved(Point::new(500.0, 285.0)),
+        175,
+        &mut ev_exp,
+    );
+    assert_eq!(
+        s_def.debug_state().raw_zone,
+        Zone::Item { wheel: 0, index: 0 }
+    );
+    assert_sessions_identical(&s_def, &s_exp);
+
+    // Step G: Child Bridge zone at (500, 270) (d_child = 92 <= 96, facing parent)
+    ev_def.clear();
+    ev_exp.clear();
+    s_def.handle(
+        WheelInput::PointerMoved(Point::new(500.0, 270.0)),
+        190,
+        &mut ev_def,
+    );
+    s_exp.handle(
+        WheelInput::PointerMoved(Point::new(500.0, 270.0)),
+        190,
+        &mut ev_exp,
+    );
+    assert_eq!(s_def.debug_state().raw_zone, Zone::Bridge { wheel: 1 });
+    assert_eq!(
+        s_def.debug_state().hovered_item,
+        Some(ItemPath::from_slice(&[0]))
+    );
+    assert_eq!(s_def.debug_state().open_chain.len(), 2);
+    assert_sessions_identical(&s_def, &s_exp);
+
+    // Step H: Enablement update while hovering child leaf [0, 1] ("Head")
+    let p_head = s_def.item_center(&ItemPath::from_slice(&[0, 1])).unwrap();
+    ev_def.clear();
+    ev_exp.clear();
+    s_def.handle(WheelInput::PointerMoved(p_head), 210, &mut ev_def);
+    s_exp.handle(WheelInput::PointerMoved(p_head), 210, &mut ev_exp);
+    assert_eq!(
+        s_def.drop_target(),
+        DropTarget::Accept(ItemPath::from_slice(&[0, 1]))
+    );
+
+    s_def.set_enabled(
+        &ItemPath::from_slice(&[0, 1]),
+        false,
+        Some(Arc::from("Binary file")),
+    );
+    s_exp.set_enabled(
+        &ItemPath::from_slice(&[0, 1]),
+        false,
+        Some(Arc::from("Binary file")),
+    );
+    assert_eq!(s_def.drop_target(), DropTarget::Reject);
+    assert_eq!(
+        s_def.scene().caption.as_ref().unwrap().detail.as_deref(),
+        Some("Binary file")
+    );
+    assert!(s_def.scene().caption.as_ref().unwrap().disabled);
+    assert_sessions_identical(&s_def, &s_exp);
+
+    s_def.set_enabled(&ItemPath::from_slice(&[0, 1]), true, None);
+    s_exp.set_enabled(&ItemPath::from_slice(&[0, 1]), true, None);
+    assert_eq!(
+        s_def.drop_target(),
+        DropTarget::Accept(ItemPath::from_slice(&[0, 1]))
+    );
+    assert_sessions_identical(&s_def, &s_exp);
+
+    // Step I: Interrupted animation — dismiss mid-flight and verify single Finished event
+    s_def.dismiss(DismissReason::Cancelled, 220);
+    s_exp.dismiss(DismissReason::Cancelled, 220);
+    assert_eq!(s_def.debug_state().phase, SessionPhase::Dismissing);
+    assert!(s_def.input_region().is_empty());
+    assert_sessions_identical(&s_def, &s_exp);
+
+    ev_def.clear();
+    ev_exp.clear();
+    s_def.tick(270, &mut ev_def);
+    s_exp.tick(270, &mut ev_exp);
+    assert!(ev_def.is_empty());
+    assert!(!s_def.is_finished());
+
+    s_def.tick(320, &mut ev_def);
+    s_exp.tick(320, &mut ev_exp);
+    assert_eq!(ev_def, vec![WheelEvent::Finished]);
+    assert_eq!(ev_def, ev_exp);
+    assert!(s_def.is_finished());
+
+    ev_def.clear();
+    s_def.tick(400, &mut ev_def);
+    assert!(ev_def.is_empty());
+
+    // --- 2. Hover-intent tangent triangle protection & grace expiry near top edge ---
+    let mut s_intent = WheelSession::new(
+        Some(branching_regression_menu()),
+        Point::new(500.0, 140.0),
+        vp,
+        InputMode::Drag,
+        &cfg_explicit_branching,
+        0,
+    );
+    let mut ev = Vec::new();
+    s_intent.handle(
+        WheelInput::PointerMoved(Point::new(500.0, 70.0)),
+        10,
+        &mut ev,
+    );
+    s_intent.tick(150, &mut ev);
+    assert_eq!(s_intent.debug_state().open_chain.len(), 2);
+
+    let child_c = s_intent
+        .wheel_geometry(&ItemPath::from_slice(&[0]))
+        .unwrap()
+        .center;
+    let root_g = s_intent.wheel_geometry(&ItemPath::root()).unwrap().clone();
+    let sp1 = root_g.spans[1];
+    let dir = root_g.center.angle_to(child_c);
+    let mid = (sp1.a0 + sp1.a1) * 0.5;
+    let span_w = sp1.a1 - sp1.a0;
+    let theta = if angle_diff(dir, mid) < 0.0 {
+        sp1.a0 + 0.22 * span_w
+    } else {
+        sp1.a1 - 0.22 * span_w
+    };
+    let diag_pt = root_g
+        .center
+        .offset_polar(root_g.r_in + 0.60 * (root_g.r_out - root_g.r_in), theta);
+
+    ev.clear();
+    s_intent.handle(WheelInput::PointerMoved(diag_pt), 180, &mut ev);
+    assert!(s_intent.debug_state().intent_triangle.is_some());
+    assert_eq!(s_intent.debug_state().open_chain.len(), 2);
+    assert_eq!(
+        s_intent.debug_state().hovered_item,
+        Some(ItemPath::from_slice(&[0]))
+    );
+
+    // 1 ms before grace deadline (180 + 300 = 480): child [0] still protected
+    s_intent.tick(479, &mut ev);
+    assert_eq!(s_intent.debug_state().open_chain.len(), 2);
+
+    // At deadline (480): child [0] closes and hover adopts sibling [1] ("Copy")
+    ev.clear();
+    s_intent.tick(480, &mut ev);
+    assert_eq!(s_intent.debug_state().open_chain.len(), 1);
+    assert_eq!(
+        s_intent.debug_state().hovered_item,
+        Some(ItemPath::from_slice(&[1]))
+    );
+    assert_eq!(
+        s_intent.drop_target(),
+        DropTarget::Accept(ItemPath::from_slice(&[1]))
+    );
+
+    // --- 3. Keyboard navigation trace in Pointer mode ---
+    let mut s_key = WheelSession::new(
+        Some(branching_regression_menu()),
+        anchor,
+        vp,
+        InputMode::Pointer,
+        &cfg_explicit_branching,
+        0,
+    );
+    ev.clear();
+    s_key.handle(WheelInput::Nav(NavKey::Next), 10, &mut ev);
+    assert_eq!(
+        s_key.debug_state().hovered_item,
+        Some(ItemPath::from_slice(&[0]))
+    );
+
+    s_key.handle(WheelInput::Nav(NavKey::Prev), 20, &mut ev);
+    assert_eq!(
+        s_key.debug_state().hovered_item,
+        Some(ItemPath::from_slice(&[3]))
+    );
+
+    s_key.handle(WheelInput::Nav(NavKey::Next), 30, &mut ev);
+    s_key.handle(WheelInput::Nav(NavKey::Activate), 40, &mut ev);
+    assert_eq!(
+        s_key.debug_state().open_chain.last(),
+        Some(&ItemPath::from_slice(&[0]))
+    );
+    assert_eq!(
+        s_key.debug_state().hovered_item,
+        Some(ItemPath::from_slice(&[0, 0]))
+    );
+
+    s_key.handle(WheelInput::Nav(NavKey::Back), 50, &mut ev);
+    assert_eq!(s_key.debug_state().open_chain.len(), 1);
+    assert_eq!(
+        s_key.debug_state().hovered_item,
+        Some(ItemPath::from_slice(&[0]))
+    );
+
+    ev.clear();
+    s_key.handle(WheelInput::Nav(NavKey::Digit(2)), 60, &mut ev);
+    assert!(ev.contains(&WheelEvent::Commit(ItemPath::from_slice(&[1]))));
+}
