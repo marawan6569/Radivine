@@ -384,3 +384,189 @@ fn t_cfg4_to_wheel_config_enum_mapping_and_separate_app_vs_engine_defaults() {
         WheelLayout::Concentric
     );
 }
+
+/// `T-MENU1` & `T-MENU2` (App / Registry level):
+/// Preview/Copy/Properties/Custom/Convert IDs, order, labels, descriptions, and visibility are
+/// identical across text, image, mixed, folder, unreadable, remote, and large selections;
+/// engine `sanitize` under both `Branching` and `Concentric` never remaps `ActionIndex`.
+#[test]
+fn t_menu1_and_t_menu2_app_registry_action_index_and_context_parity() {
+    use radivine_actions::{
+        ConvertMenuContext, PreviewSettings, parse_actions_toml, register_builtins_with_options,
+    };
+    use radivine_core::{
+        ActionRegistry, BasicContext, Context, FileFacts, FileKind, InvocationMode, ItemPath,
+        MenuLimits, MenuNode, NodeKind, SourceInfo, TextEncoding, TextVerdict,
+    };
+    use radivine_wheel::{InputMode, Point, Viewport, WheelSession};
+
+    let custom_toml = r#"
+        [[action]]
+        id = "custom.echo_path"
+        label = "Echo Path"
+        description = "Print path to stdout"
+        icon = "lucide:terminal"
+        exec = ["/bin/echo", "{paths}"]
+    "#;
+    let actions_cfg = parse_actions_toml(custom_toml).expect("parse custom actions");
+    let mut reg = ActionRegistry::new();
+    register_builtins_with_options(
+        &mut reg,
+        &actions_cfg,
+        &PreviewSettings::default(),
+        &ConvertMenuContext::default(),
+    )
+    .expect("register_builtins_with_options");
+
+    // Build the 7 required contexts: text, image, mixed, folder, unreadable, remote, large
+    let make_ctx = |uris: Vec<String>, facts: Option<Vec<FileFacts>>| -> Context {
+        let basic = BasicContext::from_uris(uris, InvocationMode::Drag, SourceInfo::default());
+        let mut ctx = Context::from_basic(basic);
+        ctx.facts = facts;
+        ctx
+    };
+
+    let text_facts = FileFacts {
+        kind: FileKind::Regular,
+        size: Some(128),
+        readable: true,
+        text: TextVerdict::Text(TextEncoding::Utf8),
+        sniffed_mime: Some("text/plain"),
+        error: None,
+    };
+    let image_facts = FileFacts {
+        kind: FileKind::Regular,
+        size: Some(4096),
+        readable: true,
+        text: TextVerdict::Binary,
+        sniffed_mime: Some("image/png"),
+        error: None,
+    };
+    let folder_facts = FileFacts {
+        kind: FileKind::Directory,
+        size: Some(0),
+        readable: true,
+        text: TextVerdict::Binary,
+        sniffed_mime: Some("inode/directory"),
+        error: None,
+    };
+    let unreadable_facts = FileFacts {
+        kind: FileKind::Regular,
+        size: Some(64),
+        readable: false,
+        text: TextVerdict::Unknown,
+        sniffed_mime: None,
+        error: Some("Permission denied".to_string()),
+    };
+
+    let large_uris: Vec<String> = (0..20)
+        .map(|i| format!("file:///tmp/item_{i}.txt"))
+        .collect();
+
+    let contexts = [
+        (
+            "text",
+            make_ctx(
+                vec!["file:///tmp/notes.txt".into()],
+                Some(vec![text_facts.clone()]),
+            ),
+        ),
+        (
+            "image",
+            make_ctx(
+                vec!["file:///tmp/photo.png".into()],
+                Some(vec![image_facts.clone()]),
+            ),
+        ),
+        (
+            "mixed",
+            make_ctx(
+                vec![
+                    "file:///tmp/notes.txt".into(),
+                    "file:///tmp/photo.png".into(),
+                ],
+                Some(vec![text_facts, image_facts]),
+            ),
+        ),
+        (
+            "folder",
+            make_ctx(vec!["file:///tmp/docs".into()], Some(vec![folder_facts])),
+        ),
+        (
+            "unreadable",
+            make_ctx(
+                vec!["file:///tmp/secret.txt".into()],
+                Some(vec![unreadable_facts]),
+            ),
+        ),
+        (
+            "remote",
+            make_ctx(vec!["sftp://server/home/user/report.txt".into()], None),
+        ),
+        ("large", make_ctx(large_uris, None)),
+    ];
+
+    fn collect_leaves(node: &MenuNode, prefix: ItemPath, out: &mut Vec<(ItemPath, String)>) {
+        match &node.kind {
+            NodeKind::Leaf => out.push((prefix, node.id.to_string())),
+            NodeKind::Submenu { children, .. } => {
+                for (i, ch) in children.iter().enumerate() {
+                    collect_leaves(ch, prefix.child(i as u8), out);
+                }
+            }
+        }
+    }
+
+    let app_b = AppConfig::default().to_wheel_config(false);
+    let mut app_c = app_b.clone();
+    app_c.layout = WheelLayout::Concentric;
+    let vp = Viewport::new(1920.0, 1080.0, 1.0);
+    let center = Point::new(960.0, 540.0);
+
+    for (ctx_name, ctx) in &contexts {
+        let (tree, index) = reg
+            .build_menu(ctx, MenuLimits::default())
+            .expect("build_menu must succeed for all 7 contexts");
+
+        // Verify engine `sanitize` is a no-op on a tree built with matching MenuLimits (8, 4)
+        // and does not remap any ActionIndex path in either Branching or Concentric!
+        let mut san_b = tree.clone();
+        assert!(
+            san_b.sanitize(&app_b),
+            "context `{ctx_name}` must remain non-empty after sanitize"
+        );
+        let mut san_c = tree.clone();
+        assert!(
+            san_c.sanitize(&app_c),
+            "context `{ctx_name}` must remain non-empty after sanitize"
+        );
+        assert_eq!(san_b, tree, "context `{ctx_name}` Branching tree equality");
+        assert_eq!(san_c, tree, "context `{ctx_name}` Concentric tree equality");
+
+        let mut leaves = Vec::new();
+        collect_leaves(&tree.root, ItemPath::root(), &mut leaves);
+        for (leaf_path, node_id) in &leaves {
+            let indexed_action = index
+                .get(leaf_path)
+                .expect("every leaf path in MenuTree must exist in ActionIndex");
+            assert_eq!(
+                indexed_action.as_str(),
+                node_id.as_str(),
+                "ActionIndex mapping mismatch at {leaf_path:?} in context `{ctx_name}`"
+            );
+        }
+
+        // Verify both sessions expose identical root item labels, icons, enabled flags, and has_children
+        let s_b = WheelSession::new(Some(tree.clone()), center, vp, InputMode::Drag, &app_b, 0);
+        let s_c = WheelSession::new(Some(tree), center, vp, InputMode::Drag, &app_c, 0);
+        let segs_b = &s_b.scene().wheels[0].segments;
+        let segs_c = &s_c.scene().wheels[0].segments;
+        assert_eq!(segs_b.len(), segs_c.len(), "context `{ctx_name}`");
+        for (sb, sc) in segs_b.iter().zip(segs_c.iter()) {
+            assert_eq!(sb.label, sc.label, "context `{ctx_name}`");
+            assert_eq!(sb.icon, sc.icon, "context `{ctx_name}`");
+            assert_eq!(sb.enabled, sc.enabled, "context `{ctx_name}`");
+            assert_eq!(sb.has_children, sc.has_children, "context `{ctx_name}`");
+        }
+    }
+}

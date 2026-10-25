@@ -7,6 +7,7 @@
 
 pub mod anim;
 pub mod concentric;
+pub(crate) mod concentric_nav;
 pub mod config;
 pub mod geometry;
 pub mod hit;
