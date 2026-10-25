@@ -145,6 +145,7 @@ struct ActionToast {
 
 struct HudDrawer {
     font_system: FontSystem,
+    arabic_font_system: Option<FontSystem>,
     swash_cache: SwashCache,
 }
 
@@ -153,8 +154,24 @@ impl HudDrawer {
         let mut db = cosmic_text::fontdb::Database::new();
         db.load_font_data(EMBEDDED_INTER_TTF.to_vec());
         let font_system = FontSystem::new_with_locale_and_db("en-US".to_string(), db);
+        let arabic_font_system = {
+            let mut ar_db = cosmic_text::fontdb::Database::new();
+            ar_db.load_font_data(EMBEDDED_INTER_TTF.to_vec());
+            for fallback_path in [
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            ] {
+                let _ = ar_db.load_font_file(fallback_path);
+            }
+            if ar_db.faces().count() > 1 {
+                Some(FontSystem::new_with_locale_and_db("ar".to_string(), ar_db))
+            } else {
+                None
+            }
+        };
         Self {
             font_system,
+            arabic_font_system,
             swash_cache: SwashCache::new(),
         }
     }
@@ -170,15 +187,31 @@ impl HudDrawer {
         weight: u16,
         color: [u8; 4],
     ) {
+        let has_arabic = text.chars().any(|c| {
+            ('\u{0600}'..='\u{06FF}').contains(&c)
+                || ('\u{0750}'..='\u{08FF}').contains(&c)
+                || ('\u{FB50}'..='\u{FDFF}').contains(&c)
+                || ('\u{FE70}'..='\u{FEFF}').contains(&c)
+        });
+        let fs = if has_arabic {
+            self.arabic_font_system
+                .as_mut()
+                .unwrap_or(&mut self.font_system)
+        } else {
+            &mut self.font_system
+        };
         let metrics = Metrics::new(font_px, (font_px * 1.35).ceil());
-        let mut buffer = Buffer::new(&mut self.font_system, metrics);
-        buffer.set_wrap(&mut self.font_system, Wrap::None);
-        buffer.set_size(&mut self.font_system, Some(2000.0), Some(font_px * 2.0));
-        let attrs = Attrs::new()
-            .family(Family::Name("Inter"))
-            .weight(Weight(weight));
-        buffer.set_text(&mut self.font_system, text, attrs, Shaping::Advanced);
-        buffer.shape_until_scroll(&mut self.font_system, false);
+        let mut buffer = Buffer::new(fs, metrics);
+        buffer.set_wrap(fs, Wrap::None);
+        buffer.set_size(fs, Some(2000.0), Some(font_px * 2.0));
+        let family = if has_arabic {
+            Family::SansSerif
+        } else {
+            Family::Name("Inter")
+        };
+        let attrs = Attrs::new().family(family).weight(Weight(weight));
+        buffer.set_text(fs, text, attrs, Shaping::Advanced);
+        buffer.shape_until_scroll(fs, false);
 
         let w = pixmap.width() as i32;
         let h = pixmap.height() as i32;
@@ -188,10 +221,7 @@ impl HudDrawer {
             let line_y = run.line_y;
             for glyph in run.glyphs.iter() {
                 let physical = glyph.physical((x, y + line_y), 1.0);
-                let Some(image) = self
-                    .swash_cache
-                    .get_image(&mut self.font_system, physical.cache_key)
-                else {
+                let Some(image) = self.swash_cache.get_image(fs, physical.cache_key) else {
                     continue;
                 };
                 let gx0 = physical.x + image.placement.left;
@@ -2103,7 +2133,7 @@ fn export_concentric_screenshots(out_dir: &Path) -> std::io::Result<()> {
         )?;
     }
 
-    // 20. Animation checkpoint (t = 450ms -> 30ms into child ring opacity fade-in, fixed radii)
+    // 20. Animation checkpoint (t = 460ms -> 40ms into 130ms OutCubic child ring opacity fade-in from 0.35 -> 1.0, fixed radii)
     {
         let mut st = new_concentric(w, h, 1.0, None);
         st.summon(center, InputMode::Pointer, 0);
@@ -2111,7 +2141,7 @@ fn export_concentric_screenshots(out_dir: &Path) -> std::io::Result<()> {
         let p0 = st.session.item_center(&ItemPath::from_slice(&[0])).unwrap();
         st.dispatch_input(WheelInput::PointerMoved(p0), 260);
         st.tick(420); // submenu opens at 420ms
-        st.tick(460); // 40ms into 120ms opacity-only appearance
+        st.tick(460); // 40ms into 130ms opacity-only appearance
         save(
             &mut st,
             "20-concentric-anim-checkpoint-t30-t60.png",
@@ -2119,7 +2149,7 @@ fn export_concentric_screenshots(out_dir: &Path) -> std::io::Result<()> {
         )?;
     }
 
-    // 21. Interrupted transition (sibling replacement with retracting ring fading out in-place)
+    // 21. Interrupted transition (sibling replacement with retracting ring fading out in-place over 110ms)
     {
         let mut st = new_concentric(w, h, 1.0, None);
         st.summon(center, InputMode::Pointer, 0);
@@ -2131,7 +2161,7 @@ fn export_concentric_screenshots(out_dir: &Path) -> std::io::Result<()> {
         let p3 = st.session.item_center(&ItemPath::from_slice(&[1])).unwrap();
         st.dispatch_input(WheelInput::PointerMoved(p3), 560);
         st.tick(860); // sibling adoption at 560 + 300 = 860ms closes ring 1 ([0]) into retracting list
-        st.tick(890); // 30ms into 90ms opacity-only retraction fade
+        st.tick(890); // 30ms into 110ms opacity-only retraction fade
         save(
             &mut st,
             "21-concentric-anim-interrupted-retraction.png",

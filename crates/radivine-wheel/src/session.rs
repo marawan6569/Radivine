@@ -2969,7 +2969,7 @@ impl WheelSession {
 
             // Keep at most one retracting snapshot per radial level (`INTERACTION_DESIGN.md` §I8)
             self.retracting.retain(|rw| rw.path.len() != closed_level);
-            if self.retracting.len() >= 4 {
+            if self.retracting.len() >= 5 {
                 self.retracting.remove(0);
             }
             self.retracting.push(closed);
@@ -3477,12 +3477,13 @@ impl WheelSession {
             });
         }
 
-        // 2. Retracting rings (at most one per level, total visible ring records <= 6)
+        // 2. Retracting rings (at most one per outer level, never overlapping an open ring slot,
+        //    total visible ring records <= 6 per `INTERACTION_DESIGN.md` §I8)
         for rw in &self.retracting {
             if !rw.scale.done(now) || !rw.opacity.done(now) {
                 any_tween_active = true;
             }
-            if self.scene.wheels.len() < 6 {
+            if rw.path.len() >= self.wheels.len() && self.scene.wheels.len() < 6 {
                 let mut seg_visuals = SmallVec::new();
                 for seg in &rw.segments {
                     seg_visuals.push(SegmentVisual {

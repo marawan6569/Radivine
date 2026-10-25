@@ -260,6 +260,7 @@ pub(crate) struct GuideCacheKey {
 
 pub(crate) struct AssetCache {
     font_system: FontSystem,
+    arabic_font_system: Option<FontSystem>,
     swash_cache: SwashCache,
     svg_sources: HashMap<String, String>,
     icon_masks: HashMap<u32, HashMap<Box<str>, AlphaMask>>,
@@ -316,10 +317,26 @@ impl AssetCache {
         }
 
         let font_system = FontSystem::new_with_locale_and_db("en-US".to_owned(), db);
+        let arabic_font_system = {
+            let mut ar_db = Database::new();
+            ar_db.load_font_source(Source::Binary(Arc::new(EMBEDDED_INTER_TTF)));
+            for fallback_path in [
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            ] {
+                let _ = ar_db.load_font_file(fallback_path);
+            }
+            if ar_db.faces().count() > 1 {
+                Some(FontSystem::new_with_locale_and_db("ar".to_owned(), ar_db))
+            } else {
+                None
+            }
+        };
         let swash_cache = SwashCache::new();
 
         Ok(Self {
             font_system,
+            arabic_font_system,
             swash_cache,
             svg_sources,
             icon_masks: HashMap::with_capacity(8),
@@ -431,8 +448,15 @@ impl AssetCache {
 
         if !self.text_masks.contains_key(&key) {
             let actual_font_px = (font_px_tenths as f32) * 0.1;
+            let fs = if contains_arabic_script(text) {
+                self.arabic_font_system
+                    .as_mut()
+                    .unwrap_or(&mut self.font_system)
+            } else {
+                &mut self.font_system
+            };
             let mask = rasterize_text_mask(
-                &mut self.font_system,
+                fs,
                 &mut self.swash_cache,
                 text,
                 actual_font_px,
@@ -480,8 +504,15 @@ impl AssetCache {
 
         if !self.text_masks.contains_key(&key) {
             let actual_font_px = (font_px_tenths as f32) * 0.1;
+            let fs = if contains_arabic_script(text) {
+                self.arabic_font_system
+                    .as_mut()
+                    .unwrap_or(&mut self.font_system)
+            } else {
+                &mut self.font_system
+            };
             let mask = rasterize_multiline_text_mask(
-                &mut self.font_system,
+                fs,
                 &mut self.swash_cache,
                 text,
                 actual_font_px,
@@ -1091,6 +1122,15 @@ fn fallback_icon_mask(size_px: u32) -> AlphaMask {
     AlphaMask::new(size_px, size_px, data)
 }
 
+fn contains_arabic_script(text: &str) -> bool {
+    text.chars().any(|c| {
+        ('\u{0600}'..='\u{06FF}').contains(&c)
+            || ('\u{0750}'..='\u{08FF}').contains(&c)
+            || ('\u{FB50}'..='\u{FDFF}').contains(&c)
+            || ('\u{FE70}'..='\u{FEFF}').contains(&c)
+    })
+}
+
 fn rasterize_text_mask(
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
@@ -1105,9 +1145,12 @@ fn rasterize_text_mask(
     buffer.set_wrap(font_system, Wrap::None);
     buffer.set_size(font_system, Some(4096.0), Some(line_h * 2.0));
 
-    let attrs = Attrs::new()
-        .family(Family::Name("Inter"))
-        .weight(Weight(weight));
+    let family = if contains_arabic_script(raw_text) {
+        Family::SansSerif
+    } else {
+        Family::Name("Inter")
+    };
+    let attrs = Attrs::new().family(family).weight(Weight(weight));
 
     // Fit text within max_width_px, truncating with "…" if needed
     buffer.set_text(font_system, raw_text, attrs, Shaping::Advanced);
@@ -1157,9 +1200,12 @@ fn rasterize_multiline_text_mask(
         Some(line_h * ((max_lines + 4) as f32)),
     );
 
-    let attrs = Attrs::new()
-        .family(Family::Name("Inter"))
-        .weight(Weight(weight));
+    let family = if contains_arabic_script(raw_text) {
+        Family::SansSerif
+    } else {
+        Family::Name("Inter")
+    };
+    let attrs = Attrs::new().family(family).weight(Weight(weight));
 
     buffer.set_text(font_system, raw_text, attrs, Shaping::Advanced);
     buffer.shape_until_scroll(font_system, false);

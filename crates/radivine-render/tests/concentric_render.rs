@@ -206,6 +206,19 @@ fn t_ren1_concentric_1_to_6_levels_single_hub_no_disc_shadow_no_stems_path_marke
 
         for (idx, w) in sc.wheels.iter().enumerate() {
             assert_eq!(w.center, root_center, "all rings must share one center");
+            if idx + 1 < target_depth {
+                assert!(
+                    (w.opacity - 0.72).abs() < 1e-4,
+                    "all open ancestor rings must have settled opacity 0.72, got {} at level {idx}",
+                    w.opacity
+                );
+            } else {
+                assert!(
+                    (w.opacity - 1.0).abs() < 1e-4,
+                    "active ring must have settled opacity 1.0, got {} at level {idx}",
+                    w.opacity
+                );
+            }
             if idx == 0 {
                 assert_eq!(w.kind, WheelVisualKind::ConcentricRoot);
                 // Item 0 is open submenu (on_path = true), item 1 is closed submenu (on_path = false)
@@ -239,6 +252,11 @@ fn t_ren1_concentric_1_to_6_levels_single_hub_no_disc_shadow_no_stems_path_marke
         .caption
         .as_ref()
         .expect("caption should be present on hovered leaf");
+    assert_eq!(
+        (cap.box_.w, cap.box_.h),
+        (280.0, 64.0),
+        "Concentric caption box must be fixed 280x64 lp"
+    );
     let crumbs = cap
         .breadcrumb
         .as_ref()
@@ -247,6 +265,27 @@ fn t_ren1_concentric_1_to_6_levels_single_hub_no_disc_shadow_no_stems_path_marke
     assert_eq!(crumbs[0].as_ref(), "Level 0 Item 0");
     assert_eq!(crumbs[4].as_ref(), "Level 4 Item 0");
     renderer.render(sc6);
+
+    // Verify the drawn Concentric caption pill covers the fixed 280x64 lp box (testing left/right/top/bottom inside edges)
+    let left_edge_x = (cap.box_.x + 8.0).round() as u32;
+    let right_edge_x = (cap.box_.x + cap.box_.w - 8.0).round() as u32;
+    let mid_y = (cap.box_.y + cap.box_.h * 0.5).round() as u32;
+    let top_edge_y = (cap.box_.y + 6.0).round() as u32;
+    let bot_edge_y = (cap.box_.y + cap.box_.h - 6.0).round() as u32;
+    let mid_x = (cap.box_.x + cap.box_.w * 0.5).round() as u32;
+    for &(px, py) in &[
+        (left_edge_x, mid_y),
+        (right_edge_x, mid_y),
+        (mid_x, top_edge_y),
+        (mid_x, bot_edge_y),
+    ] {
+        let idx = ((py * 1920 + px) * 4) as usize;
+        assert!(
+            renderer.frame().data[idx + 3] > 180,
+            "fixed 280x64 caption pill must cover ({px}, {py}), got alpha={}",
+            renderer.frame().data[idx + 3]
+        );
+    }
 
     // Verify ancestor sector pixel is visible and not covered by any opaque child hub
     let px_idx =
@@ -284,8 +323,70 @@ fn t_ren2_deterministic_animation_checkpoints_themes_scales_counts_labels_icons(
         let sc = session.scene();
         assert_eq!(sc.wheels[0].scale, 1.0);
         assert!(sc.wheels[0].segments.iter().all(|s| s.pop == 0.0));
+        if t == 0 {
+            assert!(
+                (sc.wheels[0].opacity - 0.35).abs() < 1e-4,
+                "ring expansion must start at opacity 0.35, got {}",
+                sc.wheels[0].opacity
+            );
+        } else if t == 30 || t == 60 {
+            let u = (t as f32) / 130.0;
+            let expected = 0.35 + (1.0 - 0.35) * (1.0 - (1.0 - u).powi(3));
+            assert!(
+                (sc.wheels[0].opacity - expected).abs() < 1e-3,
+                "ring expansion at t={t}ms must follow 130ms OutCubic ({expected}), got {}",
+                sc.wheels[0].opacity
+            );
+        } else if t >= 130 {
+            assert!(
+                (sc.wheels[0].opacity - 1.0).abs() < 1e-4,
+                "ring expansion must reach 1.0 at 130ms, got {}",
+                sc.wheels[0].opacity
+            );
+        }
         renderer.render(sc);
     }
+
+    // Verify I8 hover in/out (90/120 ms), caption transition (80 ms), and ancestor dim (120 ms)
+    let p_item2 = session.item_center(&ItemPath::from_slice(&[2])).unwrap();
+    session.handle(WheelInput::PointerMoved(p_item2), 300, &mut events);
+    session.tick(345, &mut events); // 45 ms into 90 ms hover-in and 80 ms caption fade
+    assert!(
+        session.scene().wheels[0].segments[2].highlight > 0.5
+            && session.scene().wheels[0].segments[2].highlight < 1.0,
+        "hover-in must still be interpolating at 45 ms (< 90 ms)"
+    );
+    assert!(
+        (session.scene().caption.as_ref().unwrap().opacity - (45.0 / 80.0)).abs() < 1e-3,
+        "caption fade must follow 80 ms duration"
+    );
+    session.tick(380, &mut events); // 80 ms: caption settled at 1.0, hover-in still < 90 ms
+    assert!((session.scene().caption.as_ref().unwrap().opacity - 1.0).abs() < 1e-4);
+    assert!(session.scene().wheels[0].segments[2].highlight < 1.0);
+    session.tick(390, &mut events); // 90 ms: hover-in settled at 1.0
+    assert!((session.scene().wheels[0].segments[2].highlight - 1.0).abs() < 1e-4);
+
+    // Move to submenu [0]: item [2] hovers out over 120 ms; submenu [0] opens at 400 + 140 = 540 ms,
+    // dimming ancestor root from 1.0 -> 0.72 over 120 ms.
+    let p_item0 = session.item_center(&ItemPath::from_slice(&[0])).unwrap();
+    session.handle(WheelInput::PointerMoved(p_item0), 400, &mut events);
+    session.tick(460, &mut events); // 60 ms into 120 ms hover-out of item [2]
+    assert!(
+        session.scene().wheels[0].segments[2].highlight > 0.05
+            && session.scene().wheels[0].segments[2].highlight < 0.5
+    );
+    session.tick(520, &mut events); // 120 ms: item [2] hover-out settled at 0.0
+    assert!(session.scene().wheels[0].segments[2].highlight.abs() < 1e-4);
+    session.tick(540, &mut events); // submenu [0] opens at 540 ms; ancestor dim (120 ms) starts
+    session.tick(600, &mut events); // 60 ms into 120 ms ancestor dim
+    assert!(
+        session.scene().wheels[0].opacity > 0.72 && session.scene().wheels[0].opacity < 1.0,
+        "ancestor dim must still be interpolating at 60 ms (< 120 ms)"
+    );
+    session.tick(660, &mut events); // 120 ms: ancestor dim settled at 0.72
+    assert!((session.scene().wheels[0].opacity - 0.72).abs() < 1e-4);
+    session.tick(700, &mut events); // child ring emergence settled at 1.0
+    assert!((session.scene().wheels[1].opacity - 1.0).abs() < 1e-4);
 
     // 2. Dark and Light themes across scales 1.0, 1.25, 1.5, 2.0
     for theme in [Theme::dark(), Theme::light()] {
@@ -606,8 +707,19 @@ fn t_ren3_t_ren4_t_ren6_full_vs_incremental_byte_identity_and_damage_invariants(
         &cfg,
         2000,
     );
+    // At t = 2000 (root opacity = 0.35), origin_guide opacity is 0.45 * 0.35
+    let guide_t0 = corner_session
+        .scene()
+        .origin_guide
+        .expect("origin_guide present when distance(anchor, C) > 0.5");
+    assert!((guide_t0.opacity - 0.45 * 0.35).abs() < 1e-4);
     corner_session.tick(2250, &mut events);
-    assert!(corner_session.scene().origin_guide.is_some());
+    let guide_settled = corner_session.scene().origin_guide.unwrap();
+    assert!(
+        (guide_settled.opacity - 0.45).abs() < 1e-4,
+        "settled origin_guide opacity must be 0.45 * 1.0 = 0.45, got {}",
+        guide_settled.opacity
+    );
     assert_incremental_matches_fresh(
         &mut inc,
         corner_session.scene(),
@@ -646,7 +758,7 @@ fn t_nav10_t_nav11_t_nav12_rendering_invariants() {
     let mut inc = Renderer::new(Theme::dark(), AssetSource::Embedded).unwrap();
     inc.begin_session(size, 1.0);
 
-    // T-NAV10: Rapid alternating sibling movements at 1/8/16 ms intervals
+    // T-NAV10: Rapid alternating sibling movements at 1/8/16 ms intervals + 6-level sibling replacement
     let mut session = WheelSession::new(
         Some(build_deep_menu(3, 4)),
         Point::new(640.0, 400.0),
@@ -671,11 +783,94 @@ fn t_nav10_t_nav11_t_nav12_rendering_invariants() {
         session.tick(t, &mut events);
         let sc = session.scene();
         assert!(
-            sc.wheels.len() <= 5,
-            "rapid sibling oscillation must never accumulate unbounded ghost rings (got {})",
+            sc.wheels.len() <= 6,
+            "scene.wheels.len() must never exceed 6 visible ring records (got {})",
             sc.wheels.len()
         );
+        // Verify no two visible rings ever occupy the same radial slot `(r_in, r_out)`
+        for i in 0..sc.wheels.len() {
+            for j in (i + 1)..sc.wheels.len() {
+                let same_slot = (sc.wheels[i].r_in - sc.wheels[j].r_in).abs() < 0.5
+                    && (sc.wheels[i].r_out - sc.wheels[j].r_out).abs() < 0.5;
+                assert!(
+                    !same_slot,
+                    "two ring records painted over the same radial slot: {:?} and {:?}",
+                    (sc.wheels[i].r_in, sc.wheels[i].r_out),
+                    (sc.wheels[j].r_in, sc.wheels[j].r_out)
+                );
+            }
+        }
     }
+    // Open all 6 levels in a clean 1080p Concentric session, then switch root sibling [0] -> [1] and verify:
+    // - Replaced level-1 ring is removed before new level-1 ring fades in from 0.35 -> 1.0
+    // - Outer retracting rings fade over 110 ms and total visible ring records <= 6
+    let cfg6 = WheelConfig {
+        layout: WheelLayout::Concentric,
+        max_depth: 6,
+        ..WheelConfig::default()
+    };
+    let mut session6 = WheelSession::new(
+        Some(build_deep_menu(6, 4)),
+        Point::new(960.0, 540.0),
+        Viewport::new(1920.0, 1080.0, 1.0),
+        InputMode::Drag,
+        &cfg6,
+        0,
+    );
+    session6.tick(250, &mut events);
+    let p6_1 = session6.item_center(&ItemPath::from_slice(&[1])).unwrap();
+    let mut t6 = 260u64;
+    for depth_len in 1..=5 {
+        let cur_path = vec![0u8; depth_len];
+        let pt = session6
+            .item_center(&ItemPath::from_slice(&cur_path))
+            .unwrap();
+        t6 += 20;
+        session6.handle(WheelInput::PointerMoved(pt), t6, &mut events);
+        session6.handle(
+            WheelInput::PointerMoved(Point::new(pt.x + 3.0, pt.y)),
+            t6 + 5,
+            &mut events,
+        );
+        t6 += 300;
+        session6.tick(t6, &mut events);
+    }
+    assert_eq!(session6.scene().wheels.len(), 6);
+    // Hover root sibling [1] and advance 300 ms (`cfg.grace_ms = 300 >= cfg.dwell_ms = 140`)
+    t6 += 10;
+    session6.handle(WheelInput::PointerMoved(p6_1), t6, &mut events);
+    let switch_open_t = t6 + 300;
+    session6.tick(switch_open_t, &mut events);
+    let sc_replace = session6.scene();
+    assert_eq!(
+        sc_replace.wheels.len(),
+        6,
+        "2 open rings + 4 outer retracting ghosts must equal 6 visible ring records"
+    );
+    for i in 0..sc_replace.wheels.len() {
+        for j in (i + 1)..sc_replace.wheels.len() {
+            let same_slot = (sc_replace.wheels[i].r_in - sc_replace.wheels[j].r_in).abs() < 0.5
+                && (sc_replace.wheels[i].r_out - sc_replace.wheels[j].r_out).abs() < 0.5;
+            assert!(
+                !same_slot,
+                "sibling replacement painted two action sets over the same radial slot at {i} and {j}"
+            );
+        }
+    }
+    // New level-1 ring starts at opacity 0.35 on the frame it opens; outer retracting rings finish after 110 ms
+    assert!((sc_replace.wheels[1].opacity - 0.35).abs() < 1e-4);
+    session6.tick(switch_open_t + 55, &mut events);
+    assert!(
+        session6.scene().wheels.len() > 2,
+        "outer retracting rings still fading at 55ms (< 110ms)"
+    );
+    session6.tick(switch_open_t + 110, &mut events);
+    assert_eq!(
+        session6.scene().wheels.len(),
+        2,
+        "all retracting rings must complete their 110ms fade at +110ms"
+    );
+
     // Settle on p1 and verify incremental frame matches fresh render with zero ghost pixels
     t += 500;
     session.tick(t, &mut events);
@@ -767,12 +962,38 @@ fn t_ren5_and_t_reg2_deterministic_golden_hashes_branching_and_concentric() {
     let size = SizePx::new(1280, 800);
     let vp = Viewport::new(1280.0, 800.0, 1.0);
     let mut events = Vec::new();
-
-    // 1. Branching baseline scene (2 levels open + hovered leaf)
     let cfg_branch = WheelConfig {
         layout: WheelLayout::Branching,
         ..WheelConfig::default()
     };
+
+    // --- Historical v0.2.0 (`e6a342e`) Branching golden baselines (5 fixtures) ---
+
+    // Fixture B1: 1-level root hover + badge + caption (1280x800@1x, Dark)
+    let mut sb1 = WheelSession::new(
+        Some(build_deep_menu(3, 4)),
+        Point::new(640.0, 400.0),
+        vp,
+        InputMode::Drag,
+        &cfg_branch,
+        0,
+    );
+    sb1.set_root_badge(Some(3), 0);
+    sb1.tick(250, &mut events);
+    let p_r2 = sb1.item_center(&ItemPath::from_slice(&[2])).unwrap();
+    sb1.handle(WheelInput::PointerMoved(p_r2), 260, &mut events);
+    sb1.tick(400, &mut events);
+    let mut rb1 = Renderer::new(Theme::dark(), AssetSource::Embedded).unwrap();
+    rb1.begin_session(size, 1.0);
+    let dmg_b1 = rb1.render(sb1.scene()).to_vec();
+    let hash_b1 = fnv1a_64(rb1.frame().data);
+    assert_eq!(
+        hash_b1, 0xe40f_0f49_14d0_bff2,
+        "v0.2.0 Branching F1 (1-level dark 1x) hash mismatch: got {hash_b1:#018x}"
+    );
+    assert_eq!(dmg_b1, vec![RectPx::new(496, 256, 288, 320)]);
+
+    // Fixture B2: 2-level child open + hovered submenu (1280x800@1x, Dark)
     let mut s_branch = WheelSession::new(
         Some(build_deep_menu(3, 4)),
         Point::new(640.0, 400.0),
@@ -789,7 +1010,7 @@ fn t_ren5_and_t_reg2_deterministic_golden_hashes_branching_and_concentric() {
 
     let mut r_branch_1 = Renderer::new(Theme::dark(), AssetSource::Embedded).unwrap();
     r_branch_1.begin_session(size, 1.0);
-    r_branch_1.render(s_branch.scene());
+    let dmg_b2 = r_branch_1.render(s_branch.scene()).to_vec();
     let hash_branch_1 = fnv1a_64(r_branch_1.frame().data);
 
     let mut r_branch_2 = Renderer::new(Theme::dark(), AssetSource::Embedded).unwrap();
@@ -797,8 +1018,69 @@ fn t_ren5_and_t_reg2_deterministic_golden_hashes_branching_and_concentric() {
     r_branch_2.render(s_branch.scene());
     let hash_branch_2 = fnv1a_64(r_branch_2.frame().data);
     assert_eq!(hash_branch_1, hash_branch_2);
+    assert_eq!(
+        hash_branch_1, 0x778b_132f_51fb_61cd,
+        "v0.2.0 Branching F2 (2-level dark 1x) hash mismatch: got {hash_branch_1:#018x}"
+    );
+    assert_eq!(dmg_b2, vec![RectPx::new(496, 22, 288, 527)]);
 
-    // 2. Concentric canonical scene (2 levels open + hovered child leaf + breadcrumb)
+    // Fixture B3 & B4: 3-level deep scene + hovered child leaf + caption (Dark & Light @ 1x)
+    let p_b00 = s_branch
+        .item_center(&ItemPath::from_slice(&[0, 0]))
+        .unwrap();
+    s_branch.handle(WheelInput::PointerMoved(p_b00), 510, &mut events);
+    s_branch.tick(800, &mut events);
+    let p_b002 = s_branch
+        .item_center(&ItemPath::from_slice(&[0, 0, 2]))
+        .unwrap();
+    s_branch.handle(WheelInput::PointerMoved(p_b002), 810, &mut events);
+    s_branch.tick(950, &mut events);
+
+    let mut rb3 = Renderer::new(Theme::dark(), AssetSource::Embedded).unwrap();
+    rb3.begin_session(size, 1.0);
+    let dmg_b3 = rb3.render(s_branch.scene()).to_vec();
+    let hash_b3 = fnv1a_64(rb3.frame().data);
+    assert_eq!(
+        hash_b3, 0xba43_4238_7605_73e5,
+        "v0.2.0 Branching F3 (3-level dark 1x) hash mismatch: got {hash_b3:#018x}"
+    );
+    assert_eq!(dmg_b3, vec![RectPx::new(119, 54, 665, 495)]);
+
+    let mut rb4 = Renderer::new(Theme::light(), AssetSource::Embedded).unwrap();
+    rb4.begin_session(size, 1.0);
+    let dmg_b4 = rb4.render(s_branch.scene()).to_vec();
+    let hash_b4 = fnv1a_64(rb4.frame().data);
+    assert_eq!(
+        hash_b4, 0xc4dc_293b_973d_93af,
+        "v0.2.0 Branching F4 (3-level light 1x) hash mismatch: got {hash_b4:#018x}"
+    );
+    assert_eq!(dmg_b4, vec![RectPx::new(119, 54, 665, 495)]);
+
+    // Fixture B5: 2-level scene at 2.0x HiDPI scale (2560x1600, Dark)
+    let mut sb5 = WheelSession::new(
+        Some(build_deep_menu(3, 4)),
+        Point::new(640.0, 400.0),
+        Viewport::new(1280.0, 800.0, 2.0),
+        InputMode::Drag,
+        &cfg_branch,
+        0,
+    );
+    sb5.set_root_badge(Some(3), 0);
+    sb5.tick(250, &mut events);
+    let p5_0 = sb5.item_center(&ItemPath::from_slice(&[0])).unwrap();
+    sb5.handle(WheelInput::PointerMoved(p5_0), 260, &mut events);
+    sb5.tick(500, &mut events);
+    let mut rb5 = Renderer::new(Theme::dark(), AssetSource::Embedded).unwrap();
+    rb5.begin_session(SizePx::new(2560, 1600), 2.0);
+    let dmg_b5 = rb5.render(sb5.scene()).to_vec();
+    let hash_b5 = fnv1a_64(rb5.frame().data);
+    assert_eq!(
+        hash_b5, 0xd7c4_2c7e_c26b_64cd,
+        "v0.2.0 Branching F5 (2-level dark 2x) hash mismatch: got {hash_b5:#018x}"
+    );
+    assert_eq!(dmg_b5, vec![RectPx::new(992, 44, 576, 1054)]);
+
+    // --- Concentric canonical scene (2 levels open + hovered child leaf + fixed 280x64 caption) ---
     let cfg_conc = WheelConfig {
         layout: WheelLayout::Concentric,
         ..WheelConfig::default()
@@ -837,11 +1119,7 @@ fn t_ren5_and_t_reg2_deterministic_golden_hashes_branching_and_concentric() {
     assert_ne!(hash_conc_1, hash_branch_1);
     println!("GOLDEN_HASHES: branch={hash_branch_1:#018x}, conc={hash_conc_1:#018x}");
     assert_eq!(
-        hash_branch_1, 0x778b_132f_51fb_61cd,
-        "Branching 2-level baseline golden hash changed unexpectedly: got {hash_branch_1:#018x}"
-    );
-    assert_eq!(
-        hash_conc_1, 0x721d_d762_9040_5808,
+        hash_conc_1, 0x3aac_1a44_aec2_5ec0,
         "Concentric 2-level golden hash changed unexpectedly: got {hash_conc_1:#018x}"
     );
 }

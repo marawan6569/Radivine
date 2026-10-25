@@ -1253,18 +1253,13 @@ impl Renderer {
                 .multiline_text_dims(d, 11.0 * scale, 400, max_text_w, 2)
         });
 
-        let pad_x = (12.0 * scale).round() as i32;
-        let pad_y = (6.0 * scale).round() as i32;
         let line_gap = (3.0 * scale).round() as i32;
 
-        let mut content_w = title_w as i32;
         let mut content_h = title_h as i32;
         if let Some(ref layout) = crumb_layout {
-            content_w = content_w.max(layout.width as i32);
             content_h += line_gap + (layout.height as i32);
         }
-        if let Some((dw, dh)) = detail_dims {
-            content_w = content_w.max(dw as i32);
+        if let Some((_, dh)) = detail_dims {
             content_h += line_gap + (dh as i32);
         }
 
@@ -1273,10 +1268,11 @@ impl Renderer {
         let box_w = (caption.box_.w * scale).round() as i32;
         let box_h = (caption.box_.h * scale).round() as i32;
 
-        let pill_w = (content_w + pad_x * 2).clamp((112.0 * scale) as i32, box_w);
-        let pill_h = (content_h + pad_y * 2).clamp((32.0 * scale) as i32, box_h);
-        let pill_x = box_x + (box_w - pill_w) / 2;
-        let pill_y = box_y + (box_h - pill_h) / 2;
+        // Fixed 280x64 lp Concentric caption box (`INTERACTION_DESIGN.md` §I2, §I8).
+        let pill_w = box_w.max(1);
+        let pill_h = box_h.max(1);
+        let pill_x = box_x;
+        let pill_y = box_y;
         let radius = 10.0 * scale;
 
         {
