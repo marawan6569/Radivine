@@ -7,12 +7,12 @@
 //! connection to any host X11 display (`DISPLAY=""`).
 
 use std::fs;
-use std::os::unix::fs::{PermissionsExt, symlink};
-use std::path::PathBuf;
+use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use radivine::config::AppConfig;
 use radivine::session::SessionController;
@@ -26,6 +26,31 @@ use radivine_platform::{
     PlatformError, PlatformEvent, RectPx, ShapePx, SourceInfo, Support,
 };
 use radivine_render::{AssetSource, Renderer};
+use sha2::{Digest, Sha256};
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SoakFileFingerprint {
+    path: PathBuf,
+    ino: u64,
+    size: u64,
+    mtime: Option<SystemTime>,
+    sha256: [u8; 32],
+}
+
+impl SoakFileFingerprint {
+    fn capture(path: &Path) -> Self {
+        let meta = fs::symlink_metadata(path).expect("symlink_metadata");
+        let bytes = fs::read(path).expect("read soak file");
+        let sha256: [u8; 32] = Sha256::digest(&bytes).into();
+        Self {
+            path: path.to_path_buf(),
+            ino: meta.ino(),
+            size: meta.len(),
+            mtime: meta.modified().ok(),
+            sha256,
+        }
+    }
+}
 
 #[derive(Default)]
 struct HeadlessPlatformState {
@@ -272,6 +297,7 @@ struct SoakCorpus {
     unicode_uri: String,
     valid_actions_path: PathBuf,
     invalid_actions_path: PathBuf,
+    fingerprints: Vec<SoakFileFingerprint>,
 }
 
 impl SoakCorpus {
@@ -354,6 +380,12 @@ args = ["-c", "echo pwn"]
             normalize_cli_arg_to_uri(p.to_str().expect("utf8"), &temp_dir).expect("uri")
         };
 
+        let fingerprints = vec![
+            SoakFileFingerprint::capture(&text_path),
+            SoakFileFingerprint::capture(&bin_path),
+            SoakFileFingerprint::capture(&unicode_path),
+        ];
+
         Self {
             text_uri: to_uri(&text_path),
             dir_uri: to_uri(&sub_dir),
@@ -367,7 +399,20 @@ args = ["-c", "echo pwn"]
             unicode_uri: to_uri(&unicode_path),
             valid_actions_path,
             invalid_actions_path,
+            fingerprints,
             temp_dir,
+        }
+    }
+
+    fn verify_fingerprints_unchanged(&self) {
+        for expected in &self.fingerprints {
+            let actual = SoakFileFingerprint::capture(&expected.path);
+            assert_eq!(
+                &actual,
+                expected,
+                "soak source file mutated: {}",
+                expected.path.display()
+            );
         }
     }
 }
@@ -754,6 +799,170 @@ fn run_twelve_scenario_cycle(
         drop_dispatch_us,
         frame_render_us,
     );
+
+    // Scenario 13: Switch layout Branching -> Concentric via `reload_config`, then run
+    // Concentric Drag + Shift multi-ring navigation (root `[0]` -> child ring 1 -> gap -> root `[1]` Copy commit)
+    let mut concentric_cfg = AppConfig::default();
+    concentric_cfg.wheel.layout = "concentric".to_string();
+    ctrl.reload_config(concentric_cfg.clone());
+    ctrl.handle_platform_events(vec![
+        PlatformEvent::DragArmed {
+            source: SourceInfo {
+                app: Some("nemo".to_string()),
+                pid: Some(4242),
+            },
+        },
+        PlatformEvent::Trigger {
+            at: PhysPoint::new(960, 540),
+        },
+        PlatformEvent::DndEnter {
+            types: vec!["text/uri-list".to_string()],
+        },
+        PlatformEvent::Payload {
+            mime: "text/uri-list".to_string(),
+            result: Ok(format!("{}\r\n", corpus.text_uri).into_bytes()),
+        },
+        PlatformEvent::DndPosition {
+            at: PhysPoint::new(960, 456),
+        },
+    ]);
+    assert_eq!(ctrl.status().active_layout, "concentric");
+    ctrl.on_timer(Instant::now() + Duration::from_millis(200));
+    ctrl.handle_platform_events(vec![
+        // Inter-ring radial gap (`r = 131`) must reject while keeping child ring open
+        PlatformEvent::DndPosition {
+            at: PhysPoint::new(960, 409),
+        },
+        // Child ring 1 leaf (`r = 164` top)
+        PlatformEvent::DndPosition {
+            at: PhysPoint::new(960, 374),
+        },
+        PlatformEvent::DndPosition {
+            at: PhysPoint::new(962, 374),
+        },
+        // Adopt sibling `[1]` (`Copy` at `+(84, 0)`) after grace and commit
+        PlatformEvent::DndPosition {
+            at: PhysPoint::new(1044, 540),
+        },
+    ]);
+    ctrl.on_timer(Instant::now() + Duration::from_millis(450));
+    ctrl.handle_platform_events(vec![
+        PlatformEvent::DndPosition {
+            at: PhysPoint::new(1046, 540),
+        },
+        PlatformEvent::DndDrop,
+        PlatformEvent::DragDisarmed,
+    ]);
+    assert_eq!(ctrl.status().session_state, "Idle");
+    record_metrics(
+        ctrl,
+        summon_us,
+        dnd_status_us,
+        drop_dispatch_us,
+        frame_render_us,
+    );
+
+    // Scenario 14: Concentric Invoke sustained 2-level navigation + mid-session `reload_config(Branching)`
+    // + `load_actions_from_path` menu reload (verifying active session snapshot immutability)
+    ctrl.summon_invoke(
+        vec![corpus.text_uri.clone()],
+        Some(PhysPoint::new(960, 540)),
+    )
+    .expect("summon_invoke scenario 14 concentric");
+    assert_eq!(ctrl.status().active_layout, "concentric");
+    let branching_cfg = AppConfig::default();
+    ctrl.reload_config(branching_cfg);
+    ctrl.load_actions_from_path(&corpus.valid_actions_path);
+    // Active session must remain Concentric with layout_pending = true until session ends
+    let mid_status = ctrl.status();
+    assert_eq!(mid_status.active_layout, "concentric");
+    assert!(mid_status.layout_pending);
+    ctrl.handle_platform_events(vec![
+        PlatformEvent::Key {
+            key: Key::Digit(1),
+            pressed: true,
+        },
+        PlatformEvent::Key {
+            key: Key::Backspace,
+            pressed: true,
+        },
+        PlatformEvent::Key {
+            key: Key::Digit(2),
+            pressed: true,
+        },
+        PlatformEvent::Key {
+            key: Key::Enter,
+            pressed: true,
+        },
+    ]);
+    assert_eq!(ctrl.status().session_state, "Idle");
+    record_metrics(
+        ctrl,
+        summon_us,
+        dnd_status_us,
+        drop_dispatch_us,
+        frame_render_us,
+    );
+
+    // Scenario 15: Concentric Drag non-actionable reject-zone cancellations (hub, radial gap,
+    // caption box, outside cluster drop) + corner Invoke Escape cancellation
+    ctrl.reload_config(concentric_cfg);
+    ctrl.handle_platform_events(vec![
+        PlatformEvent::DragArmed {
+            source: SourceInfo {
+                app: Some("nemo".to_string()),
+                pid: Some(4242),
+            },
+        },
+        PlatformEvent::Trigger {
+            at: PhysPoint::new(960, 540),
+        },
+        PlatformEvent::DndEnter {
+            types: vec!["text/uri-list".to_string()],
+        },
+        PlatformEvent::Payload {
+            mime: "text/uri-list".to_string(),
+            result: Ok(format!("{}\r\n", corpus.text_uri).into_bytes()),
+        },
+        // Hub (`r = 0`)
+        PlatformEvent::DndPosition {
+            at: PhysPoint::new(960, 540),
+        },
+        // Caption box (`(960, 908)`)
+        PlatformEvent::DndPosition {
+            at: PhysPoint::new(960, 908),
+        },
+        // Outside cluster (`(200, 200)`) + drop -> must reject (`dnd_finish(false)`)
+        PlatformEvent::DndPosition {
+            at: PhysPoint::new(200, 200),
+        },
+        PlatformEvent::DndDrop,
+        PlatformEvent::DragDisarmed,
+    ]);
+    assert_eq!(ctrl.status().session_state, "Idle");
+    assert_eq!(
+        plat_state
+            .lock()
+            .expect("lock")
+            .dnd_finishes
+            .last()
+            .copied(),
+        Some(false)
+    );
+
+    // Corner summon (`(20, 20)` -> clamped to `(334, 334)`) + Escape cancel
+    ctrl.summon_invoke(vec![corpus.text_uri.clone()], Some(PhysPoint::new(20, 20)))
+        .expect("summon_invoke corner concentric");
+    assert_eq!(ctrl.status().root_wheel_center_px, Some((334.0, 334.0)));
+    ctrl.handle_platform_events(vec![PlatformEvent::Key {
+        key: Key::Escape,
+        pressed: true,
+    }]);
+    assert_eq!(ctrl.status().session_state, "Idle");
+
+    // Scenario 16: Restore Branching layout for the next cycle and verify zero source file modifications
+    ctrl.reload_config(AppConfig::default());
+    corpus.verify_fingerprints_unchanged();
 }
 
 #[test]
@@ -818,6 +1027,7 @@ fn m6_one_hour_isolated_soak_test_ac_6_2() {
     let mut warmup_fds: Option<usize> = None;
     let mut peak_rss_kb = initial_rss_kb;
     let mut total_sessions = 0u64;
+    let mut cycles_completed = 0u64;
 
     let mut summon_us = Vec::with_capacity(8192);
     let mut dnd_status_us = Vec::with_capacity(8192);
@@ -837,13 +1047,14 @@ fn m6_one_hour_isolated_soak_test_ac_6_2() {
             &mut drop_dispatch_us,
             &mut frame_render_us,
         );
-        // Each cycle executes 15 distinct sessions across Drag and Invoke modes
-        total_sessions += 15;
+        // Each cycle executes 15 Branching sessions + 4 Concentric sessions = 19 distinct sessions
+        cycles_completed += 1;
+        total_sessions += 19;
 
         let rss_now = read_vm_rss_kb();
         peak_rss_kb = peak_rss_kb.max(rss_now);
 
-        if warmup_rss_kb.is_none() && total_sessions >= 750 {
+        if warmup_rss_kb.is_none() && total_sessions >= 760 {
             let settle_deadline = Instant::now() + Duration::from_millis(500);
             while Instant::now() < settle_deadline {
                 let _ = ctrl.status();
@@ -853,7 +1064,7 @@ fn m6_one_hour_isolated_soak_test_ac_6_2() {
             warmup_rss_kb = Some(settled_rss);
             warmup_fds = Some(count_open_fds());
             rss_timeline_kb.push((start.elapsed().as_secs(), total_sessions, settled_rss));
-        } else if warmup_rss_kb.is_some() && total_sessions.is_multiple_of(150) {
+        } else if warmup_rss_kb.is_some() && cycles_completed.is_multiple_of(10) {
             rss_timeline_kb.push((start.elapsed().as_secs(), total_sessions, rss_now));
             let warmup = warmup_rss_kb.unwrap_or(rss_now);
             let growth_kb = rss_now as i64 - warmup as i64;
@@ -863,7 +1074,13 @@ fn m6_one_hour_isolated_soak_test_ac_6_2() {
                 "status": "running",
                 "elapsed_secs": start.elapsed().as_secs(),
                 "target_secs": target_secs,
+                "cycles_completed": cycles_completed,
                 "total_sessions": total_sessions,
+                "branching_sessions": cycles_completed * 15,
+                "concentric_sessions": cycles_completed * 4,
+                "layout_switches": cycles_completed * 4,
+                "menu_reloads": cycles_completed * 3,
+                "cancellations": cycles_completed * 10,
                 "initial_rss_kb": initial_rss_kb,
                 "warmup_rss_kb": warmup,
                 "current_rss_kb": rss_now,
@@ -878,10 +1095,13 @@ fn m6_one_hour_isolated_soak_test_ac_6_2() {
                 "summon_p99_us": percentile_us(&summon_us, 99),
                 "dnd_status_p50_us": percentile_us(&dnd_status_us, 50),
                 "dnd_status_p95_us": percentile_us(&dnd_status_us, 95),
+                "dnd_status_p99_us": percentile_us(&dnd_status_us, 99),
                 "drop_dispatch_p50_us": percentile_us(&drop_dispatch_us, 50),
                 "drop_dispatch_p95_us": percentile_us(&drop_dispatch_us, 95),
+                "drop_dispatch_p99_us": percentile_us(&drop_dispatch_us, 99),
                 "frame_render_p50_us": percentile_us(&frame_render_us, 50),
                 "frame_render_p95_us": percentile_us(&frame_render_us, 95),
+                "frame_render_p99_us": percentile_us(&frame_render_us, 99),
             });
             let _ = fs::write(
                 &report_path,
@@ -903,7 +1123,7 @@ fn m6_one_hour_isolated_soak_test_ac_6_2() {
             frame_render_us.drain(0..4096);
         }
 
-        // Pace the soak loop during 1-hour runs after warm-up (~800 ms per 15-session cycle -> ~6,500+ sessions/hour)
+        // Pace the soak loop during 1-hour runs after warm-up (~800 ms per 19-session cycle -> ~8,500+ sessions/hour)
         if target_secs >= 60 && warmup_rss_kb.is_some() {
             thread::sleep(Duration::from_millis(800));
         }
@@ -928,11 +1148,19 @@ fn m6_one_hour_isolated_soak_test_ac_6_2() {
     let zombies = count_zombie_children();
     let elapsed_secs = start.elapsed().as_secs();
     let st = plat_state.lock().expect("lock");
+    corpus.verify_fingerprints_unchanged();
 
     let final_report = serde_json::json!({
         "status": "completed",
         "elapsed_secs": elapsed_secs,
+        "cycles_completed": cycles_completed,
         "total_sessions": total_sessions,
+        "branching_sessions": cycles_completed * 15,
+        "concentric_sessions": cycles_completed * 4,
+        "layout_switches": cycles_completed * 4,
+        "menu_reloads": cycles_completed * 3,
+        "cancellations": cycles_completed * 10,
+        "source_modifications_detected": 0,
         "initial_rss_kb": initial_rss_kb,
         "warmup_rss_kb": warmup_rss,
         "final_rss_kb": final_rss_kb,
@@ -951,10 +1179,13 @@ fn m6_one_hour_isolated_soak_test_ac_6_2() {
         "summon_p99_us": percentile_us(&summon_us, 99),
         "dnd_status_p50_us": percentile_us(&dnd_status_us, 50),
         "dnd_status_p95_us": percentile_us(&dnd_status_us, 95),
+        "dnd_status_p99_us": percentile_us(&dnd_status_us, 99),
         "drop_dispatch_p50_us": percentile_us(&drop_dispatch_us, 50),
         "drop_dispatch_p95_us": percentile_us(&drop_dispatch_us, 95),
+        "drop_dispatch_p99_us": percentile_us(&drop_dispatch_us, 99),
         "frame_render_p50_us": percentile_us(&frame_render_us, 50),
         "frame_render_p95_us": percentile_us(&frame_render_us, 95),
+        "frame_render_p99_us": percentile_us(&frame_render_us, 99),
         "rss_timeline_kb": rss_timeline_kb,
     });
     let report_json = serde_json::to_string_pretty(&final_report).expect("serialize soak report");
