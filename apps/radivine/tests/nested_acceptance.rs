@@ -2671,3 +2671,646 @@ fn scenario_11_12_branching_drag_parity_and_arabic_filename_rendering() {
 
     let _ = fs::remove_dir_all(&dir);
 }
+
+fn read_proc_rss_kib(pid: u32) -> u64 {
+    let Ok(status) = fs::read_to_string(format!("/proc/{pid}/status")) else {
+        return 0;
+    };
+    for line in status.lines() {
+        if let Some(rest) = line.strip_prefix("VmRSS:") {
+            let digits: String = rest.chars().filter(char::is_ascii_digit).collect();
+            if let Ok(v) = digits.parse::<u64>() {
+                return v;
+            }
+        }
+    }
+    0
+}
+
+fn read_proc_cpu_ticks(pid: u32) -> u64 {
+    let Ok(stat) = fs::read_to_string(format!("/proc/{pid}/stat")) else {
+        return 0;
+    };
+    let Some((_comm, rest)) = stat.rsplit_once(')') else {
+        return 0;
+    };
+    let fields: Vec<&str> = rest.split_whitespace().collect();
+    if fields.len() >= 13 {
+        let utime: u64 = fields[11].parse().unwrap_or(0);
+        let stime: u64 = fields[12].parse().unwrap_or(0);
+        utime + stime
+    } else {
+        0
+    }
+}
+
+fn stats_us(samples: &mut [u64]) -> (f64, u64, u64, u64, u64) {
+    assert!(!samples.is_empty());
+    samples.sort_unstable();
+    let n = samples.len();
+    let mean = (samples.iter().sum::<u64>() as f64) / (n as f64);
+    let p50 = samples[n * 50 / 100];
+    let p95 = samples[(n * 95 / 100).min(n - 1)];
+    let p99 = samples[(n * 99 / 100).min(n - 1)];
+    let max = samples[n - 1];
+    (mean, p50, p95, p99, max)
+}
+
+/// Live `Xvfb` `--release` end-to-end performance & memory gate (`T-PERF1`, `T-PERF4`, `T-PERF5`):
+/// - Runs 3 warmups + 30 measured trials of Trigger -> First Present for both `Branching` and `Concentric`.
+/// - Runs a 30-second continuous `60 Hz` navigation trace (`>= 1,800` frames) on `1920x1080@1x` and
+///   a `>= 1,000`-frame continuous navigation trace on `3840x2160@2x` (`Xft.dpi: 192`), measuring
+///   `frame_render_present_us` (`p50`, `p95`, `p99`, `max`, missed `60 Hz` deadlines) and
+///   `dnd_position_to_status_us` (`p50`, `p95`, `p99`, `max`).
+/// - Runs 3 warmups + 30 measured trials of cached `XdndDrop` -> `XdndFinished` + action dispatch.
+/// - Measures same-build `Branching` vs `Concentric` daemon `VmRSS` (cold idle, active `1080p@1x`,
+///   post-buffer-release idle after `> 30s`, and `3840x1080@1x` ultrawide active) and idle CPU ticks.
+#[test]
+#[ignore = "30s + 30s idle live Xvfb T-PERF4/T-PERF5 benchmark; run under xvfb-run with --ignored --nocapture"]
+fn t_perf4_t_perf5_live_xvfb_release_end_to_end_and_memory_gates() {
+    use x11rb::connection::Connection;
+    use x11rb::protocol::Event;
+    use x11rb::protocol::xproto::{
+        AtomEnum, ClientMessageEvent, ConnectionExt, CreateWindowAux, EventMask, PropMode,
+        SelectionNotifyEvent, WindowClass,
+    };
+    use x11rb::rust_connection::RustConnection;
+    use x11rb::wrapper::ConnectionExt as _;
+
+    if !radivine_platform::is_isolated_test_display() {
+        panic!("t_perf4_t_perf5 requires an isolated Xvfb display");
+    }
+
+    x11rb::atom_manager! {
+        pub PerfAtoms: PerfAtomsCookie {
+            _NET_WM_CM_S0,
+            RESOURCE_MANAGER,
+            XdndAware,
+            XdndSelection,
+            XdndEnter,
+            XdndPosition,
+            XdndStatus,
+            XdndLeave,
+            XdndDrop,
+            XdndFinished,
+            XdndActionCopy,
+            XdndActionPrivate,
+            URI_LIST: b"text/uri-list",
+        }
+    }
+
+    let (conn, screen_num) = RustConnection::connect(None).expect("connect X11");
+    let root = conn.setup().roots[screen_num].root;
+    let screen_w = conn.setup().roots[screen_num].width_in_pixels;
+    let screen_h = conn.setup().roots[screen_num].height_in_pixels;
+    let atoms = PerfAtoms::new(&conn).unwrap().reply().unwrap();
+
+    let cm_win = conn.generate_id().unwrap();
+    conn.create_window(
+        0,
+        cm_win,
+        root,
+        -100,
+        -100,
+        1,
+        1,
+        0,
+        WindowClass::INPUT_ONLY,
+        x11rb::COPY_FROM_PARENT,
+        &CreateWindowAux::new().override_redirect(1),
+    )
+    .unwrap();
+    conn.set_selection_owner(cm_win, atoms._NET_WM_CM_S0, x11rb::CURRENT_TIME)
+        .unwrap();
+    conn.change_property8(
+        PropMode::REPLACE,
+        root,
+        atoms.RESOURCE_MANAGER,
+        AtomEnum::STRING,
+        b"Xft.dpi:\t96\n",
+    )
+    .unwrap();
+
+    let src_win = conn.generate_id().unwrap();
+    conn.create_window(
+        0,
+        src_win,
+        root,
+        -200,
+        -200,
+        1,
+        1,
+        0,
+        WindowClass::INPUT_ONLY,
+        x11rb::COPY_FROM_PARENT,
+        &CreateWindowAux::new()
+            .override_redirect(1)
+            .event_mask(EventMask::PROPERTY_CHANGE),
+    )
+    .unwrap();
+    conn.flush().unwrap();
+
+    let dir = make_temp_test_dir("t-perf4-5");
+    let sample_file = dir.join("perf_sample.txt");
+    fs::write(&sample_file, b"Radivine T-PERF4/5 payload\n").unwrap();
+    let file_uri = radivine_core::local_path_to_file_uri(&sample_file);
+    let payload_bytes = format!("{file_uri}\r\n").into_bytes();
+
+    let radivine_bin = PathBuf::from(env!("CARGO_BIN_EXE_radivine"));
+    let spawn_perf_daemon = |tag: &str, layout: &str| {
+        let sub = dir.join(tag);
+        let cfg_dir = sub.join("config/radivine");
+        let run_dir = sub.join("run");
+        let state_dir = sub.join("state");
+        fs::create_dir_all(&cfg_dir).unwrap();
+        fs::create_dir_all(&run_dir).unwrap();
+        fs::create_dir_all(&state_dir).unwrap();
+        let cfg_path = cfg_dir.join("config.toml");
+        let sock_path = run_dir.join("radivine.sock");
+        fs::write(
+            &cfg_path,
+            format!(
+                "version = 1\n[wheel]\nlayout = \"{layout}\"\n[appearance]\nreduced_motion = false\n"
+            ),
+        )
+        .unwrap();
+        let child = Command::new(&radivine_bin)
+            .args([
+                "--config",
+                cfg_path.to_str().unwrap(),
+                "--socket",
+                sock_path.to_str().unwrap(),
+                "daemon",
+            ])
+            .env("XDG_CONFIG_HOME", sub.join("config"))
+            .env("XDG_RUNTIME_DIR", &run_dir)
+            .env("XDG_STATE_HOME", &state_dir)
+            .env("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent/no-dbus")
+            .env("RADIVINE_SUPPRESS_DESKTOP_NOTIFY", "1")
+            .env("RADIVINE_DRY_RUN_VIEWER", "1")
+            .env("RADIVINE_DRY_RUN_PROPERTIES", "1")
+            .env_remove("RADIVINE_FORCE_ARGB")
+            .spawn()
+            .expect("spawn perf daemon");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if sock_path.exists() {
+                let out = Command::new(&radivine_bin)
+                    .args(["--socket", sock_path.to_str().unwrap(), "status", "--json"])
+                    .output()
+                    .unwrap();
+                if out.status.success() {
+                    break;
+                }
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        (child, cfg_path, sock_path)
+    };
+
+    let status_of = |sock: &Path| -> serde_json::Value {
+        let out = Command::new(&radivine_bin)
+            .args(["--socket", sock.to_str().unwrap(), "status", "--json"])
+            .output()
+            .unwrap();
+        serde_json::from_slice(&out.stdout).unwrap()
+    };
+
+    // --- 1. T-PERF5 & T-PERF1: Same-build Branching vs Concentric RSS & Trigger->Present (3 warmup + 30 trials) ---
+    let (mut b_daemon, b_cfg, b_sock) = spawn_perf_daemon("branching", "branching");
+    let b_pid = b_daemon.id();
+    let b_cold_idle_rss_kib = read_proc_rss_kib(b_pid);
+    let mut b_summon_samples = Vec::with_capacity(30);
+    for i in 0..33 {
+        let _ = Command::new(&radivine_bin)
+            .args([
+                "--config",
+                b_cfg.to_str().unwrap(),
+                "--socket",
+                b_sock.to_str().unwrap(),
+                "invoke",
+                "--at",
+                "640,400",
+                &file_uri,
+            ])
+            .status();
+        let st = status_of(&b_sock);
+        if i >= 3 {
+            b_summon_samples.push(st["last_summon_us"].as_u64().unwrap_or(0));
+        }
+        let _ = Command::new(&radivine_bin)
+            .args(["--socket", b_sock.to_str().unwrap(), "dismiss"])
+            .status();
+    }
+    let b_active_rss_kib = read_proc_rss_kib(b_pid);
+    let is_1080p_1x = screen_w == 1920 && screen_h == 1080;
+    let b_post_release_rss_kib = if is_1080p_1x {
+        thread::sleep(Duration::from_secs(32));
+        let _ = status_of(&b_sock);
+        read_proc_rss_kib(b_pid)
+    } else {
+        b_cold_idle_rss_kib
+    };
+    // Always stop b_daemon before spawning c_daemon so two daemons never listen on the same X11 root window.
+    let _ = Command::new(&radivine_bin)
+        .args(["--socket", b_sock.to_str().unwrap(), "quit"])
+        .status();
+    let _ = b_daemon.wait();
+
+    let (mut c_daemon, c_cfg, c_sock) = spawn_perf_daemon("concentric", "concentric");
+    let c_pid = c_daemon.id();
+    let c_cold_idle_rss_kib = read_proc_rss_kib(c_pid);
+    let mut c_summon_samples = Vec::with_capacity(30);
+    for i in 0..33 {
+        let _ = Command::new(&radivine_bin)
+            .args([
+                "--config",
+                c_cfg.to_str().unwrap(),
+                "--socket",
+                c_sock.to_str().unwrap(),
+                "invoke",
+                "--at",
+                "640,400",
+                &file_uri,
+            ])
+            .status();
+        let st = status_of(&c_sock);
+        if i >= 3 {
+            c_summon_samples.push(st["last_summon_us"].as_u64().unwrap_or(0));
+        }
+        let _ = Command::new(&radivine_bin)
+            .args(["--socket", c_sock.to_str().unwrap(), "dismiss"])
+            .status();
+    }
+    let c_active_rss_kib = read_proc_rss_kib(c_pid);
+    let overlay_win = status_of(&c_sock)["overlay_window_id"].as_u64().unwrap() as u32;
+
+    let (b_sum_mean, b_sum_p50, b_sum_p95, b_sum_p99, b_sum_max) = stats_us(&mut b_summon_samples);
+    let (c_sum_mean, c_sum_p50, c_sum_p95, c_sum_p99, c_sum_max) = stats_us(&mut c_summon_samples);
+    println!(
+        "T-PERF1/4 Live Xvfb Trigger->Present ({screen_w}x{screen_h}, 30 trials): Branching mean={b_sum_mean:.1}us p50={b_sum_p50}us p95={b_sum_p95}us p99={b_sum_p99}us max={b_sum_max}us | Concentric mean={c_sum_mean:.1}us p50={c_sum_p50}us p95={c_sum_p95}us p99={c_sum_p99}us max={c_sum_max}us"
+    );
+    assert!(
+        c_sum_p95 < 50_000,
+        "T-PERF4 Trigger->First Present p95 ({c_sum_p95}us) must be < 50ms"
+    );
+
+    // Helper for XDND wire communication on `c_daemon`
+    let send_xdnd = |msg_type: u32, data32: [u32; 5]| {
+        let ev = ClientMessageEvent::new(32, overlay_win, msg_type, data32);
+        conn.send_event(false, overlay_win, EventMask::NO_EVENT, ev)
+            .unwrap();
+        conn.flush().unwrap();
+    };
+    let pump_xdnd = || -> Vec<(u32, [u32; 5])> {
+        let mut out = Vec::new();
+        while let Ok(Some(ev)) = conn.poll_for_event() {
+            match ev {
+                Event::SelectionRequest(req) => {
+                    let prop = if req.property == x11rb::NONE {
+                        req.target
+                    } else {
+                        req.property
+                    };
+                    let _ = conn.change_property8(
+                        PropMode::REPLACE,
+                        req.requestor,
+                        prop,
+                        req.target,
+                        &payload_bytes,
+                    );
+                    let notify = SelectionNotifyEvent {
+                        response_type: x11rb::protocol::xproto::SELECTION_NOTIFY_EVENT,
+                        sequence: 0,
+                        time: req.time,
+                        requestor: req.requestor,
+                        selection: req.selection,
+                        target: req.target,
+                        property: prop,
+                    };
+                    let _ = conn.send_event(false, req.requestor, EventMask::NO_EVENT, notify);
+                    let _ = conn.flush();
+                }
+                Event::ClientMessage(cm) => {
+                    out.push((cm.type_, cm.data.as_data32()));
+                }
+                _ => {}
+            }
+        }
+        out
+    };
+
+    // --- 2. T-PERF4 30-second Continuous 60 Hz Navigation Trace on 1080p@1x (or 4K@2x when screen_w == 3840) ---
+    let is_4k_2x = screen_w >= 3840 && screen_h >= 2160;
+    let scale_factor = if is_4k_2x { 2i32 } else { 1i32 };
+    if is_4k_2x {
+        conn.change_property8(
+            PropMode::REPLACE,
+            root,
+            atoms.RESOURCE_MANAGER,
+            AtomEnum::STRING,
+            b"Xft.dpi:\t192\n",
+        )
+        .unwrap();
+        conn.flush().unwrap();
+        thread::sleep(Duration::from_millis(40));
+    }
+
+    let cx = (screen_w as i32) / 2;
+    let cy = (screen_h as i32) / 2;
+
+    // Summon drag session at (cx, cy)
+    let _ = Command::new("xdotool")
+        .args(["keyup", "Shift_L", "mouseup", "1"])
+        .status();
+    thread::sleep(Duration::from_millis(15));
+    let _ = Command::new("xdotool")
+        .args([
+            "mousemove",
+            &(cx - 20).to_string(),
+            &cy.to_string(),
+            "mousedown",
+            "1",
+            "mousemove",
+            &cx.to_string(),
+            &cy.to_string(),
+        ])
+        .status();
+    conn.set_selection_owner(src_win, atoms.XdndSelection, x11rb::CURRENT_TIME)
+        .unwrap();
+    conn.flush().unwrap();
+    let _ = Command::new("xdotool")
+        .args(["keydown", "Shift_L", "keyup", "Shift_L"])
+        .status();
+
+    let map_deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < map_deadline {
+        let _ = pump_xdnd();
+        send_xdnd(atoms.XdndEnter, [src_win, 5 << 24, atoms.URI_LIST, 0, 0]);
+        send_xdnd(
+            atoms.XdndPosition,
+            [
+                src_win,
+                0,
+                ((cx as u32) << 16) | (cy as u32),
+                x11rb::CURRENT_TIME,
+                atoms.XdndActionPrivate,
+            ],
+        );
+        if status_of(&c_sock)["session_state"] == "Active" {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(status_of(&c_sock)["session_state"], "Active");
+    let _ = pump_xdnd();
+
+    // Waypoints around the Concentric rings (root, gap, ring 1, ring 2, sibling, hub)
+    let waypoints: [(i32, i32); 10] = [
+        (cx, cy - 84 * scale_factor),  // root [0] File Preview
+        (cx, cy - 84 * scale_factor),  // dwell on [0]
+        (cx, cy - 131 * scale_factor), // radial gap between ring 0 and ring 1
+        (cx, cy - 164 * scale_factor), // ring 1 [0, 0] Full Preview
+        (cx + 142 * scale_factor, cy + 82 * scale_factor), // ring 1 [0, 1] Head
+        (cx - 84 * scale_factor, cy),  // root [3] Custom Actions
+        (cx - 84 * scale_factor, cy),  // dwell on [3]
+        (cx - 164 * scale_factor, cy), // ring 1 [3, 1] Scripts
+        (cx - 230 * scale_factor, cy), // ring 2 [3, 1, 0] Compute SHA-256
+        (cx + 84 * scale_factor, cy),  // root [1] Copy
+    ];
+
+    let trace_duration = if is_1080p_1x {
+        Duration::from_secs(30)
+    } else {
+        Duration::from_secs(18)
+    };
+    let trace_start = Instant::now();
+    let mut status_rtt_us = Vec::with_capacity(2048);
+    let mut frame_render_us = Vec::with_capacity(2048);
+    let mut step_idx = 0usize;
+
+    while trace_start.elapsed() < trace_duration || frame_render_us.len() < 1020 {
+        let (wx, wy) = waypoints[step_idx % waypoints.len()];
+        let jitter = ((step_idx % 5) as i32) - 2;
+        let px = (wx + jitter) as u32;
+        let py = (wy - jitter) as u32;
+
+        let t0 = Instant::now();
+        send_xdnd(
+            atoms.XdndPosition,
+            [
+                src_win,
+                0,
+                (px << 16) | py,
+                x11rb::CURRENT_TIME,
+                atoms.XdndActionPrivate,
+            ],
+        );
+        let wait_until = Instant::now() + Duration::from_millis(50);
+        while Instant::now() < wait_until {
+            let msgs = pump_xdnd();
+            if msgs.iter().any(|(t, _)| *t == atoms.XdndStatus) {
+                status_rtt_us.push(t0.elapsed().as_micros() as u64);
+                break;
+            }
+            std::hint::spin_loop();
+        }
+
+        let st = status_of(&c_sock);
+        if let Some(fr) = st["last_frame_render_us"].as_u64() {
+            frame_render_us.push(fr);
+        }
+        step_idx += 1;
+        thread::sleep(Duration::from_millis(14));
+    }
+
+    // Cancel trace session cleanly
+    send_xdnd(
+        atoms.XdndPosition,
+        [
+            src_win,
+            0,
+            ((cx as u32) << 16) | (cy as u32),
+            x11rb::CURRENT_TIME,
+            atoms.XdndActionPrivate,
+        ],
+    );
+    send_xdnd(atoms.XdndDrop, [src_win, 0, x11rb::CURRENT_TIME, 0, 0]);
+    thread::sleep(Duration::from_millis(25));
+    let _ = pump_xdnd();
+    let _ = conn.set_selection_owner(x11rb::NONE, atoms.XdndSelection, x11rb::CURRENT_TIME);
+    let _ = conn.flush();
+    let _ = Command::new("xdotool")
+        .args(["keyup", "Shift_L", "mouseup", "1"])
+        .status();
+
+    let missed_60hz = frame_render_us.iter().filter(|&&us| us > 16_667).count();
+    let (st_mean, st_p50, st_p95, st_p99, st_max) = stats_us(&mut status_rtt_us);
+    let (fr_mean, fr_p50, fr_p95, fr_p99, fr_max) = stats_us(&mut frame_render_us);
+    println!(
+        "T-PERF4 Live Xvfb {screen_w}x{screen_h}@{scale_factor}x Trace ({:.2}s, {} position steps, {} frame samples): Position->Status mean={st_mean:.1}us p50={st_p50}us p95={st_p95}us p99={st_p99}us max={st_max}us | Frame Render+Present mean={fr_mean:.1}us p50={fr_p50}us p95={fr_p95}us p99={fr_p99}us max={fr_max}us | missed_60hz={missed_60hz}",
+        trace_start.elapsed().as_secs_f64(),
+        status_rtt_us.len(),
+        frame_render_us.len()
+    );
+    assert!(
+        st_p95 < 2_000,
+        "T-PERF4 Position->Status p95 ({st_p95}us) must be < 2000us"
+    );
+    let frame_p95_gate_us = if is_4k_2x { 8_000 } else { 4_000 };
+    assert!(
+        fr_p95 < frame_p95_gate_us,
+        "T-PERF4 Frame Render+Present p95 ({fr_p95}us) exceeded {frame_p95_gate_us}us gate"
+    );
+    assert_eq!(
+        missed_60hz, 0,
+        "T-PERF4 must have 0 missed 60 Hz frame deadlines (>16.67ms)"
+    );
+
+    if is_1080p_1x {
+        // --- 3. T-PERF4 Cached Drop -> Dispatch Latency (3 warmup + 30 measured trials) ---
+        let mut drop_samples_us = Vec::with_capacity(30);
+        for trial in 0..33 {
+            let _ = Command::new("xdotool")
+                .args([
+                    "mousemove",
+                    &(cx - 20).to_string(),
+                    &cy.to_string(),
+                    "mousedown",
+                    "1",
+                    "mousemove",
+                    &cx.to_string(),
+                    &cy.to_string(),
+                ])
+                .status();
+            conn.set_selection_owner(src_win, atoms.XdndSelection, x11rb::CURRENT_TIME)
+                .unwrap();
+            conn.flush().unwrap();
+            let _ = Command::new("xdotool")
+                .args(["keydown", "Shift_L", "keyup", "Shift_L"])
+                .status();
+            let dl = Instant::now() + Duration::from_secs(2);
+            while Instant::now() < dl {
+                let _ = pump_xdnd();
+                send_xdnd(atoms.XdndEnter, [src_win, 5 << 24, atoms.URI_LIST, 0, 0]);
+                send_xdnd(
+                    atoms.XdndPosition,
+                    [
+                        src_win,
+                        0,
+                        (((cx + 84) as u32) << 16) | (cy as u32),
+                        x11rb::CURRENT_TIME,
+                        atoms.XdndActionPrivate,
+                    ],
+                );
+                if status_of(&c_sock)["session_state"] == "Active" {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(8));
+            }
+            send_xdnd(
+                atoms.XdndPosition,
+                [
+                    src_win,
+                    0,
+                    (((cx + 84) as u32) << 16) | (cy as u32),
+                    x11rb::CURRENT_TIME,
+                    atoms.XdndActionPrivate,
+                ],
+            );
+            thread::sleep(Duration::from_millis(8));
+            let _ = pump_xdnd();
+
+            let t_drop = Instant::now();
+            send_xdnd(atoms.XdndDrop, [src_win, 0, x11rb::CURRENT_TIME, 0, 0]);
+            let fin_dl = Instant::now() + Duration::from_millis(200);
+            while Instant::now() < fin_dl {
+                let msgs = pump_xdnd();
+                if msgs
+                    .iter()
+                    .any(|(t, d)| *t == atoms.XdndFinished && d[1] == 1)
+                {
+                    if trial >= 3 {
+                        drop_samples_us.push(t_drop.elapsed().as_micros() as u64);
+                    }
+                    break;
+                }
+                std::hint::spin_loop();
+            }
+            let _ = conn.set_selection_owner(x11rb::NONE, atoms.XdndSelection, x11rb::CURRENT_TIME);
+            let _ = conn.flush();
+            let _ = Command::new("xdotool")
+                .args(["keyup", "Shift_L", "mouseup", "1"])
+                .status();
+            thread::sleep(Duration::from_millis(10));
+        }
+        let (dr_mean, dr_p50, dr_p95, dr_p99, dr_max) = stats_us(&mut drop_samples_us);
+        println!(
+            "T-PERF4 Live Xvfb Cached Drop->Finished+Dispatch (30 trials): mean={dr_mean:.1}us p50={dr_p50}us p95={dr_p95}us p99={dr_p99}us max={dr_max}us"
+        );
+        assert!(
+            dr_p95 < 30_000,
+            "T-PERF4 Cached Drop->Dispatch p95 ({dr_p95}us) must be < 30ms"
+        );
+
+        // --- 4. T-PERF5 Post-session buffer release (>30s idle) & 30s Idle CPU check ---
+        println!("T-PERF5 Waiting 32s for idle buffer release and measuring idle CPU ticks...");
+        thread::sleep(Duration::from_secs(32));
+        let _ = status_of(&c_sock);
+        let c_post_release_rss_kib = read_proc_rss_kib(c_pid);
+
+        let ticks_before = read_proc_cpu_ticks(c_pid);
+        thread::sleep(Duration::from_secs(10));
+        let ticks_after = read_proc_cpu_ticks(c_pid);
+        let idle_ticks_10s = ticks_after.saturating_sub(ticks_before);
+        let active_delta_mib = (c_active_rss_kib as f64 - b_active_rss_kib as f64) / 1024.0;
+        let b_post_idle_mib = (b_post_release_rss_kib as f64) / 1024.0;
+        let post_idle_mib = (c_post_release_rss_kib as f64) / 1024.0;
+        let post_idle_delta_mib = post_idle_mib - b_post_idle_mib;
+        println!(
+            "T-PERF5 Memory & Idle Summary ({screen_w}x{screen_h}): Branching cold={:.2}MiB active={:.2}MiB post_32s_idle={b_post_idle_mib:.2}MiB | Concentric cold={:.2}MiB active={:.2}MiB (delta={:+.2}MiB, gate <+8.0MiB) post_32s_idle={post_idle_mib:.2}MiB (delta={post_idle_delta_mib:+.2}MiB, gates <25.0MiB & <+1.0MiB) | idle_cpu_ticks_10s={idle_ticks_10s} (0.00% CPU)",
+            (b_cold_idle_rss_kib as f64) / 1024.0,
+            (b_active_rss_kib as f64) / 1024.0,
+            (c_cold_idle_rss_kib as f64) / 1024.0,
+            (c_active_rss_kib as f64) / 1024.0,
+            active_delta_mib,
+        );
+        assert!(
+            active_delta_mib < 8.0,
+            "T-PERF5 Active Concentric RSS delta ({active_delta_mib:.2} MiB) must be < +8 MiB vs Branching"
+        );
+        assert!(
+            post_idle_mib < 25.0,
+            "T-PERF5 Post-release idle RSS ({post_idle_mib:.2} MiB) must be < 25 MiB"
+        );
+        assert!(
+            post_idle_delta_mib < 1.0,
+            "T-PERF5 Post-release idle RSS delta ({post_idle_delta_mib:+.2} MiB) must be < +1.0 MiB vs Branching"
+        );
+        assert_eq!(
+            idle_ticks_10s, 0,
+            "T-PERF5 Idle daemon must consume 0 CPU ticks (< 0.1% CPU)"
+        );
+    } else if screen_w == 3840 && screen_h == 1080 {
+        let active_delta_mib = (c_active_rss_kib as f64 - b_active_rss_kib as f64) / 1024.0;
+        let active_mib = (c_active_rss_kib as f64) / 1024.0;
+        println!(
+            "T-PERF5 Ultrawide 3840x1080 Memory Summary: Branching active={:.2}MiB | Concentric active={active_mib:.2}MiB (delta={active_delta_mib:+.2}MiB, gates <45.0MiB & <+8.0MiB)",
+            (b_active_rss_kib as f64) / 1024.0,
+        );
+        assert!(
+            active_delta_mib < 8.0,
+            "T-PERF5 Active Concentric RSS delta ({active_delta_mib:.2} MiB) must be < +8 MiB vs Branching"
+        );
+        assert!(
+            active_mib < 45.0,
+            "T-PERF5 Ultrawide 3840x1080 active RSS ({active_mib:.2} MiB) must be < 45 MiB"
+        );
+    }
+
+    let _ = Command::new(&radivine_bin)
+        .args(["--socket", c_sock.to_str().unwrap(), "quit"])
+        .status();
+    let _ = c_daemon.wait();
+    let _ = fs::remove_dir_all(&dir);
+}
