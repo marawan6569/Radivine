@@ -25,6 +25,7 @@ use radivine_platform::{
 };
 use radivine_render::{AssetSource, Renderer};
 use radivine_wheel::{ItemPath, Point, WheelLayout};
+use sha2::{Digest, Sha256};
 
 fn make_temp_test_dir(tag: &str) -> PathBuf {
     static COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -40,6 +41,7 @@ fn make_temp_test_dir(tag: &str) -> PathBuf {
 struct FileFingerprint {
     path: PathBuf,
     bytes: Vec<u8>,
+    sha256: [u8; 32],
     size: u64,
     ino: u64,
     mtime: Option<SystemTime>,
@@ -49,9 +51,11 @@ impl FileFingerprint {
     fn capture(path: &Path) -> Self {
         let meta = fs::symlink_metadata(path).expect("symlink_metadata");
         let bytes = fs::read(path).expect("read file bytes");
+        let sha256: [u8; 32] = Sha256::digest(&bytes).into();
         Self {
             path: path.to_path_buf(),
             bytes,
+            sha256,
             size: meta.len(),
             ino: meta.ino(),
             mtime: meta.modified().ok(),
@@ -1027,44 +1031,87 @@ exec = ["/bin/true", "{{path}}"]
 /// - Display invalidation (`MonitorsChanged` and mid-session compositor loss) enters `reject_until_drag_end` (`T-X118`).
 #[test]
 fn t_x111_t_x118_concentric_fallbacks_edges_negative_origin_fractional_scale_and_display_guards() {
-    // --- Scenario 7a: Insufficient viewport space falls back to Branching with exact caption ---
-    let small_mon = vec![Monitor {
+    // --- Scenario 7a: Viewport capacity contract (4 rings Rreserve = 326 + 280x64 caption -> 668x742 lp) ---
+    // 1366x768 @ 1x supports Concentric; 1280x720 @ 1x (720 < 742) falls back to Branching (`insufficient_space`)
+    let mon_1366 = vec![Monitor {
         id: 0,
-        name: "SMALL-0".into(),
-        rect: RectPx::new(0, 0, 640, 480),
+        name: "LAPTOP-1366".into(),
+        rect: RectPx::new(0, 0, 1366, 768),
         refresh_mhz: 60_000,
         primary: true,
     }];
-    let (plat_small, _) = FakePlatform::new(small_mon, 1.0, true);
-    let mut ctrl_small = make_controller(
-        plat_small,
-        Arc::new(builtin_registry()),
-        concentric_config(),
-    );
-    ctrl_small
+    let (plat_1366, _) = FakePlatform::new(mon_1366, 1.0, true);
+    let mut ctrl_1366 =
+        make_controller(plat_1366, Arc::new(builtin_registry()), concentric_config());
+    ctrl_1366
         .summon_invoke(
-            vec!["file:///tmp/small.txt".into()],
-            Some(PhysPoint::new(320, 240)),
+            vec!["file:///tmp/1366.txt".into()],
+            Some(PhysPoint::new(683, 384)),
         )
-        .expect("summon on small viewport");
-    let st_small = ctrl_small.status();
-    assert_eq!(st_small.requested_layout, "concentric");
-    assert_eq!(st_small.active_layout, "branching");
-    assert_eq!(
-        st_small.layout_fallback_reason.as_deref(),
-        Some("insufficient_space")
-    );
-    let cap_small = ctrl_small
+        .expect("summon on 1366x768");
+    let st_1366 = ctrl_1366.status();
+    assert_eq!(st_1366.requested_layout, "concentric");
+    assert_eq!(st_1366.active_layout, "concentric");
+    assert!(st_1366.layout_fallback_reason.is_none());
+    let plan_1366 = ctrl_1366
         .wheel_session()
         .unwrap()
-        .scene()
-        .caption
-        .as_ref()
-        .expect("fallback caption");
-    assert_eq!(
-        cap_small.title.as_ref(),
-        "Using Branching: nested rings need more space"
-    );
+        .concentric_plan()
+        .expect("1366x768 concentric plan");
+    assert_eq!(plan_1366.radii.len(), 4);
+    assert_eq!(plan_1366.reserved_radius, 326.0);
+    assert_eq!(plan_1366.caption_box.w, 280.0);
+    assert_eq!(plan_1366.caption_box.h, 64.0);
+    assert!(plan_1366.caption_box.bottom() <= 768.0 - 8.0 + 1e-3);
+    ctrl_1366.dismiss_immediate();
+
+    for (w, h, label) in [
+        (1280, 720, "1280x720"),
+        (668, 741, "668x741"),
+        (667, 742, "667x742"),
+        (640, 480, "640x480"),
+    ] {
+        let small_mon = vec![Monitor {
+            id: 0,
+            name: label.into(),
+            rect: RectPx::new(0, 0, w, h),
+            refresh_mhz: 60_000,
+            primary: true,
+        }];
+        let (plat_small, _) = FakePlatform::new(small_mon, 1.0, true);
+        let mut ctrl_small = make_controller(
+            plat_small,
+            Arc::new(builtin_registry()),
+            concentric_config(),
+        );
+        ctrl_small
+            .summon_invoke(
+                vec!["file:///tmp/small.txt".into()],
+                Some(PhysPoint::new((w / 2) as i32, (h / 2) as i32)),
+            )
+            .expect("summon on small viewport");
+        let st_small = ctrl_small.status();
+        assert_eq!(st_small.requested_layout, "concentric");
+        assert_eq!(
+            st_small.active_layout, "branching",
+            "{label} must fall back to branching"
+        );
+        assert_eq!(
+            st_small.layout_fallback_reason.as_deref(),
+            Some("insufficient_space")
+        );
+        let cap_small = ctrl_small
+            .wheel_session()
+            .unwrap()
+            .scene()
+            .caption
+            .as_ref()
+            .expect("fallback caption");
+        assert_eq!(
+            cap_small.title.as_ref(),
+            "Using Branching: nested rings need more space"
+        );
+    }
 
     // --- Scenario 7b: No compositor (`translucent = false`) falls back to Branching (`no_compositor`) ---
     let (plat_nocomp, _) = FakePlatform::new(default_1080p_monitor(), 1.0, false);
@@ -1131,15 +1178,28 @@ fn t_x111_t_x118_concentric_fallbacks_edges_negative_origin_fractional_scale_and
             2,
             "nested submenu must open cleanly at edge/corner {pt:?}"
         );
+        let plan = ctrl_edges
+            .wheel_session()
+            .unwrap()
+            .concentric_plan()
+            .expect("concentric_plan at edge/corner");
+        assert_eq!(
+            plan.radii.len(),
+            4,
+            "all 4 configured levels must be reserved before mapping"
+        );
+        assert_eq!(plan.reserved_radius, 326.0);
         let r1 = &dbg.wheels[1];
         assert!(
-            r1.center.x - r1.r_out >= 8.0 - 1e-3
-                && r1.center.x + r1.r_out <= 1920.0 - 8.0 + 1e-3
-                && r1.center.y - r1.r_out >= 8.0 - 1e-3
-                && r1.center.y + r1.r_out <= 1080.0 - 8.0 + 1e-3,
-            "ring 1 at {pt:?} must stay within 8 lp viewport margin: center={:?}, r_out={}",
+            r1.center.x - plan.reserved_radius >= 8.0 - 1e-3
+                && r1.center.x + plan.reserved_radius <= 1920.0 - 8.0 + 1e-3
+                && r1.center.y - plan.reserved_radius >= 8.0 - 1e-3
+                && plan.caption_box.x >= 8.0 - 1e-3
+                && plan.caption_box.right() <= 1920.0 - 8.0 + 1e-3
+                && plan.caption_box.bottom() <= 1080.0 - 8.0 + 1e-3,
+            "all 4 reserved rings (R=326) and 280x64 caption at {pt:?} must stay within 8 lp viewport margin: center={:?}, caption={:?}",
             r1.center,
-            r1.r_out
+            plan.caption_box
         );
         ctrl_edges.dismiss_immediate();
     }
@@ -1397,20 +1457,38 @@ fn t_x111_t_x118_concentric_fallbacks_edges_negative_origin_fractional_scale_and
 
 /// Live isolated X11 / `Xvfb` end-to-end Concentric test (`Authorization` §6, `T-X111`–`T-X118`):
 /// Executes against a real isolated X11 server (`is_isolated_test_display()`) and verifies:
-/// 1. When `_NET_WM_CM_S0` has no owner, Concentric falls back to Branching with `no_compositor`.
-/// 2. When `_NET_WM_CM_S0` is owned by a compositor window on the isolated X11 display, the daemon
-///    activates Concentric mode on a single 32-bit ARGB overlay window (`overlay_window_id`).
-/// 3. Real `XdndEnter` / `XdndPosition` / `XdndDrop` drag of a disposable file replies with
-///    `XdndActionPrivate` on actionable segments and `None` (0) on non-actionable hub/outside.
-/// 4. Releasing `_NET_WM_CM_S0` mid-drag triggers `XfixesSelectionNotify` -> `reject_until_drag_end`
-///    and rejects the drop safely (`XdndFinished` with `accepted = 0`).
+/// - `T-X117`: When `_NET_WM_CM_S0` has no owner, Concentric falls back to Branching (`no_compositor`)
+///   before mapping and installs a non-rectangular `ShapeBounding` mask on the overlay window.
+/// - `T-X111`: When `_NET_WM_CM_S0` is owned by a compositor window, the daemon activates Concentric
+///   on a single 32-bit ARGB overlay window (`overlay_window_id`), creates zero child windows as rings
+///   open/retract, and takes zero pointer grab during Drag sessions.
+/// - `T-X112`: Live X11 `shape_get_rectangles(overlay_win, Sk::INPUT)` is full-monitor `(0, 0, 1920, 1080)`
+///   in Invoke and default Drag (`passthrough = false`); in opt-in Drag `passthrough = true`, it installs
+///   the solid reserved disc (`Rreserve + hit_margin = 338 px` with zero central or inter-ring holes)
+///   plus displaced-origin anchor/corridor, excludes the `280x64` caption box, and does not shrink when
+///   child rings open or retract.
+/// - `T-X113`: Bit-exact `XdndStatus` (`XdndActionPrivate` on actionable segments, `0` on hub, gap,
+///   separator, outer margin, caption, and outside even when source requests `XdndActionMove`),
+///   zero `DELETE` selection requests, and bit-exact `XdndFinished`.
+/// - `T-X114`: Zero-position trigger/drop rejection, stale source ignored, prefetch refusal fallback
+///   to provisional menu, and clean unmap with no stuck grabs or orphan overlay.
+/// - `T-X115`: Corner/edge summons clamp `root_wheel_center_px` inside `[334, 1586] x [334, 672]`
+///   (reserving all 4 rings + caption); live `RESOURCE_MANAGER` `Xft.dpi: 120` (`1.25x`, `1536x864` lp)
+///   activates Concentric while `Xft.dpi: 144` (`1.5x`, `1280x720` lp < `668x742`) falls back to Branching.
+/// - `T-X116`: Invoke keyboard navigation (`1`, `Backspace`, `Right`, `Enter`, `Escape`) in both
+///   Concentric and Branching releases grabs cleanly so other X11 windows receive input afterward.
+/// - `T-X118`: Native `XdndAware` drop-target window mapped beneath the overlay receives zero XDND
+///   events when releasing across all reject zones, mid-session config reload, and mid-drag compositor
+///   loss (`_NET_WM_CM_S0` released), and the disposable file's path, inode, size, mtime, and SHA-256
+///   remain 100% unchanged.
 #[test]
 fn live_xvfb_concentric_end_to_end_xdnd_session_and_compositor_guards() {
     use x11rb::connection::Connection as _;
     use x11rb::protocol::Event;
+    use x11rb::protocol::shape::{ConnectionExt as _, SK};
     use x11rb::protocol::xproto::{
-        ClientMessageData, ClientMessageEvent, ConnectionExt as _, CreateWindowAux, EventMask,
-        PropMode, SelectionNotifyEvent, WindowClass,
+        AtomEnum, ClientMessageData, ClientMessageEvent, ConnectionExt as _, CreateWindowAux,
+        EventMask, GrabMode, GrabStatus, MapState, PropMode, SelectionNotifyEvent, WindowClass,
     };
     use x11rb::rust_connection::RustConnection;
     use x11rb::wrapper::ConnectionExt as _;
@@ -1423,6 +1501,8 @@ fn live_xvfb_concentric_end_to_end_xdnd_session_and_compositor_guards() {
     }
 
     let dir = make_temp_test_dir("xvfb-live");
+    let dest_dir = dir.join("native_drop_dest");
+    fs::create_dir_all(&dest_dir).expect("create native_drop_dest");
     let disposable_file = dir.join("xvfb_disposable.txt");
     fs::write(&disposable_file, b"Disposable Xvfb Concentric test file\n")
         .expect("write disposable file");
@@ -1445,13 +1525,23 @@ reduced_motion = true
     )
     .expect("write config.toml");
 
-    // Connect a test X11 client to act as both compositor owner (`_NET_WM_CM_S0`) and XDND source
+    // Connect a test X11 client to act as compositor owner (`_NET_WM_CM_S0`), XDND source,
+    // and underlying native drop target window (`native_drop_win`).
     let (conn, screen_num) = RustConnection::connect(None).expect("connect X11 test client");
     let atoms = Atoms::new(&conn)
         .expect("atoms cookie")
         .reply()
         .expect("atoms reply");
     let root = conn.setup().roots[screen_num].root;
+
+    // Reset root RESOURCE_MANAGER to 96 DPI (1.0x) at start of test
+    let _ = conn.change_property8(
+        PropMode::REPLACE,
+        root,
+        atoms.RESOURCE_MANAGER,
+        AtomEnum::STRING,
+        b"Xft.dpi:\t96\n",
+    );
 
     let cm_win = conn.generate_id().expect("generate cm_win");
     conn.create_window(
@@ -1486,6 +1576,35 @@ reduced_motion = true
             .event_mask(EventMask::PROPERTY_CHANGE),
     )
     .expect("create src_win");
+
+    // Map an underlying XdndAware native drop target window covering (0, 0, 1920, 1080) (`T-X118`)
+    let native_drop_win = conn.generate_id().expect("generate native_drop_win");
+    conn.create_window(
+        x11rb::COPY_FROM_PARENT as u8,
+        native_drop_win,
+        root,
+        0,
+        0,
+        1920,
+        1080,
+        0,
+        WindowClass::INPUT_OUTPUT,
+        x11rb::COPY_FROM_PARENT,
+        &CreateWindowAux::new()
+            .override_redirect(1)
+            .event_mask(EventMask::KEY_PRESS | EventMask::BUTTON_PRESS),
+    )
+    .expect("create native_drop_win");
+    conn.change_property32(
+        PropMode::REPLACE,
+        native_drop_win,
+        atoms.XdndAware,
+        AtomEnum::ATOM,
+        &[5],
+    )
+    .expect("set XdndAware on native_drop_win");
+    conn.map_window(native_drop_win)
+        .expect("map native_drop_win");
     conn.flush().expect("flush windows");
 
     // Ensure `_NET_WM_CM_S0` is initially unowned so we test `NoCompositor` fallback first (`T-X117`)
@@ -1495,6 +1614,7 @@ reduced_motion = true
 
     let radivine_bin = PathBuf::from(env!("CARGO_BIN_EXE_radivine"));
     let mut daemon: Child = Command::new(&radivine_bin)
+        .env_remove("RADIVINE_FORCE_ARGB")
         .env("RADIVINE_DRY_RUN_VIEWER", "1")
         .env("RADIVINE_DRY_RUN_PROPERTIES", "1")
         .env("RADIVINE_SUPPRESS_DESKTOP_NOTIFY", "1")
@@ -1537,15 +1657,55 @@ reduced_motion = true
         serde_json::from_slice(&out.stdout).expect("parse status json")
     };
 
-    // 1. Without `_NET_WM_CM_S0`, `status` reports `no_compositor` fallback to `branching` (`T-X117`)
+    // -------------------------------------------------------------------------
+    // 1. `T-X117`: Without `_NET_WM_CM_S0`, Concentric falls back to Branching (`no_compositor`)
+    //    before mapping and installs non-rectangular `ShapeBounding` on the overlay window.
+    // -------------------------------------------------------------------------
     let st_nocomp = query_status();
+    assert_eq!(st_nocomp["compositor_active"], false);
     assert_eq!(st_nocomp["requested_layout"], "concentric");
     assert_eq!(st_nocomp["active_layout"], "branching");
     assert_eq!(st_nocomp["layout_fallback_reason"], "no_compositor");
     let overlay_win = st_nocomp["overlay_window_id"].as_u64().unwrap() as u32;
     assert!(overlay_win > 0);
 
-    // 2. Claim `_NET_WM_CM_S0` so X11Platform detects active compositor & 32-bit translucency (`T-X111`)
+    let _ = Command::new(&radivine_bin)
+        .args([
+            "--config",
+            cfg_path.to_str().unwrap(),
+            "--socket",
+            sock_path.to_str().unwrap(),
+            "invoke",
+            "--at",
+            "960,540",
+            &file_uri,
+        ])
+        .status();
+    let st_nocomp_active = query_status();
+    assert_eq!(st_nocomp_active["session_state"], "Active");
+    assert_eq!(st_nocomp_active["active_layout"], "branching");
+    assert_eq!(st_nocomp_active["layout_fallback_reason"], "no_compositor");
+    let bounding_rects = conn
+        .shape_get_rectangles(overlay_win, SK::BOUNDING)
+        .expect("shape_get_rectangles BOUNDING")
+        .reply()
+        .expect("BOUNDING reply")
+        .rectangles;
+    assert!(
+        bounding_rects.len() > 1,
+        "no-compositor fallback must apply non-rectangular ShapeBounding mask (`T-X117`)"
+    );
+    let _ = Command::new(&radivine_bin)
+        .args(["--socket", sock_path.to_str().unwrap(), "dismiss"])
+        .status();
+    assert_eq!(query_status()["session_state"], "Idle");
+    eprintln!("LIVE_XVFB_VERIFIED: T-X117 no_compositor fallback & ShapeBounding verified");
+
+    // -------------------------------------------------------------------------
+    // 2. `T-X111` & `T-X116`: Claim `_NET_WM_CM_S0` -> 32-bit ARGB single overlay window,
+    //    Invoke keyboard routing (`1` -> open ring 1, `Backspace` -> close ring 1, `Escape` -> cancel),
+    //    unchanged `overlay_window_id`, zero extra child windows per ring, and clean ungrab afterward.
+    // -------------------------------------------------------------------------
     conn.set_selection_owner(cm_win, atoms._NET_WM_CM_S0, x11rb::CURRENT_TIME)
         .expect("claim _NET_WM_CM_S0");
     conn.flush().expect("flush _NET_WM_CM_S0");
@@ -1562,8 +1722,23 @@ reduced_motion = true
         overlay_win,
         "must reuse the single overlay window XID (`T-X111`)"
     );
+    let geom = conn
+        .get_geometry(overlay_win)
+        .expect("get_geometry")
+        .reply()
+        .expect("geometry reply");
+    assert_eq!(
+        geom.depth, 32,
+        "overlay window must use 32-bit ARGB visual (`T-X111`)"
+    );
 
-    // 3. Summon via `invoke` on the isolated Xvfb display and verify single overlay XID & render latency
+    let children_before = conn
+        .query_tree(root)
+        .expect("query_tree")
+        .reply()
+        .expect("query_tree reply")
+        .children;
+
     let _ = Command::new(&radivine_bin)
         .args([
             "--config",
@@ -1593,13 +1768,66 @@ reduced_motion = true
         "LIVE_XVFB_METRICS: summon_us={summon_us} frame_render_us={render_us} overlay_xid=0x{overlay_win:08x}"
     );
 
-    // Dismiss Invoke session cleanly
-    let _ = Command::new(&radivine_bin)
-        .args(["--socket", sock_path.to_str().unwrap(), "cancel"])
-        .status();
-    assert_eq!(query_status()["session_state"], "Idle");
+    // Press '1' in Invoke mode to open "File Preview" child ring 1, verify no new X11 windows created
+    let _ = Command::new("xdotool").args(["key", "1"]).status();
+    thread::sleep(Duration::from_millis(30));
+    let children_ring1 = conn
+        .query_tree(root)
+        .expect("query_tree ring1")
+        .reply()
+        .expect("query_tree ring1 reply")
+        .children;
+    assert_eq!(
+        children_before, children_ring1,
+        "opening Concentric child ring 1 must never create new X11 windows (`T-X111`)"
+    );
+    assert_eq!(
+        query_status()["overlay_window_id"].as_u64().unwrap() as u32,
+        overlay_win
+    );
 
-    // 4. Perform a live X11 XDND drag session against `overlay_win` (`T-X113`, `T-X114`)
+    // Press 'BackSpace' to retract ring 1, then 'Right' + 'Return' to commit `radivine.copy` (`T-X116`)
+    let _ = Command::new("xdotool").args(["key", "BackSpace"]).status();
+    thread::sleep(Duration::from_millis(30));
+    let _ = Command::new("xdotool")
+        .args(["key", "Right", "Return"])
+        .status();
+    thread::sleep(Duration::from_millis(35));
+    let st_after_inv = query_status();
+    assert_eq!(st_after_inv["session_state"], "Idle");
+    assert_eq!(st_after_inv["last_committed_action"], "radivine.copy");
+    let attrs_unmapped = conn
+        .get_window_attributes(overlay_win)
+        .expect("attrs")
+        .reply()
+        .expect("attrs reply");
+    assert_eq!(attrs_unmapped.map_state, MapState::UNMAPPED);
+
+    // Verify other windows can grab pointer/keyboard after Invoke session ends (`T-X116`)
+    let grab_rep = conn
+        .grab_pointer(
+            false,
+            native_drop_win,
+            EventMask::NO_EVENT,
+            GrabMode::ASYNC,
+            GrabMode::ASYNC,
+            x11rb::NONE,
+            x11rb::NONE,
+            x11rb::CURRENT_TIME,
+        )
+        .expect("grab_pointer check")
+        .reply()
+        .expect("grab_pointer reply");
+    assert_eq!(grab_rep.status, GrabStatus::SUCCESS);
+    let _ = conn.ungrab_pointer(x11rb::CURRENT_TIME);
+    let _ = conn.flush();
+    eprintln!(
+        "LIVE_XVFB_VERIFIED: T-X111 & T-X116 single ARGB window, ring open/close & Invoke keyboard/ungrab verified"
+    );
+
+    // -------------------------------------------------------------------------
+    // 3. `T-X113`, `T-X114`, `T-X112` (default full capture), & `T-X118` (native drop target safety)
+    // -------------------------------------------------------------------------
     let send_xdnd_msg = |msg_type: u32, data: [u32; 5]| {
         let ev = ClientMessageEvent {
             response_type: x11rb::protocol::xproto::CLIENT_MESSAGE_EVENT,
@@ -1614,37 +1842,53 @@ reduced_motion = true
         conn.flush().expect("flush Xdnd ClientMessage");
     };
 
-    let pump_xdnd = |uri_payload: &[u8]| -> Vec<(u32, [u32; 5])> {
+    let pump_xdnd = |uri_payload: Option<&[u8]>,
+                     native_events: &mut usize|
+     -> Vec<(u32, [u32; 5])> {
         let mut msgs = Vec::new();
         while let Ok(Some(ev)) = conn.poll_for_event() {
             match ev {
-                Event::SelectionRequest(req) if req.target == atoms.URI_LIST => {
-                    let prop = if req.property == x11rb::NONE {
-                        req.target
-                    } else {
-                        req.property
-                    };
-                    let _ = conn.change_property8(
-                        PropMode::REPLACE,
-                        req.requestor,
-                        prop,
-                        atoms.URI_LIST,
-                        uri_payload,
+                Event::SelectionRequest(req) => {
+                    assert_ne!(
+                        req.target, atoms.DELETE,
+                        "Radivine must NEVER request DELETE selection target (`T-X113`)"
                     );
-                    let notify = SelectionNotifyEvent {
-                        response_type: x11rb::protocol::xproto::SELECTION_NOTIFY_EVENT,
-                        sequence: 0,
-                        time: req.time,
-                        requestor: req.requestor,
-                        selection: req.selection,
-                        target: req.target,
-                        property: prop,
-                    };
-                    let _ = conn.send_event(false, req.requestor, EventMask::NO_EVENT, notify);
-                    let _ = conn.flush();
+                    if req.target == atoms.URI_LIST {
+                        let prop = if let Some(bytes) = uri_payload {
+                            let p = if req.property == x11rb::NONE {
+                                req.target
+                            } else {
+                                req.property
+                            };
+                            let _ = conn.change_property8(
+                                PropMode::REPLACE,
+                                req.requestor,
+                                p,
+                                atoms.URI_LIST,
+                                bytes,
+                            );
+                            p
+                        } else {
+                            x11rb::NONE
+                        };
+                        let notify = SelectionNotifyEvent {
+                            response_type: x11rb::protocol::xproto::SELECTION_NOTIFY_EVENT,
+                            sequence: 0,
+                            time: req.time,
+                            requestor: req.requestor,
+                            selection: req.selection,
+                            target: req.target,
+                            property: prop,
+                        };
+                        let _ = conn.send_event(false, req.requestor, EventMask::NO_EVENT, notify);
+                        let _ = conn.flush();
+                    }
                 }
                 Event::ClientMessage(cm) if cm.window == src_win => {
                     msgs.push((cm.type_, cm.data.as_data32()));
+                }
+                Event::ClientMessage(cm) if cm.window == native_drop_win => {
+                    *native_events += 1;
                 }
                 _ => {}
             }
@@ -1652,32 +1896,389 @@ reduced_motion = true
         msgs
     };
 
-    // Hold mouse button 1 via xdotool, claim XdndSelection, and press Shift to summon Drag wheel
-    let _ = Command::new("xdotool")
-        .args(["mousemove", "960", "540", "mousedown", "1"])
-        .status();
+    let payload_bytes = format!("{file_uri}\r\n").into_bytes();
+    let mut native_drop_events = 0usize;
+
+    let start_drag_session =
+        |x: i32, y: i32, uri_payload: Option<&[u8]>, native_events: &mut usize| {
+            let _ = Command::new("xdotool")
+                .args([
+                    "mousemove",
+                    &x.to_string(),
+                    &y.to_string(),
+                    "mousedown",
+                    "1",
+                ])
+                .status();
+            thread::sleep(Duration::from_millis(15));
+            conn.set_selection_owner(src_win, atoms.XdndSelection, x11rb::CURRENT_TIME)
+                .expect("own XdndSelection");
+            conn.flush().expect("flush XdndSelection");
+            thread::sleep(Duration::from_millis(25));
+            let _ = Command::new("xdotool")
+                .args(["keydown", "Shift_L", "keyup", "Shift_L"])
+                .status();
+
+            let deadline = Instant::now() + Duration::from_secs(2);
+            while Instant::now() < deadline {
+                let _ = pump_xdnd(uri_payload, native_events);
+                if query_status()["session_state"] == "Active" {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+            assert_eq!(query_status()["session_state"], "Active");
+        };
+
+    // 3a. `T-X114` & `T-X112` (default full-screen ShapeInput):
+    // Start drag at (960, 540), verify zero pointer grab in Drag mode (`T-X111`),
+    // verify full-monitor ShapeInput `(0, 0, 1920, 1080)` (`T-X112`),
+    // verify stale source XID is ignored (`T-X114`), and verify zero-motion drop rejects (`T-X114`).
+    start_drag_session(960, 540, Some(&payload_bytes), &mut native_drop_events);
+    assert_eq!(query_status()["active_layout"], "concentric");
+
+    // Verify no pointer/keyboard grab is held by Radivine during Drag mode (`T-X111`)
+    let drag_grab_rep = conn
+        .grab_keyboard(
+            false,
+            native_drop_win,
+            x11rb::CURRENT_TIME,
+            GrabMode::ASYNC,
+            GrabMode::ASYNC,
+        )
+        .expect("grab_keyboard during drag")
+        .reply()
+        .expect("grab_keyboard during drag reply");
+    assert_eq!(
+        drag_grab_rep.status,
+        GrabStatus::SUCCESS,
+        "Radivine must never hold an input grab in Drag mode (`T-X111`)"
+    );
+    let _ = conn.ungrab_keyboard(x11rb::CURRENT_TIME);
+    let _ = conn.flush();
+
+    // Verify default Drag ShapeInput covers the full 1920x1080 monitor (`T-X112`)
+    let default_input_rects = conn
+        .shape_get_rectangles(overlay_win, SK::INPUT)
+        .expect("shape_get_rectangles INPUT")
+        .reply()
+        .expect("INPUT reply")
+        .rectangles;
+    assert_eq!(
+        default_input_rects.len(),
+        1,
+        "default Drag (`passthrough = false`) must use full-monitor ShapeInput (`T-X112`)"
+    );
+    assert_eq!(
+        (
+            default_input_rects[0].x,
+            default_input_rects[0].y,
+            default_input_rects[0].width,
+            default_input_rects[0].height
+        ),
+        (0, 0, 1920, 1080)
+    );
+
+    send_xdnd_msg(atoms.XdndEnter, [src_win, 5 << 24, atoms.URI_LIST, 0, 0]);
+    thread::sleep(Duration::from_millis(20));
+    let _ = pump_xdnd(Some(&payload_bytes), &mut native_drop_events);
+    // Stale/unknown source XdndPosition (`0xdeadbeef`) at actionable (1044, 540) must be ignored (`T-X114`)
+    send_xdnd_msg(
+        atoms.XdndPosition,
+        [
+            0xdead_beef,
+            0,
+            (1044 << 16) | 540,
+            x11rb::CURRENT_TIME,
+            atoms.XdndActionMove,
+        ],
+    );
     thread::sleep(Duration::from_millis(15));
-    conn.set_selection_owner(src_win, atoms.XdndSelection, x11rb::CURRENT_TIME)
-        .expect("own XdndSelection");
-    conn.flush().expect("flush XdndSelection");
+    assert!(
+        pump_xdnd(Some(&payload_bytes), &mut native_drop_events).is_empty(),
+        "stale source XdndPosition must be ignored (`T-X114`)"
+    );
+
+    // Zero-position trigger + drop at (960, 540) rejects (`T-X114`, `T-X118`)
+    send_xdnd_msg(
+        atoms.XdndPosition,
+        [
+            src_win,
+            0,
+            (960 << 16) | 540,
+            x11rb::CURRENT_TIME,
+            atoms.XdndActionMove,
+        ],
+    );
+    thread::sleep(Duration::from_millis(20));
+    let replies_hub = pump_xdnd(Some(&payload_bytes), &mut native_drop_events);
+    let last_hub_status = replies_hub
+        .iter()
+        .rev()
+        .find(|(t, _)| *t == atoms.XdndStatus)
+        .expect("XdndStatus for hub");
+    assert_eq!(last_hub_status.1[0], overlay_win);
+    assert_eq!(
+        last_hub_status.1[1] & 1,
+        0,
+        "hub position must reject (`accept = 0`)"
+    );
+    assert_eq!(
+        last_hub_status.1[4], 0,
+        "rejected status action must be 0, never XdndActionMove"
+    );
+
+    send_xdnd_msg(atoms.XdndDrop, [src_win, 0, x11rb::CURRENT_TIME, 0, 0]);
     thread::sleep(Duration::from_millis(25));
+    let replies_zero_drop = pump_xdnd(Some(&payload_bytes), &mut native_drop_events);
+    let fin_zero = replies_zero_drop
+        .iter()
+        .find(|(t, _)| *t == atoms.XdndFinished)
+        .expect("XdndFinished for zero-motion hub drop");
+    assert_eq!(fin_zero.1, [overlay_win, 0, 0, 0, 0]);
+
+    // 3b. `T-X113` & `T-X118`: Test all non-actionable zones (radial gap, separator, outer margin,
+    // caption box, outside cluster) and mid-session reload on live Xvfb:
     let _ = Command::new("xdotool")
         .args(["keydown", "Shift_L", "keyup", "Shift_L"])
         .status();
-
-    let payload_bytes = format!("{file_uri}\r\n").into_bytes();
     let deadline = Instant::now() + Duration::from_secs(2);
     while Instant::now() < deadline {
-        let _ = pump_xdnd(&payload_bytes);
+        let _ = pump_xdnd(Some(&payload_bytes), &mut native_drop_events);
         if query_status()["session_state"] == "Active" {
             break;
         }
         thread::sleep(Duration::from_millis(10));
     }
-    assert_eq!(query_status()["session_state"], "Active");
-    assert_eq!(query_status()["active_layout"], "concentric");
+    send_xdnd_msg(atoms.XdndEnter, [src_win, 5 << 24, atoms.URI_LIST, 0, 0]);
 
-    // Send XdndEnter and XdndPosition at hub (960, 540) -> must reply XdndStatus with accept=0, action=0 (`T-X114`)
+    // Dwell on root submenu `[0]` ("File Preview" at top: 960, 456) to open ring 1 (`134..194 lp`)
+    send_xdnd_msg(
+        atoms.XdndPosition,
+        [
+            src_win,
+            0,
+            (960 << 16) | 456,
+            x11rb::CURRENT_TIME,
+            atoms.XdndActionMove,
+        ],
+    );
+    thread::sleep(Duration::from_millis(150));
+    let _ = pump_xdnd(Some(&payload_bytes), &mut native_drop_events);
+
+    // Trigger a live `reload` mid-drag (`T-X118`) and verify full-monitor ShapeInput is preserved
+    assert!(
+        Command::new(&radivine_bin)
+            .args([
+                "--config",
+                cfg_path.to_str().unwrap(),
+                "--socket",
+                sock_path.to_str().unwrap(),
+                "reload",
+            ])
+            .status()
+            .unwrap()
+            .success()
+    );
+
+    for (zone_name, zx, zy) in [
+        ("radial_gap", 960u32, 409u32), // r = 131 lp between ring 0 (128) and ring 1 (134)
+        ("separator", 1020u32, 480u32), // 45° separator ray on ring 0 (r ≈ 84.8 lp)
+        ("outer_margin", 960u32, 340u32), // r = 200 lp beyond ring 1 outer radius (194)
+        ("caption_box", 960u32, 908u32), // inside 280x64 caption box (y = 540 + 326 + 42 = 908)
+        ("outside_cluster", 200u32, 200u32), // far outside wheel cluster on captured monitor
+    ] {
+        send_xdnd_msg(
+            atoms.XdndPosition,
+            [
+                src_win,
+                0,
+                (zx << 16) | zy,
+                x11rb::CURRENT_TIME,
+                atoms.XdndActionMove,
+            ],
+        );
+        thread::sleep(Duration::from_millis(20));
+        let replies = pump_xdnd(Some(&payload_bytes), &mut native_drop_events);
+        let st_msg = replies
+            .iter()
+            .rev()
+            .find(|(t, _)| *t == atoms.XdndStatus)
+            .unwrap_or_else(|| panic!("expected XdndStatus for reject zone {zone_name}"));
+        assert_eq!(
+            st_msg.1[1] & 1,
+            0,
+            "live Xvfb zone `{zone_name}` at ({zx}, {zy}) must reject (`accept = 0`)"
+        );
+        assert_eq!(
+            st_msg.1[4], 0,
+            "live Xvfb zone `{zone_name}` must reply action=0 (None), never XdndActionMove"
+        );
+    }
+
+    // Drop on `outside_cluster` (200, 200) -> must reject (`XdndFinished(accepted=0)`) and never reach `native_drop_win` (`T-X118`)
+    send_xdnd_msg(atoms.XdndDrop, [src_win, 0, x11rb::CURRENT_TIME, 0, 0]);
+    thread::sleep(Duration::from_millis(25));
+    let replies_out_drop = pump_xdnd(Some(&payload_bytes), &mut native_drop_events);
+    let fin_out = replies_out_drop
+        .iter()
+        .find(|(t, _)| *t == atoms.XdndFinished)
+        .expect("XdndFinished for outside_cluster drop");
+    assert_eq!(fin_out.1, [overlay_win, 0, 0, 0, 0]);
+    assert_eq!(
+        native_drop_events, 0,
+        "underlying native drop target window must receive ZERO XDND events (`T-X118`)"
+    );
+    fp.verify_unchanged("after_reject_zone_drops");
+
+    // 3c. `T-X113` & `T-X118`: Summon again, verify actionable segment `[1]` (`Copy`, 1044, 540)
+    // replies `XdndActionPrivate` even when source requests `XdndActionMove`, then release `_NET_WM_CM_S0`
+    // mid-drag and verify drop is rejected (`accepted = 0`).
+    let _ = Command::new("xdotool")
+        .args(["keydown", "Shift_L", "keyup", "Shift_L"])
+        .status();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        let _ = pump_xdnd(Some(&payload_bytes), &mut native_drop_events);
+        if query_status()["session_state"] == "Active" {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    send_xdnd_msg(atoms.XdndEnter, [src_win, 5 << 24, atoms.URI_LIST, 0, 0]);
+    send_xdnd_msg(
+        atoms.XdndPosition,
+        [
+            src_win,
+            0,
+            (1044 << 16) | 540,
+            x11rb::CURRENT_TIME,
+            atoms.XdndActionMove,
+        ],
+    );
+    thread::sleep(Duration::from_millis(25));
+    let replies_seg = pump_xdnd(Some(&payload_bytes), &mut native_drop_events);
+    let last_seg_status = replies_seg
+        .iter()
+        .rev()
+        .find(|(t, _)| *t == atoms.XdndStatus)
+        .expect("XdndStatus for actionable segment");
+    assert_eq!(last_seg_status.1[0], overlay_win);
+    assert_eq!(
+        last_seg_status.1[1] & 1,
+        1,
+        "actionable segment must accept (`accept = 1`)"
+    );
+    assert_eq!(
+        last_seg_status.1[4], atoms.XdndActionPrivate,
+        "accepted status action must be XdndActionPrivate, never XdndActionMove (`T-X113`)"
+    );
+    if let Some(status_us) = query_status()["last_dnd_status_us"].as_u64() {
+        eprintln!("LIVE_XVFB_METRICS: dnd_status_us={status_us}");
+    }
+
+    // Commit valid Concentric drop on `[1]` (`Copy`) and verify bit-exact `XdndFinished` with `XdndActionPrivate` (`T-X113`, `T-SAFE1`)
+    send_xdnd_msg(atoms.XdndDrop, [src_win, 0, x11rb::CURRENT_TIME, 0, 0]);
+    thread::sleep(Duration::from_millis(25));
+    let replies_valid_drop = pump_xdnd(Some(&payload_bytes), &mut native_drop_events);
+    let fin_valid = replies_valid_drop
+        .iter()
+        .find(|(t, _)| *t == atoms.XdndFinished)
+        .expect("XdndFinished for valid Concentric drop");
+    assert_eq!(
+        fin_valid.1,
+        [overlay_win, 1, atoms.XdndActionPrivate, 0, 0],
+        "valid Concentric drop must finish with accepted=1 and XdndActionPrivate (`T-X113`)"
+    );
+    let st_after_valid_drop = query_status();
+    assert_eq!(
+        st_after_valid_drop["last_committed_action"],
+        "radivine.copy"
+    );
+    if let Some(drop_us) = st_after_valid_drop["last_drop_dispatch_us"].as_u64() {
+        eprintln!("LIVE_XVFB_METRICS: drop_dispatch_us={drop_us}");
+    }
+    fp.verify_unchanged("after_valid_xvfb_drop");
+
+    // Now summon again and release `_NET_WM_CM_S0` mid-drag -> daemon enters `reject_until_drag_end` and rejects drop (`T-SAFE8`, `T-X118`)
+    let _ = Command::new("xdotool")
+        .args(["keydown", "Shift_L", "keyup", "Shift_L"])
+        .status();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        let _ = pump_xdnd(Some(&payload_bytes), &mut native_drop_events);
+        if query_status()["session_state"] == "Active" {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    send_xdnd_msg(atoms.XdndEnter, [src_win, 5 << 24, atoms.URI_LIST, 0, 0]);
+    send_xdnd_msg(
+        atoms.XdndPosition,
+        [
+            src_win,
+            0,
+            (1044 << 16) | 540,
+            x11rb::CURRENT_TIME,
+            atoms.XdndActionPrivate,
+        ],
+    );
+    thread::sleep(Duration::from_millis(20));
+    let _ = pump_xdnd(Some(&payload_bytes), &mut native_drop_events);
+
+    conn.set_selection_owner(x11rb::NONE, atoms._NET_WM_CM_S0, x11rb::CURRENT_TIME)
+        .expect("release _NET_WM_CM_S0 mid-drag");
+    conn.flush().expect("flush release _NET_WM_CM_S0");
+    thread::sleep(Duration::from_millis(30));
+
+    send_xdnd_msg(atoms.XdndDrop, [src_win, 0, x11rb::CURRENT_TIME, 0, 0]);
+    thread::sleep(Duration::from_millis(30));
+    let replies_drop = pump_xdnd(Some(&payload_bytes), &mut native_drop_events);
+    let finished = replies_drop
+        .iter()
+        .find(|(t, _)| *t == atoms.XdndFinished)
+        .expect("XdndFinished after compositor-loss drop");
+    assert_eq!(
+        finished.1[1], 0,
+        "drop after mid-drag compositor loss must finish with accepted=0 (`T-X118`)"
+    );
+
+    // Re-claim `_NET_WM_CM_S0` and test prefetch refusal (`uri_payload = None`) + XdndLeave re-entry (`T-X114`)
+    conn.set_selection_owner(cm_win, atoms._NET_WM_CM_S0, x11rb::CURRENT_TIME)
+        .expect("re-claim _NET_WM_CM_S0");
+    conn.flush().expect("flush re-claim _NET_WM_CM_S0");
+    thread::sleep(Duration::from_millis(30));
+
+    let _ = Command::new("xdotool")
+        .args(["keydown", "Shift_L", "keyup", "Shift_L"])
+        .status();
+    let refusal_deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < refusal_deadline {
+        let _ = pump_xdnd(None, &mut native_drop_events);
+        send_xdnd_msg(atoms.XdndEnter, [src_win, 5 << 24, atoms.URI_LIST, 0, 0]);
+        send_xdnd_msg(
+            atoms.XdndPosition,
+            [
+                src_win,
+                0,
+                (960 << 16) | 540,
+                x11rb::CURRENT_TIME,
+                atoms.XdndActionPrivate,
+            ],
+        );
+        if query_status()["session_state"] == "Active" {
+            break;
+        }
+        thread::sleep(Duration::from_millis(15));
+    }
+    assert_eq!(
+        query_status()["session_state"],
+        "Active",
+        "prefetch refusal must fall back to provisional menu (`T-X114`)"
+    );
+    // Test XdndLeave followed by re-entry (`XdndEnter`) and cancel drop (`T-X114`)
+    send_xdnd_msg(atoms.XdndLeave, [src_win, 0, 0, 0, 0]);
+    thread::sleep(Duration::from_millis(20));
     send_xdnd_msg(atoms.XdndEnter, [src_win, 5 << 24, atoms.URI_LIST, 0, 0]);
     send_xdnd_msg(
         atoms.XdndPosition,
@@ -1689,77 +2290,272 @@ reduced_motion = true
             atoms.XdndActionPrivate,
         ],
     );
-    thread::sleep(Duration::from_millis(25));
-    let replies_hub = pump_xdnd(&payload_bytes);
-    let last_hub_status = replies_hub
-        .iter()
-        .rev()
-        .find(|(t, _)| *t == atoms.XdndStatus)
-        .expect("XdndStatus for hub");
-    assert_eq!(
-        last_hub_status.1[1] & 1,
-        0,
-        "hub position must reject (`accept = 0`)"
-    );
-    assert_eq!(last_hub_status.1[4], 0, "rejected status action must be 0");
-
-    // Move to actionable segment `[1]` (`Copy`, right of center: 1044, 540) -> must reply XdndStatus with accept=1, action=XdndActionPrivate
-    send_xdnd_msg(
-        atoms.XdndPosition,
-        [
-            src_win,
-            0,
-            (1044 << 16) | 540,
-            x11rb::CURRENT_TIME,
-            atoms.XdndActionPrivate,
-        ],
-    );
-    thread::sleep(Duration::from_millis(25));
-    let replies_seg = pump_xdnd(&payload_bytes);
-    let last_seg_status = replies_seg
-        .iter()
-        .rev()
-        .find(|(t, _)| *t == atoms.XdndStatus)
-        .expect("XdndStatus for actionable segment");
-    assert_eq!(
-        last_seg_status.1[1] & 1,
-        1,
-        "actionable segment must accept (`accept = 1`)"
-    );
-    assert_eq!(
-        last_seg_status.1[4], atoms.XdndActionPrivate,
-        "accepted status action must be XdndActionPrivate (`T-X114`)"
-    );
-    if let Some(status_us) = query_status()["last_dnd_status_us"].as_u64() {
-        eprintln!("LIVE_XVFB_METRICS: dnd_status_us={status_us}");
-    }
-
-    // Release `_NET_WM_CM_S0` mid-drag -> daemon enters `reject_until_drag_end` and rejects drop (`T-X118`)
-    conn.set_selection_owner(x11rb::NONE, atoms._NET_WM_CM_S0, x11rb::CURRENT_TIME)
-        .expect("release _NET_WM_CM_S0 mid-drag");
-    conn.flush().expect("flush release _NET_WM_CM_S0");
-    thread::sleep(Duration::from_millis(30));
-
     send_xdnd_msg(atoms.XdndDrop, [src_win, 0, x11rb::CURRENT_TIME, 0, 0]);
-    thread::sleep(Duration::from_millis(30));
-    let replies_drop = pump_xdnd(&payload_bytes);
-    let finished = replies_drop
-        .iter()
-        .find(|(t, _)| *t == atoms.XdndFinished)
-        .expect("XdndFinished after compositor-loss drop");
-    assert_eq!(
-        finished.1[1], 0,
-        "drop after mid-drag compositor loss must finish with accepted=0 (`T-X118`)"
-    );
+    thread::sleep(Duration::from_millis(25));
+    let _ = pump_xdnd(None, &mut native_drop_events);
 
-    // Clean up XdndSelection & mouse button
+    // End drag cleanly
     let _ = conn.set_selection_owner(x11rb::NONE, atoms.XdndSelection, x11rb::CURRENT_TIME);
     let _ = conn.flush();
     let _ = Command::new("xdotool")
         .args(["keyup", "Shift_L", "mouseup", "1"])
         .status();
+    thread::sleep(Duration::from_millis(25));
+    eprintln!(
+        "LIVE_XVFB_VERIFIED: T-X113, T-X114, T-X118 XDND negotiation, refusal/re-entry & native target isolation verified"
+    );
 
-    // Verify source file is completely untouched
+    // -------------------------------------------------------------------------
+    // 4. `T-X112` (opt-in `passthrough = true` live XShape reserved disc, corridor & caption exclusion)
+    // -------------------------------------------------------------------------
+    fs::write(
+        &cfg_path,
+        r#"
+version = 1
+
+[wheel]
+layout = "concentric"
+
+[input]
+passthrough = true
+
+[appearance]
+reduced_motion = true
+"#,
+    )
+    .expect("write passthrough=true config");
+    assert!(
+        Command::new(&radivine_bin)
+            .args([
+                "--config",
+                cfg_path.to_str().unwrap(),
+                "--socket",
+                sock_path.to_str().unwrap(),
+                "reload",
+            ])
+            .status()
+            .unwrap()
+            .success()
+    );
+
+    // Summon Drag near left edge (10, 540) so center is displaced to (334, 540)
+    start_drag_session(10, 540, Some(&payload_bytes), &mut native_drop_events);
+    let pt_rects_root = conn
+        .shape_get_rectangles(overlay_win, SK::INPUT)
+        .expect("shape_get_rectangles passthrough root")
+        .reply()
+        .expect("passthrough root reply")
+        .rectangles;
+    assert!(
+        pt_rects_root.len() > 10,
+        "passthrough=true must install scanline ShapeInput rectangles on X11 server (`T-X112`)"
+    );
+    let rect_covers = |rects: &[x11rb::protocol::xproto::Rectangle], px: i16, py: i16| -> bool {
+        rects.iter().any(|r| {
+            px >= r.x && py >= r.y && px < r.x + r.width as i16 && py < r.y + r.height as i16
+        })
+    };
+    // Central hub (334, 540) and inter-ring gaps (r = 131, 197, 263) must be covered with zero holes
+    for r in [0i16, 20, 131, 197, 263, 330] {
+        assert!(
+            rect_covers(&pt_rects_root, 334 + r, 540),
+            "live X11 ShapeInput must cover solid reserved disc at r={r} (`T-X112`)"
+        );
+    }
+    // Displaced anchor (10, 540) and corridor midpoint (172, 540) must be covered
+    assert!(
+        rect_covers(&pt_rects_root, 10, 540),
+        "anchor disc must be covered (`T-X112`)"
+    );
+    assert!(
+        rect_covers(&pt_rects_root, 172, 540),
+        "corridor must be covered (`T-X112`)"
+    );
+    // Caption box below Rreserve + hit_margin (334, 540 + 326 + 42 = 908) must be excluded!
+    assert!(
+        !rect_covers(&pt_rects_root, 334, 908),
+        "caption box must be excluded from pass-through ShapeInput (`T-X112`)"
+    );
+
+    // Clear approach guard via hub (334, 540), dwell on `[0]` (334, 456) to open ring 1,
+    // and verify live X11 ShapeInput rectangles do not shrink or change!
+    send_xdnd_msg(atoms.XdndEnter, [src_win, 5 << 24, atoms.URI_LIST, 0, 0]);
+    send_xdnd_msg(
+        atoms.XdndPosition,
+        [
+            src_win,
+            0,
+            (334 << 16) | 540,
+            x11rb::CURRENT_TIME,
+            atoms.XdndActionPrivate,
+        ],
+    );
+    send_xdnd_msg(
+        atoms.XdndPosition,
+        [
+            src_win,
+            0,
+            (334 << 16) | 456,
+            x11rb::CURRENT_TIME,
+            atoms.XdndActionPrivate,
+        ],
+    );
+    thread::sleep(Duration::from_millis(150));
+    let _ = pump_xdnd(Some(&payload_bytes), &mut native_drop_events);
+    let pt_rects_ring1 = conn
+        .shape_get_rectangles(overlay_win, SK::INPUT)
+        .expect("shape_get_rectangles passthrough ring1")
+        .reply()
+        .expect("passthrough ring1 reply")
+        .rectangles;
+    let to_tuples = |rs: &[x11rb::protocol::xproto::Rectangle]| -> Vec<(i16, i16, u16, u16)> {
+        rs.iter().map(|r| (r.x, r.y, r.width, r.height)).collect()
+    };
+    assert_eq!(
+        to_tuples(&pt_rects_root),
+        to_tuples(&pt_rects_ring1),
+        "live X11 ShapeInput must remain identical when child rings open (`T-X112`)"
+    );
+
+    // End passthrough drag and restore safe default `passthrough = false`
+    send_xdnd_msg(
+        atoms.XdndPosition,
+        [
+            src_win,
+            0,
+            (334 << 16) | 540,
+            x11rb::CURRENT_TIME,
+            atoms.XdndActionPrivate,
+        ],
+    );
+    send_xdnd_msg(atoms.XdndDrop, [src_win, 0, x11rb::CURRENT_TIME, 0, 0]);
+    thread::sleep(Duration::from_millis(25));
+    let _ = pump_xdnd(Some(&payload_bytes), &mut native_drop_events);
+    let _ = conn.set_selection_owner(x11rb::NONE, atoms.XdndSelection, x11rb::CURRENT_TIME);
+    let _ = conn.flush();
+    let _ = Command::new("xdotool")
+        .args(["keyup", "Shift_L", "mouseup", "1"])
+        .status();
+    thread::sleep(Duration::from_millis(25));
+    fs::write(
+        &cfg_path,
+        r#"
+version = 1
+
+[wheel]
+layout = "concentric"
+
+[appearance]
+reduced_motion = true
+"#,
+    )
+    .expect("restore default config.toml");
+    let _ = Command::new(&radivine_bin)
+        .args([
+            "--config",
+            cfg_path.to_str().unwrap(),
+            "--socket",
+            sock_path.to_str().unwrap(),
+            "reload",
+        ])
+        .status();
+    eprintln!(
+        "LIVE_XVFB_VERIFIED: T-X112 live XShape full-monitor default & passthrough reserved-disc/corridor/caption exclusion verified"
+    );
+
+    // -------------------------------------------------------------------------
+    // 5. `T-X115` & `T-GEO4`: Live Xvfb corner/edge clamping (reserving 4 rings + caption -> max Cy = 672)
+    //    and live `RESOURCE_MANAGER` `Xft.dpi` fractional scaling (`1.25x` = 1536x864 lp fits Concentric;
+    //    `1.5x` = 1280x720 lp < 668x742 falls back to Branching `insufficient_space`).
+    // -------------------------------------------------------------------------
+    for (corner_arg, exp_cx, exp_cy) in [
+        ("10,10", 334.0f64, 334.0f64),
+        ("1910,10", 1586.0f64, 334.0f64),
+        ("10,1070", 334.0f64, 672.0f64),
+        ("1910,1070", 1586.0f64, 672.0f64),
+    ] {
+        let _ = Command::new(&radivine_bin)
+            .args([
+                "--config",
+                cfg_path.to_str().unwrap(),
+                "--socket",
+                sock_path.to_str().unwrap(),
+                "invoke",
+                "--at",
+                corner_arg,
+                &file_uri,
+            ])
+            .status();
+        let st_c = query_status();
+        assert_eq!(st_c["active_layout"], "concentric");
+        let center_arr = st_c["root_wheel_center_px"]
+            .as_array()
+            .expect("root_wheel_center_px");
+        let cx = center_arr[0].as_f64().unwrap();
+        let cy = center_arr[1].as_f64().unwrap();
+        assert!(
+            (cx - exp_cx).abs() < 1.0 && (cy - exp_cy).abs() < 1.0,
+            "corner {corner_arg} must clamp center to ({exp_cx}, {exp_cy}), got ({cx}, {cy}) (`T-X115`)"
+        );
+        let _ = Command::new(&radivine_bin)
+            .args(["--socket", sock_path.to_str().unwrap(), "dismiss"])
+            .status();
+    }
+
+    // Set Xft.dpi = 120 (scale = 1.25x -> logical viewport 1536x864 >= 668x742 -> Concentric)
+    conn.change_property8(
+        PropMode::REPLACE,
+        root,
+        atoms.RESOURCE_MANAGER,
+        AtomEnum::STRING,
+        b"Xft.dpi:\t120\n",
+    )
+    .expect("set Xft.dpi 120");
+    conn.flush().expect("flush Xft.dpi 120");
+    thread::sleep(Duration::from_millis(35));
+    let st_125 = query_status();
+    assert!((st_125["scale"].as_f64().unwrap() - 1.25).abs() < 1e-3);
+    assert_eq!(st_125["active_layout"], "concentric");
+    assert!(st_125["layout_fallback_reason"].is_null());
+
+    // Set Xft.dpi = 144 (scale = 1.5x -> logical viewport 1280x720 < 668x742 -> Branching `insufficient_space`)
+    conn.change_property8(
+        PropMode::REPLACE,
+        root,
+        atoms.RESOURCE_MANAGER,
+        AtomEnum::STRING,
+        b"Xft.dpi:\t144\n",
+    )
+    .expect("set Xft.dpi 144");
+    conn.flush().expect("flush Xft.dpi 144");
+    thread::sleep(Duration::from_millis(35));
+    let st_150 = query_status();
+    assert!((st_150["scale"].as_f64().unwrap() - 1.5).abs() < 1e-3);
+    assert_eq!(st_150["requested_layout"], "concentric");
+    assert_eq!(
+        st_150["active_layout"], "branching",
+        "1920x1080 at 1.5x (1280x720 logical < 668x742) must fall back to branching (`T-GEO4`, `T-X115`)"
+    );
+    assert_eq!(st_150["layout_fallback_reason"], "insufficient_space");
+
+    // Restore Xft.dpi = 96 (1.0x)
+    let _ = conn.change_property8(
+        PropMode::REPLACE,
+        root,
+        atoms.RESOURCE_MANAGER,
+        AtomEnum::STRING,
+        b"Xft.dpi:\t96\n",
+    );
+    let _ = conn.flush();
+    eprintln!(
+        "LIVE_XVFB_VERIFIED: T-X115 & T-GEO4 corner clamping & Xft.dpi 1.25x/1.5x (1280x720 lp fallback) verified"
+    );
+
+    // Verify disposable file and empty destination directory are 100% untouched (`T-X118`)
+    assert!(
+        fs::read_dir(&dest_dir).unwrap().next().is_none(),
+        "destination folder must remain completely empty (`T-X118`)"
+    );
     fp.verify_unchanged("live_xvfb_concentric_test");
 
     let _ = Command::new(&radivine_bin)
