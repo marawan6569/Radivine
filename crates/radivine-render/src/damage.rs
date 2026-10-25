@@ -1,9 +1,13 @@
-//! Physical-pixel damage rectangle tracking and merging (`WHEEL_ENGINE_DESIGN.md` §13.3).
+//! Physical-pixel damage rectangle tracking and merging (`WHEEL_ENGINE_DESIGN.md` §13.3, `ARCHITECTURE.md` §A4).
 
 use std::collections::hash_map::DefaultHasher;
+use std::f32::consts::FRAC_PI_2;
 use std::hash::{Hash, Hasher};
+use std::mem::discriminant;
 
-use radivine_wheel::{CaptionVisual, Scene, StemVisual, WheelVisual};
+use radivine_wheel::{
+    CaptionVisual, OriginGuideVisual, Scene, StemVisual, WheelVisual, WheelVisualKind,
+};
 use smallvec::SmallVec;
 
 /// Physical pixel dimensions of the render surface (`WHEEL_ENGINE_DESIGN.md` §13.1).
@@ -169,6 +173,18 @@ impl DamageTracker {
         self.curr_elements.clear();
         self.damage_out.clear();
 
+        // 0. Displaced-origin guide
+        if let Some(ref og) = scene.origin_guide {
+            let bbox = origin_guide_bbox_px(og, scale).clamp_to_size(size);
+            if !bbox.is_empty() {
+                self.curr_elements.push(ElementRecord {
+                    id_key: 0x0800_0000,
+                    param_hash: hash_origin_guide(og),
+                    bbox,
+                });
+            }
+        }
+
         // 1. Stems
         for (i, stem) in scene.stems.iter().enumerate() {
             let bbox = stem_bbox_px(stem, scale).clamp_to_size(size);
@@ -192,14 +208,14 @@ impl DamageTracker {
                     bbox: w_bbox,
                 });
             }
-            // Track each segment's highlight/pop individually so hovering between segments
-            // only damages the changed segments' bounding boxes rather than the whole wheel!
+            // Track each segment's highlight/pop/selection/content individually so hovering between
+            // segments only damages the changed segments' bounding boxes rather than the whole wheel!
             for (s_idx, seg) in wheel.segments.iter().enumerate() {
-                let s_bbox = segment_bbox_px(wheel, seg, scale).clamp_to_size(size);
+                let s_bbox = segment_bbox_px(wheel, s_idx, seg, scale).clamp_to_size(size);
                 if !s_bbox.is_empty() {
                     self.curr_elements.push(ElementRecord {
                         id_key: wheel_key | ((s_idx as u64) + 1),
-                        param_hash: hash_segment(wheel, seg),
+                        param_hash: hash_segment(wheel, s_idx, seg),
                         bbox: s_bbox,
                     });
                 }
@@ -314,24 +330,72 @@ pub fn merge_into_at_most_4(rects: &mut SmallVec<[RectPx; 24]>) -> SmallVec<[Rec
     out
 }
 
-fn wheel_bbox_px(w: &WheelVisual, scale: f32) -> RectPx {
-    // Transform center by scale about w.origin, and include shadow blur (22 lp) + offset (0, 4 lp) + max pop (4 lp)
-    let cx = w.origin.x + (w.center.x - w.origin.x) * w.scale;
-    let cy = w.origin.y + (w.center.y - w.origin.y) * w.scale;
-    let r = (w.r_out + 6.0) * w.scale + 22.0;
-    let min_x = ((cx - r) * scale).floor() as i32;
-    let min_y = ((cy - r) * scale).floor() as i32;
-    let max_x = ((cx + r) * scale).ceil() as i32;
-    let max_y = ((cy + r + 5.0) * scale).ceil() as i32;
-    RectPx::new(
-        min_x,
-        min_y,
-        (max_x - min_x).max(0) as u32,
-        (max_y - min_y).max(0) as u32,
-    )
+fn origin_guide_bbox_px(og: &OriginGuideVisual, scale: f32) -> RectPx {
+    let min_x = og.anchor.x.min(og.center.x) - 4.0;
+    let min_y = og.anchor.y.min(og.center.y) - 4.0;
+    let max_x = og.anchor.x.max(og.center.x) + 4.0;
+    let max_y = og.anchor.y.max(og.center.y) + 4.0;
+    let x0 = (min_x * scale).floor() as i32;
+    let y0 = (min_y * scale).floor() as i32;
+    let x1 = (max_x * scale).ceil() as i32;
+    let y1 = (max_y * scale).ceil() as i32;
+    RectPx::new(x0, y0, (x1 - x0).max(0) as u32, (y1 - y0).max(0) as u32)
 }
 
-fn segment_bbox_px(w: &WheelVisual, seg: &radivine_wheel::SegmentVisual, scale: f32) -> RectPx {
+fn wheel_bbox_px(w: &WheelVisual, scale: f32) -> RectPx {
+    let cx = w.origin.x + (w.center.x - w.origin.x) * w.scale;
+    let cy = w.origin.y + (w.center.y - w.origin.y) * w.scale;
+    match w.kind {
+        WheelVisualKind::Branching => {
+            // Transform center by scale about w.origin, and include shadow blur (22 lp) + offset (0, 4 lp) + max pop (4 lp)
+            let r = (w.r_out + 6.0) * w.scale + 22.0;
+            let min_x = ((cx - r) * scale).floor() as i32;
+            let min_y = ((cy - r) * scale).floor() as i32;
+            let max_x = ((cx + r) * scale).ceil() as i32;
+            let max_y = ((cy + r + 5.0) * scale).ceil() as i32;
+            RectPx::new(
+                min_x,
+                min_y,
+                (max_x - min_x).max(0) as u32,
+                (max_y - min_y).max(0) as u32,
+            )
+        }
+        WheelVisualKind::ConcentricRoot | WheelVisualKind::ConcentricRing => {
+            // Concentric rings have no blurred full-disc shadow; bound tightly to r_out + rim marker + AA pad
+            let r = w.r_out * w.scale + 8.0;
+            let min_x = ((cx - r) * scale).floor() as i32;
+            let min_y = ((cy - r) * scale).floor() as i32;
+            let max_x = ((cx + r) * scale).ceil() as i32;
+            let max_y = ((cy + r) * scale).ceil() as i32;
+            RectPx::new(
+                min_x,
+                min_y,
+                (max_x - min_x).max(0) as u32,
+                (max_y - min_y).max(0) as u32,
+            )
+        }
+    }
+}
+
+fn segment_bbox_px(
+    w: &WheelVisual,
+    s_idx: usize,
+    seg: &radivine_wheel::SegmentVisual,
+    scale: f32,
+) -> RectPx {
+    match w.kind {
+        WheelVisualKind::Branching => segment_bbox_px_branching(w, seg, scale),
+        WheelVisualKind::ConcentricRoot | WheelVisualKind::ConcentricRing => {
+            segment_bbox_px_concentric(w, s_idx, seg, scale)
+        }
+    }
+}
+
+fn segment_bbox_px_branching(
+    w: &WheelVisual,
+    seg: &radivine_wheel::SegmentVisual,
+    scale: f32,
+) -> RectPx {
     let cx = w.origin.x + (w.center.x - w.origin.x) * w.scale;
     let cy = w.origin.y + (w.center.y - w.origin.y) * w.scale;
     let r_in = (w.r_in - 3.0).max(0.0) * w.scale;
@@ -364,6 +428,77 @@ fn segment_bbox_px(w: &WheelVisual, seg: &radivine_wheel::SegmentVisual, scale: 
     RectPx::new(x0, y0, (x1 - x0).max(0) as u32, (y1 - y0).max(0) as u32)
 }
 
+/// Conservative analytic bounding box for a concentric sector (`ARCHITECTURE.md` §A4, `T-REN3`).
+///
+/// Evaluates the exact angular extrema (`a0`, `a1`, and any cardinal angles `k * π/2` inside
+/// `[a0, a1]`) at both `r_in` and `r_out`, unions the precomputed `NestedSegmentContent.rect`
+/// and submenu rim marker, and treats `n == 1` as a full disc.
+fn segment_bbox_px_concentric(
+    w: &WheelVisual,
+    s_idx: usize,
+    seg: &radivine_wheel::SegmentVisual,
+    scale: f32,
+) -> RectPx {
+    let cx = w.center.x;
+    let cy = w.center.y;
+    let r_in = (w.r_in - 3.0).max(0.0);
+    let r_out = w.r_out + 6.0;
+
+    if w.segments.len() <= 1 || (seg.a1 - seg.a0) >= std::f32::consts::TAU - 1e-3 {
+        let pad = r_out + 4.0;
+        let x0 = ((cx - pad) * scale).floor() as i32;
+        let y0 = ((cy - pad) * scale).floor() as i32;
+        let x1 = ((cx + pad) * scale).ceil() as i32;
+        let y1 = ((cy + pad) * scale).ceil() as i32;
+        return RectPx::new(x0, y0, (x1 - x0).max(0) as u32, (y1 - y0).max(0) as u32);
+    }
+
+    let mut min_x = f32::INFINITY;
+    let mut min_y = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut max_y = f32::NEG_INFINITY;
+
+    let mut include_angle = |a: f32| {
+        let (sin_a, cos_a) = a.sin_cos();
+        for r in [r_in, r_out] {
+            let px = cx + r * cos_a;
+            let py = cy + r * sin_a;
+            min_x = min_x.min(px);
+            min_y = min_y.min(py);
+            max_x = max_x.max(px);
+            max_y = max_y.max(py);
+        }
+    };
+
+    include_angle(seg.a0);
+    include_angle(seg.a1);
+    include_angle((seg.a0 + seg.a1) * 0.5);
+
+    // Include all cardinal angles `k * (π / 2)` that fall inside `[seg.a0, seg.a1]`
+    let k_start = (seg.a0 / FRAC_PI_2).floor() as i32 - 1;
+    let k_end = (seg.a1 / FRAC_PI_2).ceil() as i32 + 1;
+    for k in k_start..=k_end {
+        let card = (k as f32) * FRAC_PI_2;
+        if card >= seg.a0 && card <= seg.a1 {
+            include_angle(card);
+        }
+    }
+
+    // Union the N2-supplied sector content box if present
+    if let Some(nc) = w.nested_content.as_ref().and_then(|list| list.get(s_idx)) {
+        min_x = min_x.min(nc.rect.x - 2.0);
+        min_y = min_y.min(nc.rect.y - 2.0);
+        max_x = max_x.max(nc.rect.right() + 2.0);
+        max_y = max_y.max(nc.rect.bottom() + 2.0);
+    }
+
+    let x0 = ((min_x - 4.0) * scale).floor() as i32;
+    let y0 = ((min_y - 4.0) * scale).floor() as i32;
+    let x1 = ((max_x + 4.0) * scale).ceil() as i32;
+    let y1 = ((max_y + 4.0) * scale).ceil() as i32;
+    RectPx::new(x0, y0, (x1 - x0).max(0) as u32, (y1 - y0).max(0) as u32)
+}
+
 fn stem_bbox_px(s: &StemVisual, scale: f32) -> RectPx {
     let min_x = s.p0.x.min(s.ctrl.x).min(s.p1.x) - 6.0;
     let min_y = s.p0.y.min(s.ctrl.y).min(s.p1.y) - 6.0;
@@ -386,32 +521,63 @@ fn caption_bbox_px(c: &CaptionVisual, scale: f32) -> RectPx {
 }
 
 #[inline]
-fn qf(v: f32) -> i32 {
-    (v * 256.0).round() as i32
+fn fbits(v: f32) -> u32 {
+    (v + 0.0).to_bits()
+}
+
+fn hash_origin_guide(og: &OriginGuideVisual) -> u64 {
+    let mut h = DefaultHasher::new();
+    fbits(og.anchor.x).hash(&mut h);
+    fbits(og.anchor.y).hash(&mut h);
+    fbits(og.center.x).hash(&mut h);
+    fbits(og.center.y).hash(&mut h);
+    fbits(og.opacity).hash(&mut h);
+    h.finish()
 }
 
 fn hash_wheel_base(w: &WheelVisual) -> u64 {
     let mut h = DefaultHasher::new();
-    qf(w.center.x).hash(&mut h);
-    qf(w.center.y).hash(&mut h);
-    qf(w.r_in).hash(&mut h);
-    qf(w.r_out).hash(&mut h);
-    qf(w.scale).hash(&mut h);
-    qf(w.opacity).hash(&mut h);
+    discriminant(&w.kind).hash(&mut h);
+    discriminant(&w.role).hash(&mut h);
+    fbits(w.center.x).hash(&mut h);
+    fbits(w.center.y).hash(&mut h);
+    fbits(w.r_in).hash(&mut h);
+    fbits(w.r_out).hash(&mut h);
+    fbits(w.scale).hash(&mut h);
+    fbits(w.origin.x).hash(&mut h);
+    fbits(w.origin.y).hash(&mut h);
+    fbits(w.opacity).hash(&mut h);
+    w.bridge.map(|(b0, b1)| (fbits(b0), fbits(b1))).hash(&mut h);
+    w.separator_half_angle.map(fbits).hash(&mut h);
     w.hub.icon.hash(&mut h);
     w.hub.badge.hash(&mut h);
     w.segments.len().hash(&mut h);
     h.finish()
 }
 
-fn hash_segment(w: &WheelVisual, s: &radivine_wheel::SegmentVisual) -> u64 {
+fn hash_segment(w: &WheelVisual, s_idx: usize, s: &radivine_wheel::SegmentVisual) -> u64 {
     let mut h = DefaultHasher::new();
-    qf(w.scale).hash(&mut h);
-    qf(w.opacity).hash(&mut h);
-    qf(s.a0).hash(&mut h);
-    qf(s.a1).hash(&mut h);
-    qf(s.highlight).hash(&mut h);
-    qf(s.pop).hash(&mut h);
+    discriminant(&w.kind).hash(&mut h);
+    discriminant(&w.role).hash(&mut h);
+    fbits(w.center.x).hash(&mut h);
+    fbits(w.center.y).hash(&mut h);
+    fbits(w.r_in).hash(&mut h);
+    fbits(w.r_out).hash(&mut h);
+    fbits(w.scale).hash(&mut h);
+    fbits(w.opacity).hash(&mut h);
+    w.separator_half_angle.map(fbits).hash(&mut h);
+    if let Some(nc) = w.nested_content.as_ref().and_then(|list| list.get(s_idx)) {
+        fbits(nc.rect.x).hash(&mut h);
+        fbits(nc.rect.y).hash(&mut h);
+        fbits(nc.rect.w).hash(&mut h);
+        fbits(nc.rect.h).hash(&mut h);
+        discriminant(&nc.mode).hash(&mut h);
+    }
+    fbits(s.a0).hash(&mut h);
+    fbits(s.a1).hash(&mut h);
+    fbits(s.highlight).hash(&mut h);
+    fbits(s.pop).hash(&mut h);
+    discriminant(&s.selection).hash(&mut h);
     s.on_path.hash(&mut h);
     s.enabled.hash(&mut h);
     s.has_children.hash(&mut h);
@@ -422,25 +588,29 @@ fn hash_segment(w: &WheelVisual, s: &radivine_wheel::SegmentVisual) -> u64 {
 
 fn hash_stem(s: &StemVisual) -> u64 {
     let mut h = DefaultHasher::new();
-    qf(s.p0.x).hash(&mut h);
-    qf(s.p0.y).hash(&mut h);
-    qf(s.ctrl.x).hash(&mut h);
-    qf(s.ctrl.y).hash(&mut h);
-    qf(s.p1.x).hash(&mut h);
-    qf(s.p1.y).hash(&mut h);
-    qf(s.progress).hash(&mut h);
-    qf(s.opacity).hash(&mut h);
+    fbits(s.p0.x).hash(&mut h);
+    fbits(s.p0.y).hash(&mut h);
+    fbits(s.ctrl.x).hash(&mut h);
+    fbits(s.ctrl.y).hash(&mut h);
+    fbits(s.p1.x).hash(&mut h);
+    fbits(s.p1.y).hash(&mut h);
+    fbits(s.progress).hash(&mut h);
+    fbits(s.opacity).hash(&mut h);
     s.on_path.hash(&mut h);
     h.finish()
 }
 
 fn hash_caption(c: &CaptionVisual) -> u64 {
     let mut h = DefaultHasher::new();
-    qf(c.box_.x).hash(&mut h);
-    qf(c.box_.y).hash(&mut h);
+    fbits(c.box_.x).hash(&mut h);
+    fbits(c.box_.y).hash(&mut h);
+    fbits(c.box_.w).hash(&mut h);
+    fbits(c.box_.h).hash(&mut h);
+    discriminant(&c.align).hash(&mut h);
+    c.breadcrumb.hash(&mut h);
     c.title.hash(&mut h);
     c.detail.hash(&mut h);
     c.disabled.hash(&mut h);
-    qf(c.opacity).hash(&mut h);
+    fbits(c.opacity).hash(&mut h);
     h.finish()
 }
