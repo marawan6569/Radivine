@@ -429,7 +429,8 @@ pub fn compute_sector_content(
         best
     };
 
-    if let Some(w_int) = binary_search_width(37.0)
+    if has_icon
+        && let Some(w_int) = binary_search_width(37.0)
         && w_int >= 48
     {
         let w = w_int as f32;

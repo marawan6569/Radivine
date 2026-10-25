@@ -1,10 +1,11 @@
 //! Scene description contract between `radivine-wheel` and `radivine-render`
-//! (`WHEEL_ENGINE_DESIGN.md` §12).
+//! (`WHEEL_ENGINE_DESIGN.md` §12, `ARCHITECTURE.md` §A4).
 
 use std::sync::Arc;
 
 use smallvec::SmallVec;
 
+use crate::concentric::NestedSegmentContent;
 use crate::geometry::{Point, Rect};
 use crate::menu::IconKey;
 
@@ -15,6 +16,43 @@ pub enum WheelRole {
     Active,
     /// Parent/ancestor wheel kept visible (dimmed to 0.72 opacity).
     Ancestor,
+}
+
+/// Visual layout kind of a radial wheel in a [`Scene`] (`ARCHITECTURE.md` §A4).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WheelVisualKind {
+    /// Classic branching wheel with its own center hub and full-disc shadow.
+    #[default]
+    Branching,
+    /// Concentric level-0 root ring and shared central hub (no blurred full-disc shadow).
+    ConcentricRoot,
+    /// Concentric outer submenu ring (annular material only; no additional hub or disc shadow).
+    ConcentricRing,
+}
+
+/// Selection/hover visual state of a [`SegmentVisual`] (`ARCHITECTURE.md` §A4, `INTERACTION_DESIGN.md` §I8).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SelectionVisual {
+    /// Not hovered, or hover retained by hysteresis only (highlight only, no outline).
+    #[default]
+    None,
+    /// Pending ancestor sibling during grace window (`highlight = 0.25`, no outline).
+    Pending,
+    /// Strictly hit, unguarded, enabled item eligible for immediate commit/submenu adoption (`2 lp` inside outline).
+    Armed,
+    /// Keyboard-focused item on the active ring (`2 lp` inside outline).
+    KeyboardFocus,
+}
+
+/// Displaced-origin guide line drawn below concentric ring material (`ARCHITECTURE.md` §A4).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct OriginGuideVisual {
+    /// Original summon anchor point in overlay-local logical pixels.
+    pub anchor: Point,
+    /// Displaced wheel center point in overlay-local logical pixels.
+    pub center: Point,
+    /// Animated opacity (`0.0..=1.0`; `0.45 * root_opacity` in concentric sessions).
+    pub opacity: f32,
 }
 
 /// Side of the active wheel on which the caption pill sits.
@@ -49,24 +87,28 @@ pub enum Shape {
 pub struct Scene {
     /// Monotonically increasing generation counter incremented whenever the scene changes.
     pub generation: u64,
-    /// Connecting vine stems drawn underneath all wheels.
+    /// Optional displaced-origin guide line drawn underneath concentric wheels when `anchor != center`.
+    pub origin_guide: Option<OriginGuideVisual>,
+    /// Connecting vine stems drawn underneath all wheels (empty in concentric sessions).
     pub stems: SmallVec<[StemVisual; 6]>,
     /// Visible wheels ordered from root (first) to deepest (last).
     pub wheels: SmallVec<[WheelVisual; 6]>,
-    /// Optional caption pill attached to the active wheel.
+    /// Optional caption pill attached to the active wheel or concentric cluster.
     pub caption: Option<CaptionVisual>,
 }
 
 /// Visual state of a single radial wheel in a [`Scene`].
 #[derive(Clone, Debug, PartialEq)]
 pub struct WheelVisual {
+    /// Explicit visual layout kind (`Branching`, `ConcentricRoot`, or `ConcentricRing`).
+    pub kind: WheelVisualKind,
     /// Wheel center in overlay-local logical pixels.
     pub center: Point,
-    /// Inner hub radius in logical pixels.
+    /// Inner hub/ring radius in logical pixels.
     pub r_in: f32,
     /// Outer ring radius in logical pixels.
     pub r_out: f32,
-    /// Animated scale factor (`0.6..=1.0`).
+    /// Animated scale factor (`0.6..=1.0`; always `1.0` for concentric rings).
     pub scale: f32,
     /// Transform origin for scaling (`anchor` for root, bridge point for child wheels).
     pub origin: Point,
@@ -74,8 +116,12 @@ pub struct WheelVisual {
     pub opacity: f32,
     /// Whether this wheel is `Active` or an `Ancestor`.
     pub role: WheelRole,
-    /// Optional unwrapped `(a0, a1)` angle span in radians of the bridge sector (for child wheels).
+    /// Optional unwrapped `(a0, a1)` angle span in radians of the bridge sector (for branching child wheels).
     pub bridge: Option<(f32, f32)>,
+    /// Optional constant angular half-gap in radians for concentric ring separators (`None` for `Branching`).
+    pub separator_half_angle: Option<f32>,
+    /// Precomputed sector content boxes and modes for concentric rings (`None` for `Branching`).
+    pub nested_content: Option<SmallVec<[NestedSegmentContent; 12]>>,
     /// Center hub visual state.
     pub hub: HubVisual,
     /// Radial segments in clockwise order.
@@ -91,11 +137,13 @@ pub struct SegmentVisual {
     pub a1: f32,
     /// Animated highlight intensity (`0.0..=1.25`; `> 1.0` during commit flash).
     pub highlight: f32,
-    /// Animated extra outer radius pop in logical pixels (`0.0..=4.0`).
+    /// Animated extra outer radius pop in logical pixels (`0.0..=4.0`; always `0.0` in concentric).
     pub pop: f32,
+    /// Strongly typed selection visual state (`None`, `Pending`, `Armed`, or `KeyboardFocus`).
+    pub selection: SelectionVisual,
     /// `true` if this segment opened a currently visible child wheel.
     pub on_path: bool,
-    /// `true` if this item is enabled.
+    /// `true` if this item (and its ancestor chain in concentric mode) is enabled.
     pub enabled: bool,
     /// `true` if this item is a submenu with children (draws rim node indicator).
     pub has_children: bool,
@@ -131,18 +179,20 @@ pub struct StemVisual {
     pub on_path: bool,
 }
 
-/// Visual state of the caption pill attached to the active wheel.
+/// Visual state of the caption pill attached to the active wheel or concentric cluster.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CaptionVisual {
-    /// Reserved bounding box (`240 × 44 lp`) in overlay-local logical pixels.
+    /// Reserved bounding box (`240 × 44 lp` for Branching, `280 × 64 lp` for Concentric) in overlay-local logical pixels.
     pub box_: Rect,
     /// Which side of the active wheel the caption sits on.
     pub align: CaptionAlign,
+    /// Optional ancestor submenu labels from root-ward to deepest open submenu (`None` for Branching).
+    pub breadcrumb: Option<SmallVec<[Arc<str>; 6]>>,
     /// Hovered item label (`13 lp` semibold).
     pub title: Arc<str>,
-    /// Optional description (when enabled) or `disabled_reason` (when disabled).
+    /// Optional description (when enabled), `disabled_reason` (when disabled), or settled-path hint.
     pub detail: Option<Arc<str>>,
-    /// `true` if the hovered item is disabled.
+    /// `true` if the hovered item (or any ancestor) is disabled.
     pub disabled: bool,
     /// Animated opacity (`0.0..=1.0`).
     pub opacity: f32,

@@ -2026,3 +2026,161 @@ fn t_menu2_and_t_menu3_more_wrapping_depth_limits_and_enablement_geometry_preser
     assert!(cap.disabled);
     assert_eq!(cap.detail.as_deref(), Some("Parent locked at t=250"));
 }
+
+/// N3 Scene Contract Verification:
+/// - `WheelVisualKind::ConcentricRoot` vs `ConcentricRing` (never inferred from radii/bridge).
+/// - `SelectionVisual::{None, Pending, Armed, KeyboardFocus}` including hysteresis-only retention (`None`).
+/// - `nested_content` and `separator_half_angle` populated on every concentric ring.
+/// - `origin_guide` populated when `anchor != center` (`0.45 * root_opacity`).
+/// - `CaptionVisual.breadcrumb` and settled-path `"Move inward to go back."` fallback without hover.
+#[test]
+fn t_n3_scene_visual_kinds_selection_breadcrumb_and_origin_guide() {
+    use radivine_wheel::{SelectionVisual, WheelVisualKind};
+
+    let cfg = shipped_concentric_config();
+    let vp = Viewport::new(1920.0, 1080.0, 1.0);
+
+    // 1. Displaced summon near top-left produces OriginGuideVisual (`0.45 * root_opacity`)
+    let displaced_anchor = Point::new(40.0, 40.0);
+    let mut s_disp = WheelSession::new(
+        Some(normative_fixture_tree()),
+        displaced_anchor,
+        vp,
+        InputMode::Pointer,
+        &cfg,
+        0,
+    );
+    let mut events = Vec::new();
+    let og0 = s_disp
+        .scene()
+        .origin_guide
+        .expect("displaced concentric session must emit origin_guide");
+    assert_eq!(og0.anchor, displaced_anchor);
+    assert!(og0.center.distance(displaced_anchor) > 10.0);
+    assert!((og0.opacity - 0.45 * 0.35).abs() < 1e-4);
+
+    s_disp.tick(130, &mut events);
+    let og1 = s_disp.scene().origin_guide.expect("origin_guide at t=130");
+    assert!((og1.opacity - 0.45).abs() < 1e-4);
+
+    // 2. Centered session has no origin_guide; root ring is ConcentricRoot, child ring is ConcentricRing
+    let center = Point::new(960.0, 540.0);
+    let mut session = WheelSession::new(
+        Some(normative_fixture_tree()),
+        center,
+        vp,
+        InputMode::Pointer,
+        &cfg,
+        0,
+    );
+    assert!(session.scene().origin_guide.is_none());
+    assert_eq!(
+        session.scene().wheels[0].kind,
+        WheelVisualKind::ConcentricRoot
+    );
+    assert!(session.scene().wheels[0].nested_content.is_some());
+    assert!(session.scene().wheels[0].separator_half_angle.is_some());
+
+    // Hover Sub A ([0]) -> SelectionVisual::Armed
+    session.handle(
+        WheelInput::PointerMoved(Point::new(960.0, 460.0)),
+        10,
+        &mut events,
+    );
+    assert_eq!(
+        session.scene().wheels[0].segments[0].selection,
+        SelectionVisual::Armed
+    );
+    assert_eq!(
+        session
+            .scene()
+            .caption
+            .as_ref()
+            .and_then(|c| c.breadcrumb.as_ref()),
+        None
+    );
+
+    // Dwell opens child ring 1 at t=120
+    session.tick(120, &mut events);
+    assert_eq!(session.scene().wheels.len(), 2);
+    assert_eq!(
+        session.scene().wheels[0].kind,
+        WheelVisualKind::ConcentricRoot
+    );
+    assert_eq!(
+        session.scene().wheels[1].kind,
+        WheelVisualKind::ConcentricRing
+    );
+    assert!(session.scene().wheels[1].nested_content.is_some());
+
+    // Hover child [0, 0] -> SelectionVisual::Armed, breadcrumb = ["Submenu A"]
+    let c0_pt = sector_center_point(&session, 1, 0);
+    session.handle(WheelInput::PointerMoved(c0_pt), 130, &mut events);
+    assert_eq!(
+        session.scene().wheels[1].segments[0].selection,
+        SelectionVisual::Armed
+    );
+    let cap_child = session.scene().caption.as_ref().expect("child caption");
+    assert_eq!(
+        cap_child
+            .breadcrumb
+            .as_ref()
+            .map(|b| b.iter().map(AsRef::as_ref).collect::<Vec<_>>()),
+        Some(vec!["Submenu A"])
+    );
+    assert_eq!(cap_child.title.as_ref(), "Action A0");
+
+    // Move into <3 lp radial gap adjacent to ring 1 -> hysteresis retains hover highlight,
+    // but SelectionVisual is None (never Armed in a gap!)
+    let r1_in = session.debug_state().wheels[1].r_in;
+    let gap_hyst_pt =
+        center.offset_polar(r1_in - 1.5, session.debug_state().wheels[1].spans[0].center);
+    session.handle(WheelInput::PointerMoved(gap_hyst_pt), 135, &mut events);
+    assert_eq!(
+        session.debug_state().hovered_item,
+        Some(ItemPath::from_slice(&[0, 0]))
+    );
+    assert_eq!(
+        session.scene().wheels[1].segments[0].selection,
+        SelectionVisual::None,
+        "hysteresis-retained hover in gap must not show Armed outline"
+    );
+
+    // Move deep into radial gap (beyond 3 lp hysteresis) -> hovered_item is None,
+    // settled-path caption shows breadcrumb ["Submenu A"] and "Move inward to go back."
+    let gap_mid_pt =
+        center.offset_polar(r1_in - 3.0, session.debug_state().wheels[1].spans[0].center);
+    session.handle(WheelInput::PointerMoved(gap_mid_pt), 140, &mut events);
+    assert_eq!(session.debug_state().hovered_item, None);
+    let cap_settled = session
+        .scene()
+        .caption
+        .as_ref()
+        .expect("settled path without hover must show caption");
+    assert_eq!(
+        cap_settled
+            .breadcrumb
+            .as_ref()
+            .map(|b| b.iter().map(AsRef::as_ref).collect::<Vec<_>>()),
+        Some(vec!["Submenu A"])
+    );
+    assert_eq!(
+        cap_settled.detail.as_deref(),
+        Some("Move inward to go back.")
+    );
+
+    // Move to root sibling Leaf B ([1]) while child ring 1 is open -> SelectionVisual::Pending
+    let b_pt = sector_point_at_radius(&session, 0, 1, 80.0);
+    session.handle(WheelInput::PointerMoved(b_pt), 145, &mut events);
+    assert_eq!(
+        session.scene().wheels[0].segments[1].selection,
+        SelectionVisual::Pending
+    );
+
+    // Keyboard navigation on active ring -> SelectionVisual::KeyboardFocus
+    session.handle(WheelInput::Nav(NavKey::Next), 150, &mut events);
+    assert_eq!(
+        session.scene().wheels[1].segments[0].selection,
+        SelectionVisual::KeyboardFocus
+    );
+}

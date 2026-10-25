@@ -34,8 +34,8 @@ pub use hit::{WheelHitGeometry, Zone, hit_test};
 pub use layout::Placement;
 pub use menu::{IconKey, ItemPath, MenuNode, MenuTree, NodeKind};
 pub use scene::{
-    CaptionAlign, CaptionVisual, HubVisual, Scene, SegmentVisual, Shape, StemVisual, WheelRole,
-    WheelVisual,
+    CaptionAlign, CaptionVisual, HubVisual, OriginGuideVisual, Scene, SegmentVisual,
+    SelectionVisual, Shape, StemVisual, WheelRole, WheelVisual, WheelVisualKind,
 };
 pub use session::{
     DebugState, DismissReason, DropTarget, InputMode, NavKey, SessionPhase, WheelEvent, WheelInput,

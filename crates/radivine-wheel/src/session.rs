@@ -6,8 +6,9 @@ use smallvec::SmallVec;
 
 use crate::anim::{Ease, Millis, Tween, timings};
 use crate::concentric::{
-    CONCENTRIC_FRESH_MOTION_LP, CONCENTRIC_RADIAL_EPS, ConcentricPlan, NestedHit, hit_concentric,
-    plan_concentric, retain_hover_hysteresis, ring_geometry,
+    CONCENTRIC_FRESH_MOTION_LP, CONCENTRIC_RADIAL_EPS, ConcentricPlan, NestedHit,
+    NestedSegmentContent, compute_sector_content, hit_concentric, plan_concentric,
+    retain_hover_hysteresis, ring_geometry, separator_half_angle_for_ring,
 };
 use crate::concentric_nav::{
     ConcentricDwellTimer, ConcentricHubCloseTimer, ConcentricInputSource, ConcentricPress,
@@ -28,8 +29,8 @@ use crate::layout::{
 };
 use crate::menu::{IconKey, ItemPath, MenuNode, MenuTree, NodeKind};
 use crate::scene::{
-    CaptionAlign, CaptionVisual, HubVisual, Scene, SegmentVisual, Shape, StemVisual, WheelRole,
-    WheelVisual,
+    CaptionAlign, CaptionVisual, HubVisual, OriginGuideVisual, Scene, SegmentVisual,
+    SelectionVisual, Shape, StemVisual, WheelRole, WheelVisual, WheelVisualKind,
 };
 
 /// Input operating mode of a [`WheelSession`] (`WHEEL_ENGINE_DESIGN.md` §1, §9).
@@ -203,6 +204,10 @@ struct WheelInstance {
     role: WheelRole,
     /// Optional bridge span (present on child wheels).
     bridge: Option<SegmentSpan>,
+    /// Optional constant angular half-gap in radians for concentric ring separators.
+    separator_half_angle: Option<f32>,
+    /// Precomputed sector content boxes and modes for concentric rings.
+    nested_content: Option<SmallVec<[NestedSegmentContent; 12]>>,
     /// Hub icon and optional count badge.
     hub: HubVisual,
     /// Segment states in clockwise order.
@@ -298,6 +303,7 @@ pub struct WheelSession {
     input_shapes: Vec<Shape>,
     root_badge: Option<u32>,
     default_child_hub_icon: IconKey,
+    settled_path_hint: Arc<str>,
     animating_flag: bool,
 }
 
@@ -373,6 +379,12 @@ impl WheelSession {
             opacity: opacity_tween,
             role: WheelRole::Active,
             bridge: None,
+            separator_half_angle: if is_concentric { Some(0.0) } else { None },
+            nested_content: if is_concentric {
+                Some(SmallVec::new())
+            } else {
+                None
+            },
             hub: HubVisual {
                 icon: sanitized_menu
                     .as_ref()
@@ -399,7 +411,7 @@ impl WheelSession {
         if let Some(ref m) = sanitized_menu
             && let Some(children) = m.root.children()
         {
-            populate_root_segments(&mut root_wheel, children, &cfg);
+            populate_root_segments(&mut root_wheel, children, &cfg, is_concentric);
             if !cfg.reduced_motion && !is_concentric {
                 stagger_extra = ((children.len() as u16).saturating_sub(1)
                     * timings::SEGMENT_STAGGER_MS)
@@ -453,6 +465,7 @@ impl WheelSession {
             input_shapes,
             root_badge: None,
             default_child_hub_icon: IconKey::from("lucide:chevron-left"),
+            settled_path_hint: Arc::from("Move inward to go back."),
             animating_flag: true,
         };
 
@@ -481,6 +494,8 @@ impl WheelSession {
                 root.placement.center = root_center;
                 root.origin = self.anchor;
                 root.hit_geom.center = root_center;
+                root.separator_half_angle = None;
+                root.nested_content = None;
             }
             self.sync_hit_cache();
             self.rebuild_input_region();
@@ -517,12 +532,13 @@ impl WheelSession {
         }
         menu.sanitize(&self.cfg);
         let root_count = menu.root.children().map_or(0, <[MenuNode]>::len);
+        let is_concentric = matches!(self.layout_state, LayoutState::Concentric(_));
         if let Some(root_wheel) = self.wheels.first_mut() {
             if let Some(icon) = menu.root.icon.clone() {
                 root_wheel.hub.icon = Some(icon);
             }
             if let Some(children) = menu.root.children() {
-                populate_root_segments(root_wheel, children, &self.cfg);
+                populate_root_segments(root_wheel, children, &self.cfg, is_concentric);
             }
         }
         if let LayoutState::Concentric(ref mut state) = self.layout_state {
@@ -1621,6 +1637,8 @@ impl WheelSession {
             opacity: opacity_tween,
             role: WheelRole::Active,
             bridge: Some(bridge_span),
+            separator_half_angle: None,
+            nested_content: None,
             hub: HubVisual {
                 icon: submenu_node
                     .icon
@@ -2000,6 +2018,7 @@ impl WheelSession {
 
     fn rebuild_scene_branching(&mut self, now: Millis) {
         self.scene.generation = self.scene.generation.wrapping_add(1);
+        self.scene.origin_guide = None;
         self.scene.stems.clear();
         self.scene.wheels.clear();
 
@@ -2063,6 +2082,7 @@ impl WheelSession {
                     a1: seg.a1,
                     highlight: seg.highlight.value(now),
                     pop: seg.pop.value(now),
+                    selection: SelectionVisual::None,
                     on_path: open_child_item == Some(s_idx),
                     enabled: seg.enabled,
                     has_children: seg.has_children,
@@ -2072,6 +2092,7 @@ impl WheelSession {
             }
 
             self.scene.wheels.push(WheelVisual {
+                kind: WheelVisualKind::Branching,
                 center: w.placement.center,
                 r_in: w.r_in,
                 r_out: w.r_out,
@@ -2080,6 +2101,8 @@ impl WheelSession {
                 opacity: w.opacity.value(now),
                 role: w.role,
                 bridge: w.bridge.map(|b| (b.a0, b.a1)),
+                separator_half_angle: None,
+                nested_content: None,
                 hub: w.hub.clone(),
                 segments: seg_visuals,
             });
@@ -2098,6 +2121,7 @@ impl WheelSession {
                         a1: seg.a1,
                         highlight: seg.highlight.value(now),
                         pop: seg.pop.value(now),
+                        selection: SelectionVisual::None,
                         on_path: false,
                         enabled: seg.enabled,
                         has_children: seg.has_children,
@@ -2106,6 +2130,7 @@ impl WheelSession {
                     });
                 }
                 self.scene.wheels.push(WheelVisual {
+                    kind: WheelVisualKind::Branching,
                     center: rw.placement.center,
                     r_in: rw.r_in,
                     r_out: rw.r_out,
@@ -2114,6 +2139,8 @@ impl WheelSession {
                     opacity: rw.opacity.value(now),
                     role: rw.role,
                     bridge: rw.bridge.map(|b| (b.a0, b.a1)),
+                    separator_half_angle: None,
+                    nested_content: None,
                     hub: rw.hub.clone(),
                     segments: seg_visuals,
                 });
@@ -2154,6 +2181,7 @@ impl WheelSession {
             self.scene.caption = Some(CaptionVisual {
                 box_,
                 align,
+                breadcrumb: None,
                 title: node.label.clone(),
                 detail,
                 disabled: !node.enabled,
@@ -2812,6 +2840,7 @@ impl WheelSession {
         let opacity_tween = Tween::new(0.35, 1.0, now, emerge_dur, Ease::OutCubic);
 
         let mut segments = SmallVec::new();
+        let mut nested_content = SmallVec::new();
         for (k, child_node) in children.iter().enumerate() {
             let sp = rg.spans[k];
             segments.push(SegmentState {
@@ -2824,6 +2853,15 @@ impl WheelSession {
                 label: child_node.label.clone(),
                 icon: child_node.icon.clone(),
             });
+            nested_content.push(compute_sector_content(
+                center,
+                r_in,
+                r_out,
+                sp,
+                rg.separator_half_angle,
+                children.len(),
+                child_node.icon.is_some(),
+            ));
         }
 
         let hit_geom = WheelHitGeometry {
@@ -2854,6 +2892,8 @@ impl WheelSession {
             opacity: opacity_tween,
             role: WheelRole::Active,
             bridge: None,
+            separator_half_angle: Some(rg.separator_half_angle),
+            nested_content: Some(nested_content),
             hub: HubVisual {
                 icon: submenu_node
                     .icon
@@ -2867,6 +2907,15 @@ impl WheelSession {
         };
 
         self.wheels.push(child_instance);
+        if self.caption_opacity.to < 1.0 {
+            let cap_dur = if self.cfg.reduced_motion {
+                timings::REDUCED_MOTION_FADE_MS
+            } else {
+                timings::CAPTION_FADE_MS
+            };
+            self.caption_opacity
+                .retarget(1.0, now, cap_dur, Ease::Linear);
+        }
 
         if let LayoutState::Concentric(ref mut state) = self.layout_state {
             state.open_rings.push(rg);
@@ -2946,6 +2995,16 @@ impl WheelSession {
             state.plan.approach_required = !state.hub_visited_by_pointer;
             state.raw_hit = hit_concentric(self.last_pointer, &state.plan, &state.open_rings);
             self.raw_zone = ConcentricState::hit_to_debug_zone(state.raw_hit);
+        }
+
+        if self.wheels.len() <= 1 && self.hovered_item.is_none() {
+            let cap_dur = if self.cfg.reduced_motion {
+                timings::REDUCED_MOTION_FADE_MS
+            } else {
+                timings::CAPTION_FADE_MS
+            };
+            self.caption_opacity
+                .retarget(0.0, now, cap_dur, Ease::Linear);
         }
 
         self.sync_hit_cache();
@@ -3039,8 +3098,7 @@ impl WheelSession {
                         .retarget(target_hl, now, in_dur, Ease::OutCubic);
                 }
             }
-            self.caption_opacity = Tween::new(
-                0.0,
+            self.caption_opacity.retarget(
                 1.0,
                 now,
                 if self.cfg.reduced_motion {
@@ -3051,8 +3109,9 @@ impl WheelSession {
                 Ease::Linear,
             );
         } else {
+            let target_cap_op = if self.wheels.len() > 1 { 1.0 } else { 0.0 };
             self.caption_opacity.retarget(
-                0.0,
+                target_cap_op,
                 now,
                 if self.cfg.reduced_motion {
                     timings::REDUCED_MOTION_FADE_MS
@@ -3302,11 +3361,26 @@ impl WheelSession {
 
     fn rebuild_scene_concentric(&mut self, now: Millis) {
         self.scene.generation = self.scene.generation.wrapping_add(1);
+        self.scene.origin_guide = None;
         self.scene.stems.clear();
         self.scene.wheels.clear();
 
         let mut any_tween_active = false;
         let num_wheels = self.wheels.len();
+
+        // 0. Displaced-origin guide (`anchor != center`, `0.45 * root_opacity` below rings)
+        if let LayoutState::Concentric(ref state) = self.layout_state
+            && self.anchor.distance(state.plan.center) > 0.5
+        {
+            let root_op = self.wheels.first().map_or(0.0, |w| w.opacity.value(now));
+            if root_op > 0.0 {
+                self.scene.origin_guide = Some(OriginGuideVisual {
+                    anchor: self.anchor,
+                    center: state.plan.center,
+                    opacity: (0.45 * root_op).clamp(0.0, 1.0),
+                });
+            }
+        }
 
         // 1. Active rings (root -> deepest)
         for (w_idx, w) in self.wheels.iter().enumerate() {
@@ -3318,26 +3392,76 @@ impl WheelSession {
             } else {
                 None
             };
+            let ring_ancestors_enabled = self
+                .menu
+                .as_ref()
+                .is_none_or(|m| menu_path_and_ancestors_enabled(m, &w.path));
 
             let mut seg_visuals = SmallVec::new();
             for (s_idx, seg) in w.segments.iter().enumerate() {
                 if !seg.highlight.done(now) || !seg.pop.done(now) {
                     any_tween_active = true;
                 }
+                let eff_seg_enabled = seg.enabled && ring_ancestors_enabled;
+                let seg_path = w.path.child(s_idx as u8);
+                let selection = if self.hovered_item.as_ref() == Some(&seg_path)
+                    && matches!(self.phase, SessionPhase::Appearing | SessionPhase::Open)
+                {
+                    match &self.layout_state {
+                        LayoutState::Concentric(state) if !state.interaction_suspended => {
+                            if state
+                                .pending_sibling
+                                .as_ref()
+                                .is_some_and(|ps| ps.path == seg_path)
+                            {
+                                if eff_seg_enabled {
+                                    SelectionVisual::Pending
+                                } else {
+                                    SelectionVisual::None
+                                }
+                            } else if matches!(
+                                state.input_source,
+                                ConcentricInputSource::Keyboard { .. }
+                            ) {
+                                SelectionVisual::KeyboardFocus
+                            } else if self.is_concentric_item_eligible(
+                                w_idx as u8,
+                                s_idx as u8,
+                                &seg_path,
+                            ) {
+                                SelectionVisual::Armed
+                            } else {
+                                SelectionVisual::None
+                            }
+                        }
+                        _ => SelectionVisual::None,
+                    }
+                } else {
+                    SelectionVisual::None
+                };
+
                 seg_visuals.push(SegmentVisual {
                     a0: seg.a0,
                     a1: seg.a1,
                     highlight: seg.highlight.value(now),
                     pop: 0.0,
+                    selection,
                     on_path: open_child_item == Some(s_idx),
-                    enabled: seg.enabled,
+                    enabled: eff_seg_enabled,
                     has_children: seg.has_children,
                     label: seg.label.clone(),
                     icon: seg.icon.clone(),
                 });
             }
 
+            let kind = if w_idx == 0 {
+                WheelVisualKind::ConcentricRoot
+            } else {
+                WheelVisualKind::ConcentricRing
+            };
+
             self.scene.wheels.push(WheelVisual {
+                kind,
                 center: w.placement.center,
                 r_in: w.r_in,
                 r_out: w.r_out,
@@ -3346,6 +3470,8 @@ impl WheelSession {
                 opacity: w.opacity.value(now),
                 role: w.role,
                 bridge: None,
+                separator_half_angle: w.separator_half_angle,
+                nested_content: w.nested_content.clone(),
                 hub: w.hub.clone(),
                 segments: seg_visuals,
             });
@@ -3364,6 +3490,7 @@ impl WheelSession {
                         a1: seg.a1,
                         highlight: seg.highlight.value(now),
                         pop: 0.0,
+                        selection: SelectionVisual::None,
                         on_path: false,
                         enabled: seg.enabled,
                         has_children: seg.has_children,
@@ -3372,6 +3499,7 @@ impl WheelSession {
                     });
                 }
                 self.scene.wheels.push(WheelVisual {
+                    kind: WheelVisualKind::ConcentricRing,
                     center: rw.placement.center,
                     r_in: rw.r_in,
                     r_out: rw.r_out,
@@ -3380,6 +3508,8 @@ impl WheelSession {
                     opacity: rw.opacity.value(now),
                     role: rw.role,
                     bridge: None,
+                    separator_half_angle: rw.separator_half_angle,
+                    nested_content: rw.nested_content.clone(),
                     hub: rw.hub.clone(),
                     segments: seg_visuals,
                 });
@@ -3390,27 +3520,75 @@ impl WheelSession {
         self.scene.caption = None;
         if matches!(self.phase, SessionPhase::Appearing | SessionPhase::Open)
             && let LayoutState::Concentric(ref state) = self.layout_state
-            && let Some(ref hov_path) = self.hovered_item
             && let Some(ref menu) = self.menu
-            && let Some(node) = menu.node(hov_path)
         {
-            if !self.caption_opacity.done(now) {
-                any_tween_active = true;
+            if let Some(ref hov_path) = self.hovered_item
+                && let Some(node) = menu.node(hov_path)
+            {
+                if !self.caption_opacity.done(now) {
+                    any_tween_active = true;
+                }
+                let mut crumbs: SmallVec<[Arc<str>; 6]> = SmallVec::new();
+                if hov_path.len() > 1 {
+                    let slice = hov_path.as_slice();
+                    for len in 1..slice.len() {
+                        let prefix = ItemPath::from_slice(&slice[..len]);
+                        if let Some(anc) = menu.node(&prefix) {
+                            crumbs.push(anc.label.clone());
+                        }
+                    }
+                } else if self.wheels.len() > 1 {
+                    for w in &self.wheels[1..] {
+                        if let Some(anc) = menu.node(&w.path) {
+                            crumbs.push(anc.label.clone());
+                        }
+                    }
+                }
+                let breadcrumb = if crumbs.is_empty() {
+                    None
+                } else {
+                    Some(crumbs)
+                };
+                let (eff_enabled, eff_disabled_reason) = effective_node_state(menu, hov_path);
+                let detail = if eff_enabled {
+                    node.description.clone()
+                } else {
+                    eff_disabled_reason
+                };
+                self.scene.caption = Some(CaptionVisual {
+                    box_: state.plan.caption_box,
+                    align: CaptionAlign::Below,
+                    breadcrumb,
+                    title: node.label.clone(),
+                    detail,
+                    disabled: !eff_enabled,
+                    opacity: self.caption_opacity.value(now),
+                });
+            } else if self.hovered_item.is_none()
+                && self.wheels.len() > 1
+                && !state.interaction_suspended
+            {
+                if !self.caption_opacity.done(now) {
+                    any_tween_active = true;
+                }
+                let mut crumbs: SmallVec<[Arc<str>; 6]> = SmallVec::new();
+                for w in &self.wheels[1..] {
+                    if let Some(anc) = menu.node(&w.path) {
+                        crumbs.push(anc.label.clone());
+                    }
+                }
+                if let Some(title) = crumbs.last().cloned() {
+                    self.scene.caption = Some(CaptionVisual {
+                        box_: state.plan.caption_box,
+                        align: CaptionAlign::Below,
+                        breadcrumb: Some(crumbs),
+                        title,
+                        detail: Some(self.settled_path_hint.clone()),
+                        disabled: false,
+                        opacity: self.caption_opacity.value(now),
+                    });
+                }
             }
-            let (eff_enabled, eff_disabled_reason) = effective_node_state(menu, hov_path);
-            let detail = if eff_enabled {
-                node.description.clone()
-            } else {
-                eff_disabled_reason
-            };
-            self.scene.caption = Some(CaptionVisual {
-                box_: state.plan.caption_box,
-                align: CaptionAlign::Below,
-                title: node.label.clone(),
-                detail,
-                disabled: !eff_enabled,
-                opacity: self.caption_opacity.value(now),
-            });
         }
 
         self.animating_flag = any_tween_active;
@@ -3482,9 +3660,23 @@ fn populate_root_segments(
     root_wheel: &mut WheelInstance,
     children: &[MenuNode],
     cfg: &WheelConfig,
+    is_concentric: bool,
 ) {
     let spans = root_segment_spans(children.len());
     root_wheel.segments.clear();
+    let sep = if is_concentric {
+        Some(separator_half_angle_for_ring(
+            root_wheel.r_in,
+            children.len(),
+        ))
+    } else {
+        None
+    };
+    let mut nested_content = if is_concentric {
+        Some(SmallVec::new())
+    } else {
+        None
+    };
     for (k, node) in children.iter().enumerate() {
         let sp = spans[k];
         root_wheel.segments.push(SegmentState {
@@ -3497,7 +3689,20 @@ fn populate_root_segments(
             label: node.label.clone(),
             icon: node.icon.clone(),
         });
+        if let (Some(s_half), Some(nc)) = (sep, nested_content.as_mut()) {
+            nc.push(compute_sector_content(
+                root_wheel.placement.center,
+                root_wheel.r_in,
+                root_wheel.r_out,
+                sp,
+                s_half,
+                children.len(),
+                node.icon.is_some(),
+            ));
+        }
     }
+    root_wheel.separator_half_angle = sep;
+    root_wheel.nested_content = nested_content;
     root_wheel.hit_geom.spans = spans;
     root_wheel.hit_geom.hit_radius = root_wheel.r_out + cfg.hit_margin;
 }
