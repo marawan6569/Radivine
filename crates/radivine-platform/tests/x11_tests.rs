@@ -887,3 +887,79 @@ fn clipboard_formatting_and_live_x11_selection_serving() {
     let _ = client.destroy_window(req_win);
     let _ = client.flush();
 }
+
+/// `T-X112` (`ARCHITECTURE.md` §A7): Verifies that the Concentric reserved solid disc
+/// (`R_reserve + hit_margin`) plus displaced-origin anchor disc and approach corridor
+/// rasterizes to X11 `SHAPE` rectangles with zero annular holes in the central hub or
+/// inter-ring radial gaps.
+#[test]
+fn concentric_xshape_solid_disc_has_zero_annular_holes_and_covers_approach_corridor() {
+    // Displaced center at (340, 340) from corner anchor (20, 20), R_reserve = 326, hit_margin = 6 -> R = 332
+    let shapes = [
+        ShapePx::Circle {
+            cx: 340.0,
+            cy: 340.0,
+            r: 332.0,
+        },
+        ShapePx::Circle {
+            cx: 20.0,
+            cy: 20.0,
+            r: 40.0,
+        },
+        ShapePx::Polygon(smallvec![
+            (0.0, 48.0),
+            (48.0, 0.0),
+            (368.0, 312.0),
+            (312.0, 368.0),
+        ]),
+    ];
+
+    let rects = rasterize_shapes_to_rectangles(&shapes, 1920, 1080);
+    assert!(!rects.is_empty());
+
+    let covers = |px: i16, py: i16| {
+        rects.iter().any(|r| {
+            px >= r.x && py >= r.y && px < r.x + r.width as i16 && py < r.y + r.height as i16
+        })
+    };
+
+    // 1. Central hub interior (radius 0..40) must be completely covered (no central hole)
+    for r in [0, 10, 25, 39] {
+        assert!(
+            covers(340 + r, 340),
+            "hub interior at r={r} must be covered by XShape"
+        );
+        assert!(
+            covers(340, 340 + r),
+            "hub interior at r={r} must be covered by XShape"
+        );
+    }
+
+    // 2. Inter-ring radial gaps (e.g. r=131 between root [40..128] and ring 1 [134..194],
+    //    and r=197 between ring 1 [134..194] and ring 2 [200..260]) must be covered (no annular holes)
+    for gap_r in [131, 197, 263, 328] {
+        assert!(
+            covers(340 + gap_r, 340),
+            "inter-ring gap/margin at r={gap_r} must be covered by solid XShape disc"
+        );
+        assert!(
+            covers(340 - gap_r, 340),
+            "inter-ring gap/margin at r={gap_r} must be covered by solid XShape disc"
+        );
+        assert!(
+            covers(340, 340 + gap_r),
+            "inter-ring gap/margin at r={gap_r} must be covered by solid XShape disc"
+        );
+        assert!(
+            covers(340, 340 - gap_r),
+            "inter-ring gap/margin at r={gap_r} must be covered by solid XShape disc"
+        );
+    }
+
+    // 3. Displaced anchor (20, 20) and diagonal approach midpoint (180, 180) must be covered
+    assert!(covers(20, 20), "anchor disc must be covered");
+    assert!(covers(180, 180), "approach corridor must be covered");
+
+    // 4. Far outside the cluster (1200, 800) must NOT be covered when passthrough=true
+    assert!(!covers(1200, 800));
+}

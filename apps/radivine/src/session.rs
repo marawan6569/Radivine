@@ -370,6 +370,13 @@ impl SessionController {
         self.active_session_settings.as_ref()
     }
 
+    /// Returns the current [`WheelSession`] instance, if any.
+    #[inline]
+    #[must_use]
+    pub fn wheel_session(&self) -> Option<&WheelSession> {
+        self.wheel_session.as_ref()
+    }
+
     /// Returns the pending drop selection awaiting deferred payload resolution, if any.
     #[inline]
     #[must_use]
