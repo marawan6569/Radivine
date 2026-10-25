@@ -2,7 +2,7 @@ use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use radivine_render::{AssetSource, Renderer, SizePx, Theme};
 use radivine_wheel::{
     InputMode, ItemPath, MenuNode, MenuTree, Point, Viewport, WheelConfig, WheelEvent, WheelInput,
-    WheelSession,
+    WheelLayout, WheelSession,
 };
 
 fn build_demo_menu() -> MenuTree {
@@ -87,6 +87,53 @@ fn build_3level_pair(vp: Viewport) -> (WheelSession, WheelSession) {
     (s1, s2)
 }
 
+fn build_concentric_3level_pair(vp: Viewport) -> (WheelSession, WheelSession) {
+    let cfg = WheelConfig {
+        layout: WheelLayout::Concentric,
+        radius_root: [40.0, 128.0],
+        max_depth: 3,
+        reduced_motion: true,
+        ..WheelConfig::default()
+    };
+    let mut events = Vec::<WheelEvent>::new();
+
+    let mut s1 = WheelSession::new(
+        Some(build_demo_menu()),
+        Point::new(960.0, 540.0),
+        vp,
+        InputMode::Drag,
+        &cfg,
+        0,
+    );
+    let p_custom = s1.item_center(&ItemPath::from_slice(&[3])).unwrap();
+    s1.handle(WheelInput::PointerMoved(p_custom), 10, &mut events);
+    s1.tick(200, &mut events);
+
+    let p_scripts = s1.item_center(&ItemPath::from_slice(&[3, 1])).unwrap();
+    s1.handle(WheelInput::PointerMoved(p_scripts), 210, &mut events);
+    s1.tick(400, &mut events);
+
+    let mut s2 = WheelSession::new(
+        Some(build_demo_menu()),
+        Point::new(960.0, 540.0),
+        vp,
+        InputMode::Drag,
+        &cfg,
+        0,
+    );
+    s2.handle(WheelInput::PointerMoved(p_custom), 10, &mut events);
+    s2.tick(200, &mut events);
+    s2.handle(WheelInput::PointerMoved(p_scripts), 210, &mut events);
+    s2.tick(400, &mut events);
+
+    let p_sha = s1.item_center(&ItemPath::from_slice(&[3, 1, 0])).unwrap();
+    let p_chmod = s1.item_center(&ItemPath::from_slice(&[3, 1, 1])).unwrap();
+    s1.handle(WheelInput::PointerMoved(p_sha), 410, &mut events);
+    s2.handle(WheelInput::PointerMoved(p_chmod), 410, &mut events);
+
+    (s1, s2)
+}
+
 fn bench_render(c: &mut Criterion) {
     // 1x (1920x1080 @ scale 1.0) warm single-segment-highlight update
     {
@@ -115,6 +162,42 @@ fn bench_render(c: &mut Criterion) {
         let _ = renderer.render(s2.scene());
         let mut toggle = false;
         c.bench_function("render_warm_3level_4k_2x", |b| {
+            b.iter(|| {
+                toggle = !toggle;
+                let scene = if toggle { s1.scene() } else { s2.scene() };
+                let dmg = renderer.render(black_box(scene));
+                black_box(dmg.len())
+            })
+        });
+    }
+
+    // Concentric 1x (1920x1080 @ scale 1.0) warm single-segment-highlight update
+    {
+        let (s1, s2) = build_concentric_3level_pair(Viewport::new(1920.0, 1080.0, 1.0));
+        let mut renderer = Renderer::new(Theme::dark(), AssetSource::Embedded).unwrap();
+        renderer.begin_session(SizePx::new(1920, 1080), 1.0);
+        let _ = renderer.render(s1.scene());
+        let _ = renderer.render(s2.scene());
+        let mut toggle = false;
+        c.bench_function("render_warm_concentric_3level_1080p_1x", |b| {
+            b.iter(|| {
+                toggle = !toggle;
+                let scene = if toggle { s1.scene() } else { s2.scene() };
+                let dmg = renderer.render(black_box(scene));
+                black_box(dmg.len())
+            })
+        });
+    }
+
+    // Concentric 2x (3840x2160 @ scale 2.0) warm single-segment-highlight update
+    {
+        let (s1, s2) = build_concentric_3level_pair(Viewport::new(1920.0, 1080.0, 2.0));
+        let mut renderer = Renderer::new(Theme::dark(), AssetSource::Embedded).unwrap();
+        renderer.begin_session(SizePx::new(3840, 2160), 2.0);
+        let _ = renderer.render(s1.scene());
+        let _ = renderer.render(s2.scene());
+        let mut toggle = false;
+        c.bench_function("render_warm_concentric_3level_4k_2x", |b| {
             b.iter(|| {
                 toggle = !toggle;
                 let scene = if toggle { s1.scene() } else { s2.scene() };

@@ -14,7 +14,7 @@ use cosmic_text::{Attrs, Buffer, Family, FontSystem, Metrics, Shaping, SwashCach
 use radivine_render::{AssetSource, FrameRef, RectPx, Renderer, SizePx, Theme};
 use radivine_wheel::{
     DismissReason, DropTarget, InputMode, ItemPath, MenuNode, MenuTree, NavKey, NodeKind, Point,
-    SessionPhase, Shape, Viewport, WheelConfig, WheelEvent, WheelInput, WheelSession,
+    SessionPhase, Shape, Viewport, WheelConfig, WheelEvent, WheelInput, WheelLayout, WheelSession,
 };
 use tiny_skia::{Color, FillRule, LineCap, Paint, PathBuilder, Pixmap, Stroke, Transform};
 use winit::application::ApplicationHandler;
@@ -256,6 +256,7 @@ fn blend_pixel(buf: &mut [u8], idx: usize, r: u8, g: u8, b: u8, a: u8) {
 
 struct SandboxState {
     config: WheelConfig,
+    custom_tree: Option<MenuTree>,
     dark_mode: bool,
     debug_overlay: bool,
     overflow_demo: bool,
@@ -296,6 +297,7 @@ impl SandboxState {
 
         Self {
             config,
+            custom_tree: None,
             dark_mode: true,
             debug_overlay: false,
             overflow_demo: false,
@@ -321,7 +323,9 @@ impl SandboxState {
     }
 
     fn sanitized_menu(&self) -> MenuTree {
-        let mut m = if self.overflow_demo {
+        let mut m = if let Some(ref tree) = self.custom_tree {
+            tree.clone()
+        } else if self.overflow_demo {
             build_overflow_menu()
         } else {
             build_demo_menu()
@@ -556,7 +560,11 @@ impl SandboxState {
 
         self.hud.draw_text(
             canvas,
-            "RADIVINE WHEEL SANDBOX (M1b)",
+            if self.config.layout == WheelLayout::Concentric {
+                "RADIVINE WHEEL SANDBOX — CONCENTRIC (N3)"
+            } else {
+                "RADIVINE WHEEL SANDBOX — BRANCHING (M1b)"
+            },
             x0 + 14.0 * s,
             y0 + 12.0 * s,
             13.0 * s,
@@ -572,8 +580,8 @@ impl SandboxState {
             "Standard"
         };
         let status_line = format!(
-            "Mode: {:?}  |  Phase: {:?}  |  Theme: {}  |  Scale: {:.1}x  |  Motion: {}",
-            self.mode, dbg.phase, theme_str, self.scale_override, motion_str
+            "Layout: {:?} | Mode: {:?} | Phase: {:?} | Theme: {} | Scale: {:.2}x | Motion: {}",
+            self.config.layout, self.mode, dbg.phase, theme_str, self.scale_override, motion_str
         );
         self.hud.draw_text(
             canvas,
@@ -623,7 +631,7 @@ impl SandboxState {
         );
         self.hud.draw_text(
             canvas,
-            "Keys: [T] Theme  [D] Debug Zones  [C] Corner Preset  [M] Motion  [S] Scale  [O] Overflow",
+            "Keys: [L] Layout  [T] Theme  [D] Debug Zones  [C] Corner  [M] Motion  [S] Scale  [O] Overflow",
             x0 + 14.0 * s,
             y0 + 100.0 * s,
             10.2 * s,
@@ -781,7 +789,7 @@ impl SandboxState {
         // 3. Draw active intent-protection triangle if active, or illustrative tangent cone from active parent segment
         if let Some(([p0, p1, p2], _deadline)) = dbg.intent_triangle {
             draw_triangle(canvas, p0, p1, p2, s);
-        } else if dbg.wheels.len() >= 2 {
+        } else if dbg.wheels.len() >= 2 && self.config.layout == WheelLayout::Branching {
             let scene = self.session.scene();
             for i in 0..(scene.wheels.len().saturating_sub(1)) {
                 let parent = &scene.wheels[i];
@@ -811,6 +819,54 @@ impl SandboxState {
                         draw_triangle(canvas, apex, t1, t2, s);
                     }
                 }
+            }
+        }
+
+        // 3b. Draw Concentric nested_content bounding boxes and displaced-origin guide endpoints
+        {
+            let scene = self.session.scene();
+            for w in &scene.wheels {
+                if let Some(ref contents) = w.nested_content {
+                    for nc in contents {
+                        let mut pb = PathBuilder::new();
+                        let rx0 = nc.rect.x * s;
+                        let ry0 = nc.rect.y * s;
+                        let rx1 = (nc.rect.x + nc.rect.w) * s;
+                        let ry1 = (nc.rect.y + nc.rect.h) * s;
+                        pb.move_to(rx0, ry0);
+                        pb.line_to(rx1, ry0);
+                        pb.line_to(rx1, ry1);
+                        pb.line_to(rx0, ry1);
+                        pb.close();
+                        if let Some(path) = pb.finish() {
+                            let mut paint = Paint::default();
+                            paint.set_color(Color::from_rgba8(250, 204, 21, 185));
+                            let stroke = Stroke {
+                                width: 1.0 * s,
+                                ..Stroke::default()
+                            };
+                            canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+                        }
+                    }
+                }
+            }
+            if let Some(ref guide) = scene.origin_guide {
+                stroke_circle(
+                    canvas,
+                    guide.anchor.x * s,
+                    guide.anchor.y * s,
+                    5.0 * s,
+                    Color::from_rgba8(56, 189, 248, 220),
+                    1.4 * s,
+                );
+                stroke_circle(
+                    canvas,
+                    guide.center.x * s,
+                    guide.center.y * s,
+                    5.0 * s,
+                    Color::from_rgba8(56, 189, 248, 220),
+                    1.4 * s,
+                );
             }
         }
 
@@ -1174,6 +1230,26 @@ impl ApplicationHandler for SandboxApp {
                         );
                     }
                     WinitKey::Character(ref ch) => match ch.as_str() {
+                        "l" | "L" => {
+                            self.state.config.layout = match self.state.config.layout {
+                                WheelLayout::Branching => {
+                                    self.state.config.radius_root = [40.0, 128.0];
+                                    self.state.config.max_depth = 3;
+                                    WheelLayout::Concentric
+                                }
+                                WheelLayout::Concentric => {
+                                    self.state.config.radius_root = [36.0, 112.0];
+                                    self.state.config.max_depth = 6;
+                                    WheelLayout::Branching
+                                }
+                            };
+                            println!(
+                                "[wheel-sandbox] Layout switched to {:?}",
+                                self.state.config.layout
+                            );
+                            self.state
+                                .summon(self.state.cursor_lp, self.state.mode, now);
+                        }
                         "t" | "T" => {
                             self.state.dark_mode = !self.state.dark_mode;
                             self.state.renderer.set_theme(if self.state.dark_mode {
@@ -1457,10 +1533,786 @@ fn export_screenshots(out_dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+fn build_deep_menu(depth: usize) -> MenuTree {
+    fn make_level(cur: usize, max_depth: usize) -> Vec<MenuNode> {
+        let icons = [
+            "lucide:folder",
+            "lucide:eye",
+            "lucide:copy",
+            "lucide:terminal",
+        ];
+        if cur >= max_depth {
+            vec![
+                MenuNode::leaf(format!("deep.L{cur}.exec"), format!("Execute L{cur}"))
+                    .with_icon("lucide:sparkles")
+                    .with_description(format!("Terminal action at depth {cur}")),
+                MenuNode::leaf(format!("deep.L{cur}.inspect"), format!("Inspect L{cur}"))
+                    .with_icon("lucide:info")
+                    .with_description(format!("Inspect metadata at depth {cur}")),
+                MenuNode::leaf(format!("deep.L{cur}.copy"), format!("Copy L{cur}"))
+                    .with_icon("lucide:copy")
+                    .with_description(format!("Copy item at depth {cur}")),
+            ]
+        } else {
+            vec![
+                MenuNode::submenu(
+                    format!("deep.L{cur}.sub"),
+                    format!("Submenu L{cur}"),
+                    make_level(cur + 1, max_depth),
+                )
+                .with_icon(icons[cur % icons.len()])
+                .with_description(format!("Open nested ring level {}", cur + 1)),
+                MenuNode::leaf(format!("deep.L{cur}.act1"), format!("Action {cur}A"))
+                    .with_icon("lucide:file-text")
+                    .with_description(format!("Direct leaf action {cur}A")),
+                MenuNode::leaf(format!("deep.L{cur}.act2"), format!("Action {cur}B"))
+                    .with_icon("lucide:code")
+                    .with_description(format!("Direct leaf action {cur}B")),
+                MenuNode::leaf(format!("deep.L{cur}.act3"), format!("Action {cur}C"))
+                    .with_icon("lucide:link")
+                    .with_description(format!("Direct leaf action {cur}C")),
+            ]
+        }
+    }
+    MenuTree::new(make_level(1, depth))
+}
+
+fn build_n_item_menu(n: usize) -> MenuTree {
+    let icons = [
+        "lucide:eye",
+        "lucide:copy",
+        "lucide:info",
+        "lucide:terminal",
+        "lucide:code",
+        "lucide:file-text",
+        "lucide:folder",
+        "lucide:image",
+        "lucide:link",
+        "lucide:sparkles",
+        "lucide:arrow-up-to-line",
+        "lucide:arrow-down-to-line",
+    ];
+    let mut items = Vec::with_capacity(n);
+    for i in 0..n {
+        items.push(
+            MenuNode::leaf(format!("count.item_{i}"), format!("Item {}", i + 1))
+                .with_icon(icons[i % icons.len()])
+                .with_description(format!("Concentric sector {} of {n}", i + 1)),
+        );
+    }
+    MenuTree::new(items)
+}
+
+/// Deterministic screenshot & contact-sheet generator for N3 Concentric visual verification
+/// (`--export-concentric-screenshots <dir>`).
+fn export_concentric_screenshots(out_dir: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(out_dir)?;
+    let w = 1280u32;
+    let h = 840u32;
+    let center = Point::new(640.0, 415.0);
+
+    let mut contact_tiles: Vec<(String, String, Pixmap)> = Vec::with_capacity(24);
+
+    let mut save =
+        |state: &mut SandboxState, filename: &str, short_title: &str| -> std::io::Result<()> {
+            let pm = state.render_composite_pixmap();
+            let frame = FrameRef {
+                data: pm.data(),
+                width: pm.width(),
+                height: pm.height(),
+                stride: (pm.width() as usize) * 4,
+            };
+            let path = out_dir.join(filename);
+            radivine_render::save_frame_png(frame, &path)?;
+            println!(
+                "[wheel-sandbox] Saved Concentric screenshot: {}",
+                path.display()
+            );
+            contact_tiles.push((filename.to_string(), short_title.to_string(), pm));
+            Ok(())
+        };
+
+    let new_concentric = |w_px: u32, h_px: u32, scale: f32, tree: Option<MenuTree>| {
+        let mut st = SandboxState::new(w_px, h_px, scale);
+        st.config.layout = WheelLayout::Concentric;
+        st.config.radius_root = [40.0, 128.0];
+        st.config.max_depth = 3;
+        st.custom_tree = tree;
+        st
+    };
+
+    // 01. 1-level Concentric root wheel (Dark, "Copy" hovered & armed)
+    {
+        let mut st = new_concentric(w, h, 1.0, None);
+        st.summon(center, InputMode::Drag, 0);
+        st.tick(250);
+        let p_copy = st.session.item_center(&ItemPath::from_slice(&[1])).unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p_copy), 260);
+        st.tick(320);
+        save(
+            &mut st,
+            "01-concentric-1-level-root-hover.png",
+            "01: 1-Level Root Hover (Dark)",
+        )?;
+    }
+
+    // 02. 2-level Concentric ("File Preview" -> "Full Preview" hovered)
+    {
+        let mut st = new_concentric(w, h, 1.0, None);
+        st.summon(center, InputMode::Drag, 0);
+        st.tick(250);
+        let p0 = st.session.item_center(&ItemPath::from_slice(&[0])).unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p0), 260);
+        st.tick(450);
+        st.tick(650);
+        let p00 = st
+            .session
+            .item_center(&ItemPath::from_slice(&[0, 0]))
+            .unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p00), 660);
+        st.tick(720);
+        save(
+            &mut st,
+            "02-concentric-2-levels-submenu-open.png",
+            "02: 2-Level Submenu Open",
+        )?;
+    }
+
+    // 03. 3-level Concentric ("Custom Actions" -> "Scripts" -> "Compute SHA-256")
+    {
+        let mut st = new_concentric(w, h, 1.0, None);
+        st.summon(center, InputMode::Drag, 0);
+        st.tick(250);
+        let p3 = st.session.item_center(&ItemPath::from_slice(&[3])).unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p3), 260);
+        st.tick(450);
+        st.tick(650);
+        let p31 = st
+            .session
+            .item_center(&ItemPath::from_slice(&[3, 1]))
+            .unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p31), 660);
+        st.tick(850);
+        st.tick(1050);
+        let p310 = st
+            .session
+            .item_center(&ItemPath::from_slice(&[3, 1, 0]))
+            .unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p310), 1060);
+        st.tick(1120);
+        save(
+            &mut st,
+            "03-concentric-3-levels-deep-scripts.png",
+            "03: 3-Level Nested Scripts",
+        )?;
+    }
+
+    // 04. 4-level Concentric with breadcrumb
+    {
+        let mut st = new_concentric(1400, 940, 1.0, Some(build_deep_menu(4)));
+        st.config.max_depth = 4;
+        let c4 = Point::new(700.0, 425.0);
+        st.summon(c4, InputMode::Pointer, 0);
+        st.tick(250);
+        let mut t = 260;
+        let zeros = [0u8; 6];
+        for lvl in 1..=3 {
+            let pt = st
+                .session
+                .item_center(&ItemPath::from_slice(&zeros[..lvl]))
+                .unwrap();
+            st.dispatch_input(WheelInput::PointerMoved(pt), t);
+            t += 200;
+            st.tick(t);
+            t += 200;
+            st.tick(t);
+        }
+        let pt_leaf = st
+            .session
+            .item_center(&ItemPath::from_slice(&zeros[..4]))
+            .unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(pt_leaf), t + 10);
+        st.tick(t + 60);
+        save(
+            &mut st,
+            "04-concentric-4-levels-breadcrumb.png",
+            "04: 4-Level Breadcrumb",
+        )?;
+    }
+
+    // 05. 6-level Concentric max depth with middle-ellipsis breadcrumb
+    {
+        let mut st = new_concentric(1920, 1240, 1.0, Some(build_deep_menu(6)));
+        st.config.max_depth = 6;
+        let c6 = Point::new(960.0, 565.0);
+        st.summon(c6, InputMode::Pointer, 0);
+        st.tick(250);
+        let mut t = 260;
+        let zeros = [0u8; 6];
+        for lvl in 1..=5 {
+            let pt = st
+                .session
+                .item_center(&ItemPath::from_slice(&zeros[..lvl]))
+                .unwrap();
+            st.dispatch_input(WheelInput::PointerMoved(pt), t);
+            t += 200;
+            st.tick(t);
+            t += 200;
+            st.tick(t);
+        }
+        let pt_leaf = st
+            .session
+            .item_center(&ItemPath::from_slice(&zeros[..6]))
+            .unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(pt_leaf), t + 10);
+        st.tick(t + 60);
+        save(
+            &mut st,
+            "05-concentric-6-levels-max-depth.png",
+            "05: 6-Level Max Depth + Ellipsis",
+        )?;
+    }
+
+    // 06. Count = 1 (seamless 360-degree full annulus)
+    {
+        let mut st = new_concentric(w, h, 1.0, Some(build_n_item_menu(1)));
+        st.summon(center, InputMode::Pointer, 0);
+        st.tick(250);
+        let p0 = st.session.item_center(&ItemPath::from_slice(&[0])).unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p0), 260);
+        st.tick(300);
+        save(
+            &mut st,
+            "06-concentric-count-1-full-annulus.png",
+            "06: 1-Item Full Annulus (No Seam)",
+        )?;
+    }
+
+    // 07. Count = 2
+    {
+        let mut st = new_concentric(w, h, 1.0, Some(build_n_item_menu(2)));
+        st.summon(center, InputMode::Pointer, 0);
+        st.tick(250);
+        let p0 = st.session.item_center(&ItemPath::from_slice(&[0])).unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p0), 260);
+        st.tick(300);
+        save(
+            &mut st,
+            "07-concentric-count-2-halves.png",
+            "07: 2-Item Sectors",
+        )?;
+    }
+
+    // 08. Count = 3
+    {
+        let mut st = new_concentric(w, h, 1.0, Some(build_n_item_menu(3)));
+        st.summon(center, InputMode::Pointer, 0);
+        st.tick(250);
+        let p0 = st.session.item_center(&ItemPath::from_slice(&[0])).unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p0), 260);
+        st.tick(300);
+        save(
+            &mut st,
+            "08-concentric-count-3-thirds.png",
+            "08: 3-Item Sectors",
+        )?;
+    }
+
+    // 09. Count = 8 (IconAndLabel)
+    {
+        let mut st = new_concentric(w, h, 1.0, Some(build_n_item_menu(8)));
+        st.summon(center, InputMode::Pointer, 0);
+        st.tick(250);
+        let p0 = st.session.item_center(&ItemPath::from_slice(&[0])).unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p0), 260);
+        st.tick(300);
+        save(
+            &mut st,
+            "09-concentric-count-8-standard.png",
+            "09: 8-Item Standard Ring",
+        )?;
+    }
+
+    // 10. Count = 12 (IconOnly mode)
+    {
+        let mut st = new_concentric(w, h, 1.0, Some(build_n_item_menu(12)));
+        st.config.max_items_per_wheel = 12;
+        st.config.radius_root = [56.0, 144.0];
+        st.summon(center, InputMode::Pointer, 0);
+        st.tick(250);
+        let p0 = st.session.item_center(&ItemPath::from_slice(&[0])).unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p0), 260);
+        st.tick(300);
+        save(
+            &mut st,
+            "10-concentric-count-12-icon-only.png",
+            "10: 12-Item Icon-Only Mode",
+        )?;
+    }
+
+    // 11. Ancestor hover + pending sibling switch (SelectionVisual::Pending)
+    {
+        let mut st = new_concentric(w, h, 1.0, None);
+        st.summon(center, InputMode::Pointer, 0);
+        st.tick(250);
+        let p0 = st.session.item_center(&ItemPath::from_slice(&[0])).unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p0), 260);
+        st.tick(450);
+        st.tick(650);
+        // Move to sibling submenu [3] on root ring without completing switch_dwell_ms
+        let p3 = st.session.item_center(&ItemPath::from_slice(&[3])).unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p3), 660);
+        st.tick(690);
+        save(
+            &mut st,
+            "11-concentric-ancestor-hover-pending-switch.png",
+            "11: Pending Sibling Switch",
+        )?;
+    }
+
+    // 12. Settled-path caption ("Move inward to go back.") when pointer in neutral zone
+    {
+        let mut st = new_concentric(w, h, 1.0, None);
+        st.summon(center, InputMode::Pointer, 0);
+        st.tick(250);
+        let p0 = st.session.item_center(&ItemPath::from_slice(&[0])).unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p0), 260);
+        st.tick(450);
+        st.tick(650);
+        // Move into outer neutral margin so hovered_item is None while ring 1 stays open
+        st.dispatch_input(
+            WheelInput::PointerMoved(Point::new(center.x, center.y - 208.0)),
+            660,
+        );
+        st.tick(700);
+        save(
+            &mut st,
+            "12-concentric-settled-path-caption.png",
+            "12: Settled Path Caption",
+        )?;
+    }
+
+    // 13. Disabled leaf ("Sign with GPG") + disabled ancestor submenu
+    {
+        let mut tree = build_demo_menu();
+        if let NodeKind::Submenu {
+            ref mut children, ..
+        } = tree.root.kind
+        {
+            children.push(
+                MenuNode::submenu(
+                    "radivine.locked_vault",
+                    "Locked Vault",
+                    vec![MenuNode::leaf("vault.open", "Unlock")],
+                )
+                .with_icon("lucide:folder")
+                .with_disabled("Vault key smartcard not inserted"),
+            );
+        }
+        let mut st = new_concentric(w, h, 1.0, Some(tree));
+        st.summon(center, InputMode::Pointer, 0);
+        st.tick(250);
+        let p3 = st.session.item_center(&ItemPath::from_slice(&[3])).unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p3), 260);
+        st.tick(450);
+        st.tick(650);
+        let p32 = st
+            .session
+            .item_center(&ItemPath::from_slice(&[3, 2]))
+            .unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p32), 660);
+        st.tick(700);
+        save(
+            &mut st,
+            "13-concentric-disabled-leaf-and-ancestor.png",
+            "13: Disabled Leaf & Submenu",
+        )?;
+    }
+
+    // 14. Long English and Arabic RTL labels
+    {
+        let i18n_tree = MenuTree::new(vec![
+            MenuNode::submenu(
+                "i18n.ar_sub",
+                "مشاركة الملفات عبر الشبكة المحلية",
+                vec![
+                    MenuNode::leaf("i18n.ar_leaf", "إرسال نسخة مشفرة فورية")
+                        .with_icon("lucide:sparkles")
+                        .with_description("إرسال الملف المحدد عبر قناة آمنة عالية السرعة"),
+                    MenuNode::leaf(
+                        "i18n.en_long",
+                        "Synchronize Bidirectional Encrypted Cloud Workspace Archive",
+                    )
+                    .with_icon("lucide:copy")
+                    .with_description(
+                        "Long English label truncation and multi-line caption wrapping verification",
+                    ),
+                ],
+            )
+            .with_icon("lucide:folder")
+            .with_description("Arabic RTL and long English label fixture"),
+            MenuNode::leaf(
+                "i18n.en_root",
+                "Verify Cryptographic Detached Signature Bundle",
+            )
+            .with_icon("lucide:info"),
+            MenuNode::leaf("i18n.ar_root", "معاينة سريعة للمستندات").with_icon("lucide:eye"),
+        ]);
+        let mut st = new_concentric(w, h, 1.0, Some(i18n_tree));
+        st.summon(center, InputMode::Pointer, 0);
+        st.tick(250);
+        let p0 = st.session.item_center(&ItemPath::from_slice(&[0])).unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p0), 260);
+        st.tick(450);
+        st.tick(650);
+        let p00 = st
+            .session
+            .item_center(&ItemPath::from_slice(&[0, 0]))
+            .unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p00), 660);
+        st.tick(700);
+        save(
+            &mut st,
+            "14-concentric-long-english-and-arabic.png",
+            "14: Long English & Arabic Labels",
+        )?;
+    }
+
+    // 15. Unknown icon fallback + missing icon (LabelOnly mode)
+    {
+        let fallback_tree = MenuTree::new(vec![
+            MenuNode::leaf("fb.missing_icon", "No Icon LabelOnly")
+                .with_description("Sector without icon uses ContentMode::LabelOnly centered box"),
+            MenuNode::leaf("fb.unknown_icon", "Unknown Icon")
+                .with_icon("lucide:nonexistent-icon-xyz")
+                .with_description("Sector with unknown icon renders deterministic fallback glyph"),
+            MenuNode::leaf("fb.valid_icon", "Standard Icon")
+                .with_icon("lucide:sparkles")
+                .with_description("Sector with known embedded Lucide icon"),
+        ]);
+        let mut st = new_concentric(w, h, 1.0, Some(fallback_tree));
+        st.summon(center, InputMode::Pointer, 0);
+        st.tick(250);
+        let p0 = st.session.item_center(&ItemPath::from_slice(&[0])).unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p0), 260);
+        st.tick(300);
+        save(
+            &mut st,
+            "15-concentric-unknown-and-missing-icons.png",
+            "15: Unknown & Missing Icons",
+        )?;
+    }
+
+    // 16. Light theme 3-level Concentric
+    {
+        let mut st = new_concentric(w, h, 1.0, None);
+        st.dark_mode = false;
+        st.renderer.set_theme(Theme::light());
+        st.summon(center, InputMode::Drag, 0);
+        st.tick(250);
+        let p3 = st.session.item_center(&ItemPath::from_slice(&[3])).unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p3), 260);
+        st.tick(450);
+        st.tick(650);
+        let p31 = st
+            .session
+            .item_center(&ItemPath::from_slice(&[3, 1]))
+            .unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p31), 660);
+        st.tick(850);
+        st.tick(1050);
+        let p310 = st
+            .session
+            .item_center(&ItemPath::from_slice(&[3, 1, 0]))
+            .unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p310), 1060);
+        st.tick(1120);
+        save(
+            &mut st,
+            "16-concentric-light-theme-3-levels.png",
+            "16: Light Theme (3 Levels)",
+        )?;
+    }
+
+    // 17. Scale factor 1.25x
+    {
+        let s = 1.25f32;
+        let mut st = new_concentric(((w as f32) * s) as u32, ((h as f32) * s) as u32, s, None);
+        st.summon(center, InputMode::Drag, 0);
+        st.tick(250);
+        let p0 = st.session.item_center(&ItemPath::from_slice(&[0])).unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p0), 260);
+        st.tick(450);
+        st.tick(650);
+        let p00 = st
+            .session
+            .item_center(&ItemPath::from_slice(&[0, 0]))
+            .unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p00), 660);
+        st.tick(700);
+        save(
+            &mut st,
+            "17-concentric-scale-125x.png",
+            "17: HiDPI Scale 1.25x",
+        )?;
+    }
+
+    // 18. Scale factor 1.5x
+    {
+        let s = 1.5f32;
+        let mut st = new_concentric(((w as f32) * s) as u32, ((h as f32) * s) as u32, s, None);
+        st.summon(center, InputMode::Drag, 0);
+        st.tick(250);
+        let p0 = st.session.item_center(&ItemPath::from_slice(&[0])).unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p0), 260);
+        st.tick(450);
+        st.tick(650);
+        let p00 = st
+            .session
+            .item_center(&ItemPath::from_slice(&[0, 0]))
+            .unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p00), 660);
+        st.tick(700);
+        save(
+            &mut st,
+            "18-concentric-scale-150x.png",
+            "18: HiDPI Scale 1.50x",
+        )?;
+    }
+
+    // 19. Scale factor 2.0x
+    {
+        let s = 2.0f32;
+        let mut st = new_concentric(((w as f32) * s) as u32, ((h as f32) * s) as u32, s, None);
+        st.summon(center, InputMode::Drag, 0);
+        st.tick(250);
+        let p0 = st.session.item_center(&ItemPath::from_slice(&[0])).unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p0), 260);
+        st.tick(450);
+        st.tick(650);
+        let p00 = st
+            .session
+            .item_center(&ItemPath::from_slice(&[0, 0]))
+            .unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p00), 660);
+        st.tick(700);
+        save(
+            &mut st,
+            "19-concentric-scale-200x.png",
+            "19: HiDPI Scale 2.00x",
+        )?;
+    }
+
+    // 20. Animation checkpoint (t = 450ms -> 30ms into child ring opacity fade-in, fixed radii)
+    {
+        let mut st = new_concentric(w, h, 1.0, None);
+        st.summon(center, InputMode::Pointer, 0);
+        st.tick(250);
+        let p0 = st.session.item_center(&ItemPath::from_slice(&[0])).unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p0), 260);
+        st.tick(420); // submenu opens at 420ms
+        st.tick(460); // 40ms into 120ms opacity-only appearance
+        save(
+            &mut st,
+            "20-concentric-anim-checkpoint-t30-t60.png",
+            "20: Opacity Appear Checkpoint",
+        )?;
+    }
+
+    // 21. Interrupted transition (sibling replacement with retracting ring fading out in-place)
+    {
+        let mut st = new_concentric(w, h, 1.0, None);
+        st.summon(center, InputMode::Pointer, 0);
+        st.tick(250);
+        let p0 = st.session.item_center(&ItemPath::from_slice(&[0])).unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p0), 260);
+        st.tick(420);
+        st.tick(550);
+        let p3 = st.session.item_center(&ItemPath::from_slice(&[1])).unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p3), 560);
+        st.tick(860); // sibling adoption at 560 + 300 = 860ms closes ring 1 ([0]) into retracting list
+        st.tick(890); // 30ms into 90ms opacity-only retraction fade
+        save(
+            &mut st,
+            "21-concentric-anim-interrupted-retraction.png",
+            "21: Interrupted Sibling Fade",
+        )?;
+    }
+
+    // 22. Displaced center near screen corner with OriginGuideVisual
+    {
+        let mut st = new_concentric(w, h, 1.0, None);
+        let corner = Point::new((w as f32) - 45.0, 95.0);
+        st.summon(corner, InputMode::Pointer, 0);
+        st.tick(250);
+        let displaced_center = st.session.scene().wheels[0].center;
+        st.dispatch_input(WheelInput::PointerMoved(displaced_center), 255);
+        let p0 = st.session.item_center(&ItemPath::from_slice(&[0])).unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p0), 260);
+        st.tick(450);
+        st.tick(650);
+        save(
+            &mut st,
+            "22-concentric-displaced-corner-origin-guide.png",
+            "22: Displaced Corner + Guide",
+        )?;
+    }
+
+    // 23. Keyboard focus (SelectionVisual::KeyboardFocus) + Concentric debug overlay
+    {
+        let mut st = new_concentric(w, h, 1.0, None);
+        st.debug_overlay = true;
+        st.summon(center, InputMode::Pointer, 0);
+        st.tick(250);
+        st.dispatch_input(WheelInput::Nav(NavKey::Next), 260);
+        st.dispatch_input(WheelInput::Nav(NavKey::Activate), 280);
+        st.tick(450);
+        st.dispatch_input(WheelInput::Nav(NavKey::Next), 460);
+        st.tick(500);
+        save(
+            &mut st,
+            "23-concentric-keyboard-focus-and-debug-overlay.png",
+            "23: Keyboard Focus + Debug Boxes",
+        )?;
+    }
+
+    // 24. Reduced motion (immediate opacity 1.0 on ring open)
+    {
+        let mut st = new_concentric(w, h, 1.0, None);
+        st.config.reduced_motion = true;
+        st.summon(center, InputMode::Pointer, 0);
+        st.tick(10);
+        let p0 = st.session.item_center(&ItemPath::from_slice(&[0])).unwrap();
+        st.dispatch_input(WheelInput::PointerMoved(p0), 20);
+        st.tick(180); // submenu opens immediately at full opacity 1.0
+        save(
+            &mut st,
+            "24-concentric-reduced-motion.png",
+            "24: Reduced Motion (Instant)",
+        )?;
+    }
+
+    // Generate compact 4x6 visual contact sheet (`00-contact-sheet.png`, 1920x2070)
+    {
+        let cols = 4u32;
+        let rows = 6u32;
+        let tile_w = 480u32;
+        let thumb_h = 315u32;
+        let footer_h = 30u32;
+        let tile_h = thumb_h + footer_h;
+        let sheet_w = cols * tile_w;
+        let sheet_h = rows * tile_h;
+        let mut sheet = Pixmap::new(sheet_w, sheet_h).expect("allocate contact sheet");
+        sheet.fill(Color::from_rgba8(9, 13, 22, 255));
+        let mut hud = HudDrawer::new();
+
+        for (idx, (_, title, src_pm)) in contact_tiles.iter().enumerate() {
+            let col = (idx as u32) % cols;
+            let row = (idx as u32) / cols;
+            let ox = col * tile_w;
+            let oy = row * tile_h;
+
+            let sw = src_pm.width();
+            let sh = src_pm.height();
+            let sdata = src_pm.data();
+            let ddata = sheet.data_mut();
+
+            // Box-filtered downscale into top `thumb_h` area of tile
+            for ty in 0..thumb_h {
+                let sy0 = (ty * sh) / thumb_h;
+                let sy1 = (((ty + 1) * sh) / thumb_h).max(sy0 + 1).min(sh);
+                for tx in 0..tile_w {
+                    let sx0 = (tx * sw) / tile_w;
+                    let sx1 = (((tx + 1) * sw) / tile_w).max(sx0 + 1).min(sw);
+                    let mut r_acc = 0u32;
+                    let mut g_acc = 0u32;
+                    let mut b_acc = 0u32;
+                    let mut cnt = 0u32;
+                    for sy in sy0..sy1 {
+                        for sx in sx0..sx1 {
+                            let si = ((sy * sw + sx) * 4) as usize;
+                            r_acc += u32::from(sdata[si]);
+                            g_acc += u32::from(sdata[si + 1]);
+                            b_acc += u32::from(sdata[si + 2]);
+                            cnt += 1;
+                        }
+                    }
+                    let di = (((oy + ty) * sheet_w + (ox + tx)) * 4) as usize;
+                    ddata[di] = (r_acc / cnt) as u8;
+                    ddata[di + 1] = (g_acc / cnt) as u8;
+                    ddata[di + 2] = (b_acc / cnt) as u8;
+                    ddata[di + 3] = 255;
+                }
+            }
+
+            // Dedicated footer label bar below thumbnail
+            fill_rounded_rect(
+                &mut sheet,
+                ox as f32 + 2.0,
+                (oy + thumb_h + 2) as f32,
+                (tile_w - 4) as f32,
+                (footer_h - 4) as f32,
+                4.0,
+                Color::from_rgba8(15, 23, 42, 245),
+                Some((Color::from_rgba8(51, 65, 85, 220), 1.0)),
+            );
+            hud.draw_text(
+                &mut sheet,
+                title,
+                ox as f32 + 10.0,
+                (oy + thumb_h + 6) as f32,
+                11.5,
+                600,
+                [248, 250, 252, 255],
+            );
+        }
+
+        let sheet_path = out_dir.join("00-contact-sheet.png");
+        let frame = FrameRef {
+            data: sheet.data(),
+            width: sheet.width(),
+            height: sheet.height(),
+            stride: (sheet.width() as usize) * 4,
+        };
+        radivine_render::save_frame_png(frame, &sheet_path)?;
+        println!(
+            "[wheel-sandbox] Saved Concentric contact sheet: {}",
+            sheet_path.display()
+        );
+    }
+
+    // Write INDEX.md summarizing all 24 exports and regeneration command
+    {
+        let mut md = String::new();
+        md.push_str("# Radivine v0.3.0 — Milestone N3 Concentric Visual Review Pack\n\n");
+        md.push_str("Regenerate deterministically with:\n\n```bash\n");
+        md.push_str("cargo run -p wheel-sandbox --release -- --export-concentric-screenshots docs/test-reports/screenshots/n3-concentric\n```\n\n");
+        md.push_str(
+            "- **Composite Contact Sheet:** `00-contact-sheet.png` (4×6 grid, 1920×2070 px)\n\n",
+        );
+        md.push_str("| # | File | Scenario |\n|---|---|---|\n");
+        for (idx, (fname, title, pm)) in contact_tiles.iter().enumerate() {
+            md.push_str(&format!(
+                "| {:02} | `{}` | {} ({}×{} px) |\n",
+                idx + 1,
+                fname,
+                title,
+                pm.width(),
+                pm.height()
+            ));
+        }
+        std::fs::write(out_dir.join("INDEX.md"), md)?;
+    }
+
+    Ok(())
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mut i = 1;
     let mut export_dir: Option<PathBuf> = None;
+    let mut export_concentric_dir: Option<PathBuf> = None;
+    let mut initial_layout = WheelLayout::Branching;
     let mut auto_quit_ms: Option<u64> = None;
 
     while i < args.len() {
@@ -1474,6 +2326,33 @@ fn main() {
                     std::process::exit(2);
                 }
             }
+            "--export-concentric-screenshots" => {
+                if let Some(dir) = args.get(i + 1) {
+                    export_concentric_dir = Some(PathBuf::from(dir));
+                    i += 2;
+                } else {
+                    eprintln!("Error: --export-concentric-screenshots requires a <dir> argument");
+                    std::process::exit(2);
+                }
+            }
+            "--layout" => {
+                if let Some(val) = args.get(i + 1) {
+                    initial_layout = match val.as_str() {
+                        "concentric" | "Concentric" => WheelLayout::Concentric,
+                        "branching" | "Branching" => WheelLayout::Branching,
+                        other => {
+                            eprintln!(
+                                "Error: unknown --layout '{other}' (expected branching|concentric)"
+                            );
+                            std::process::exit(2);
+                        }
+                    };
+                    i += 2;
+                } else {
+                    eprintln!("Error: --layout requires branching|concentric");
+                    std::process::exit(2);
+                }
+            }
             "--auto-quit-ms" => {
                 if let Some(ms_str) = args.get(i + 1) {
                     auto_quit_ms = ms_str.parse::<u64>().ok();
@@ -1484,7 +2363,9 @@ fn main() {
                 }
             }
             "--help" | "-h" => {
-                println!("Usage: wheel-sandbox [--export-screenshots <dir>] [--auto-quit-ms <ms>]");
+                println!(
+                    "Usage: wheel-sandbox [--layout branching|concentric] [--export-screenshots <dir>] [--export-concentric-screenshots <dir>] [--auto-quit-ms <ms>]"
+                );
                 return;
             }
             other => {
@@ -1502,8 +2383,21 @@ fn main() {
         return;
     }
 
+    if let Some(ref dir) = export_concentric_dir {
+        if let Err(err) = export_concentric_screenshots(dir) {
+            eprintln!("Failed to export concentric screenshots: {err}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     let event_loop = EventLoop::new().expect("create winit event loop");
     let mut app = SandboxApp::new(auto_quit_ms);
+    if initial_layout == WheelLayout::Concentric {
+        app.state.config.layout = WheelLayout::Concentric;
+        app.state.config.radius_root = [40.0, 128.0];
+        app.state.config.max_depth = 3;
+    }
     let _ = NodeKind::Leaf;
     event_loop.run_app(&mut app).expect("run sandbox app");
 }
