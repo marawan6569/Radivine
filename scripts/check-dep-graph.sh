@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Radivine v0.2.0 — Architecture Dependency-Graph Boundary Verification (`X7`)
+# Radivine v0.3.0-rc.1 — Architecture Dependency-Graph Boundary Verification (`X7`)
 # ==============================================================================
 # Verifies that workspace crates and binaries strictly respect the approved
 # dependency boundaries (`ADR-027`, `ADR-028`, `ADR-029`, `ADR-032`, `ADR-033`):
@@ -34,7 +34,7 @@ check_forbidden_deps() {
     echo "  [OK] $pkg: forbidden dependencies absent ($*)"
 }
 
-echo "Verifying Radivine v0.2.0 crate dependency boundaries..."
+echo "Verifying Radivine v0.3.0-rc.1 crate dependency boundaries..."
 
 # 1. radivine-wheel: pure Rust, only smallvec allowed at runtime
 WHEEL_DEPS="$(cargo tree -p radivine-wheel -e normal --prefix none | grep -v '^radivine-wheel v' || true)"

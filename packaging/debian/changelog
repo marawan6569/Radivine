@@ -1,3 +1,26 @@
+radivine (0.3.0~rc1) noble; urgency=medium
+
+  * Pre-release candidate (v0.3.0-rc.1) for public testing on Linux Mint 22.3
+    Cinnamon X11.
+  * Add optional Concentric (Nested Rings) radial wheel layout
+    (wheel.layout = "concentric") alongside the default Branching (Child
+    Wheels) layout (wheel.layout = "branching"), selectable in
+    radivine-control (Wheel -> Wheel Layout) and ~/.config/radivine/config.toml.
+  * Reserve 4 concentric rings plus fixed bottom caption box (668x742 logical
+    pixel minimum viewport; 1366x768@1x supported, 1280x720@1x automatically
+    falls back to Branching without mutating config.toml).
+  * Enforce strict non-actionable drop and click rejection across the central
+    hub, inter-ring radial gaps, angular separators, outer margin, fixed bottom
+    caption box, displaced approach corridor, and protected pending-switch
+    siblings (90 ms outer-ring steering protection), plus drop-time final
+    coordinate re-evaluation.
+  * Add Arabic script glyph shaping fallback (DejaVu Sans) in radivine-render
+    while keeping bundled Inter isolated for deterministic Latin rendering, and
+    declare fonts-dejavu-core and libfontconfig1 in Debian package Depends
+    (with fonts-noto-core in Recommends).
+
+ -- marawan6569 <marawan6569@gmail.com>  Sun, 25 Oct 2026 23:05:00 +0300
+
 radivine (0.2.0) noble; urgency=medium
 
   * Introduce the Radivine v0.2.0 File & Media Conversion Suite for PNG,

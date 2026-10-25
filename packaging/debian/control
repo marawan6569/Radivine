@@ -1,10 +1,10 @@
 Package: radivine
-Version: 0.2.0
+Version: 0.3.0~rc1
 Section: utils
 Priority: optional
 Architecture: amd64
-Depends: libc6 (>= 2.34), libgcc-s1 (>= 3.0)
-Recommends: nemo, libx11-6, libegl1, libgl1, systemd
+Depends: libc6 (>= 2.34), libgcc-s1 (>= 3.0), fonts-dejavu-core, libfontconfig1
+Recommends: nemo, libx11-6, libegl1, libgl1, systemd, fonts-noto-core
 Maintainer: marawan6569 <marawan6569@gmail.com>
 Homepage: https://github.com/marawan6569/Radivine
 Installed-Size: __INSTALLED_SIZE__
@@ -15,11 +15,12 @@ Description: Context-aware radial action wheel, Control Center, and conversion s
  .
  Press Shift while dragging files from Nemo (or invoke via CLI, keyboard
  shortcut, or the Nemo "Open in Radivine" context menu action) to summon a
- branching radial wheel directly under the cursor.
+ radial wheel directly under the cursor in either the default Branching
+ (Child Wheels) layout or the optional Concentric (Nested Rings) layout.
  .
  Includes a built-in PNG, JPEG, and WebP image conversion suite with one-gesture
  Quick Convert from the radial wheel, an Advanced Convert desktop window, a
  durable on-demand background worker (radivine-worker) with crash-safe atomic
- file output, a graphical Control Center (radivine-control) with live Jobs and
- Conversion Settings management, and a read-only file preview application
- (radivine-viewer).
+ file output, a graphical Control Center (radivine-control) with Wheel Layout,
+ live Jobs, and Conversion Settings management, and a read-only file preview
+ application (radivine-viewer).
