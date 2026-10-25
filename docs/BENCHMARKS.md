@@ -211,4 +211,38 @@ cargo test --release -p radivine-control --test c5_benchmarks -- --nocapture --t
 | **Control Center `Jobs` page 10,000-item virtualized frame time** | **`0.111 ms`** (`111 µs`) | `0.132 ms` | Target `< 16 ms` (`60 fps`) | **PASS (144× under target)** |
 | **Control Center `Jobs` page live `JobUpdate` → UI repaint latency** | **`2.580 ms`** | `4.412 ms` | Target `< 100 ms`, Acceptable `< 250 ms` | **PASS (38× under target)** |
 
+### 10.4 Stripped Release Binary & Debian Package Sizes (`./scripts/build-deb.sh`)
+
+| Artifact | Path in Package / Build Tree | Stripped Size (`bytes`) | Stripped Size (`MiB`) | Notes |
+|---|---|---:|---:|---|
+| **`radivine`** | `/usr/bin/radivine` | `9,712,096 B` | **`9.26 MiB`** | Wheel daemon & CLI (`0` image codecs or SQLite linked; verified by `scripts/check-dep-graph.sh`) |
+| **`radivine-worker`** | `/usr/bin/radivine-worker` | `7,983,080 B` | **`7.61 MiB`** | On-demand job worker + bundled SQLite + built-in PNG/JPEG/WebP codecs (`0` X11/egui linked) |
+| **`radivine-control`** | `/usr/bin/radivine-control` | `18,513,120 B` | **`17.66 MiB`** | 8-page Control Center + Advanced Convert window + native clipboard + system-font fallback |
+| **`radivine-viewer`** | `/usr/bin/radivine-viewer` | `13,349,104 B` | **`12.73 MiB`** | Standalone read-only file preview window |
+| **`radivine_0.2.0_amd64.deb`** | `target/debian/radivine_0.2.0_amd64.deb` | `16,077,740 B` | **`15.33 MiB`** | Complete compressed Debian package (`SHA-256: ae31469335904b235d99e635384e86ee9c2332f1679e0cd0e5fd3c91a4d6d8c4`, `lintian` 0 errors / 0 warnings) |
+
+### 10.5 One-Hour Reliability Soak & Memory Stability (`c5_soak_test.rs`, `AC-C5.3`)
+
+Command:
+
+```bash
+RADIVINE_C5_SOAK_SECS=3605 RADIVINE_C5_SOAK_REPORT_JSON=/tmp/c5_soak_report.json \
+  cargo test --release -p radivine-control --test c5_soak_test -- --nocapture --test-threads=1
+```
+
+| Soak Metric | Measured Value | Budget / Invariant (`AC-C5.3`) | Status |
+|---|---:|---|---|
+| **Executed Duration** | **`3,606.21 s`** (`1 h 00 m 06 s`) | `>= 3,600 s` (`1 h`) | **PASS** |
+| **Completed Soak Cycles** | **`2,375`** | Continuous mixed workload | **PASS** |
+| **Total Items Succeeded / Failed (Expected) / Cancelled / Interrupted Recovered** | **`66,500` / `4,750` / `9,504` / `8,596`** | Consistent item accounting | **PASS** |
+| **Worker `SIGTERM` / `SIGKILL` Crash Recoveries** | **`1,188` / `1,187`** (`2,375` total) | 100% crash journal reconciliation | **PASS** |
+| **Worker Idle Shutdowns & On-Demand Relaunches** | **`1,187`** | Clean idle exit & relaunch | **PASS** |
+| **Source File Modifications Detected (SHA-256)** | **`0`** | `0` (`INV-SRC`) | **PASS** |
+| **Destination File Overwrites Detected (SHA-256)** | **`0`** (`7,125` collisions tested) | `0` (`INV-NOOVERWRITE`) | **PASS** |
+| **Unresolved `.rvstage-*` / `.part` Artifacts** | **`0`** | `0` (`INV-NOTEMP`) | **PASS** |
+| **Immutable Retry / Duplicate Output / Count Violations** | **`0` / `0` / `0`** | `0` violations | **PASS** |
+| **Worker Baseline → Final → Peak RSS (`VmRSS`)** | **`9.28 MiB → 9.40 MiB`** (peak `9.64 MiB`, delta **`+0.125 MiB`**) | Within `±5.0 MiB` of baseline | **PASS (40× within tolerance)** |
+| **Leaked Worker Processes After Shutdown** | **`0`** | `0` process leaks | **PASS** |
+
+
 
