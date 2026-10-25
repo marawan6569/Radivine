@@ -35,6 +35,13 @@ pub enum RenderError {
     Icon(String),
 }
 
+/// Non-zero coverage span `[x0, x1)` within a single row of an [`AlphaMask`].
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct MaskSpan {
+    pub(crate) x0: u16,
+    pub(crate) x1: u16,
+}
+
 /// Single-channel (`A8`) coverage mask cached for fast tinted blitting.
 #[derive(Clone, Debug)]
 pub struct AlphaMask {
@@ -44,6 +51,51 @@ pub struct AlphaMask {
     pub height: u32,
     /// Row-major `width * height` coverage bytes (`0..=255`).
     pub data: Vec<u8>,
+    /// Contiguous non-zero horizontal spans across all rows.
+    pub(crate) spans: Vec<MaskSpan>,
+    /// Per-row `[span_start, span_end)` slice indices into `spans`.
+    pub(crate) row_spans: Vec<(u32, u32)>,
+}
+
+impl AlphaMask {
+    /// Constructs an [`AlphaMask`] and precomputes per-row non-zero horizontal spans.
+    #[must_use]
+    pub fn new(width: u32, height: u32, data: Vec<u8>) -> Self {
+        let w = width as usize;
+        let h = height as usize;
+        let mut spans = Vec::with_capacity(h * 2);
+        let mut row_spans = Vec::with_capacity(h);
+        for y in 0..h {
+            let start_idx = spans.len() as u32;
+            let row = &data[y * w..(y + 1) * w];
+            let mut x = 0usize;
+            while x < w {
+                if let Some(rel_first) = row[x..].iter().position(|&b| b != 0) {
+                    let s0 = x + rel_first;
+                    let s1 = row[s0..]
+                        .iter()
+                        .position(|&b| b == 0)
+                        .map_or(w, |rel_zero| s0 + rel_zero);
+                    spans.push(MaskSpan {
+                        x0: s0 as u16,
+                        x1: s1.min(u16::MAX as usize) as u16,
+                    });
+                    x = s1;
+                } else {
+                    break;
+                }
+            }
+            let end_idx = spans.len() as u32;
+            row_spans.push((start_idx, end_idx));
+        }
+        Self {
+            width,
+            height,
+            data,
+            spans,
+            row_spans,
+        }
+    }
 }
 
 const EMBEDDED_INTER_TTF: &[u8] = include_bytes!("../../../assets/fonts/Inter-Variable.ttf");
@@ -131,6 +183,7 @@ pub(crate) struct BreadcrumbLayout {
     pub(crate) runs: SmallVec<[BreadcrumbRun; 13]>,
     pub(crate) width: u32,
     pub(crate) height: u32,
+    pub(crate) sep_pad: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -462,18 +515,21 @@ impl AssetCache {
         max_width_px: u32,
     ) -> BreadcrumbLayout {
         let max_width_px = max_width_px.max(16);
+        let sep_pad = (font_px * 0.35).round().max(2.0) as u32;
         let n = crumbs.len().min(6);
         if n == 0 {
             return BreadcrumbLayout {
                 runs: SmallVec::new(),
                 width: 0,
                 height: 0,
+                sep_pad,
             };
         }
 
         let sep = self.crumb_sep.clone();
         let ell = self.crumb_ellipsis.clone();
-        let (sep_w, sep_h) = self.text_dims(&sep, font_px, weight, max_width_px);
+        let (sep_glyph_w, sep_h) = self.text_dims(&sep, font_px, weight, max_width_px);
+        let sep_w = sep_glyph_w + 2 * sep_pad;
         let (ell_w, ell_h) = self.text_dims(&ell, font_px, weight, max_width_px);
 
         let mut widths = [0u32; 6];
@@ -494,6 +550,7 @@ impl AssetCache {
                 runs,
                 width: widths[0],
                 height: max_h,
+                sep_pad,
             };
         }
 
@@ -513,6 +570,7 @@ impl AssetCache {
                 runs,
                 width: full_w,
                 height: max_h,
+                sep_pad,
             };
         }
 
@@ -541,6 +599,7 @@ impl AssetCache {
                         runs,
                         width: cand_w,
                         height: max_h,
+                        sep_pad,
                     };
                 }
             }
@@ -561,6 +620,7 @@ impl AssetCache {
             runs,
             width: (prefix_w + last_w).min(max_width_px),
             height: max_h.max(last_h),
+            sep_pad,
         }
     }
 
@@ -665,11 +725,7 @@ impl AssetCache {
 }
 
 fn empty_alpha_mask() -> AlphaMask {
-    AlphaMask {
-        width: 1,
-        height: 1,
-        data: vec![0],
-    }
+    AlphaMask::new(1, 1, vec![0])
 }
 
 fn pixmap_to_alpha_mask(pm: &Pixmap) -> AlphaMask {
@@ -679,11 +735,7 @@ fn pixmap_to_alpha_mask(pm: &Pixmap) -> AlphaMask {
     for px in pm.pixels() {
         data.push(px.alpha());
     }
-    AlphaMask {
-        width: w,
-        height: h,
-        data,
-    }
+    AlphaMask::new(w, h, data)
 }
 
 fn rasterize_fill_mask(w: u32, h: u32, path: &Path, rule: FillRule) -> AlphaMask {
@@ -1020,11 +1072,7 @@ fn rasterize_svg_mask(svg_str: &str, size_px: u32) -> Option<AlphaMask> {
     for px in pixmap.pixels() {
         data.push(px.alpha());
     }
-    Some(AlphaMask {
-        width: size_px,
-        height: size_px,
-        data,
-    })
+    Some(AlphaMask::new(size_px, size_px, data))
 }
 
 fn fallback_icon_mask(size_px: u32) -> AlphaMask {
@@ -1040,11 +1088,7 @@ fn fallback_icon_mask(size_px: u32) -> AlphaMask {
             }
         }
     }
-    AlphaMask {
-        width: size_px,
-        height: size_px,
-        data,
-    }
+    AlphaMask::new(size_px, size_px, data)
 }
 
 fn rasterize_text_mask(
@@ -1243,11 +1287,7 @@ fn buffer_to_alpha_mask(
     }
 
     if pixels.is_empty() || min_x > max_x || min_y > max_y {
-        return AlphaMask {
-            width: 1,
-            height: 1,
-            data: vec![0],
-        };
+        return AlphaMask::new(1, 1, vec![0]);
     }
 
     let raw_width = ((max_x - min_x) + 1) as u32;
@@ -1263,11 +1303,7 @@ fn buffer_to_alpha_mask(
         }
     }
 
-    AlphaMask {
-        width,
-        height,
-        data,
-    }
+    AlphaMask::new(width, height, data)
 }
 
 fn build_shadow_sprite(r_out_px: u32, blur_px: u32) -> AlphaMask {
@@ -1297,11 +1333,7 @@ fn build_shadow_sprite(r_out_px: u32, blur_px: u32) -> AlphaMask {
         }
     }
 
-    AlphaMask {
-        width: size,
-        height: size,
-        data,
-    }
+    AlphaMask::new(size, size, data)
 }
 
 #[cfg(test)]

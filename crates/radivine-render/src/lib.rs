@@ -131,7 +131,21 @@ impl Renderer {
             return self.damage.last_damage();
         }
 
-        let clip_rects: smallvec::SmallVec<[RectPx; 4]> = smallvec::SmallVec::from_slice(dmg_slice);
+        // Partition the <= 4 damage rectangles into mutually disjoint clip rectangles so
+        // overlapping damage regions never clear or alpha-blend the same pixel twice.
+        let mut clip_rects: smallvec::SmallVec<[RectPx; 16]> = smallvec::SmallVec::new();
+        let mut next_clips: smallvec::SmallVec<[RectPx; 16]> = smallvec::SmallVec::new();
+        for &r in dmg_slice {
+            if r.is_empty() {
+                continue;
+            }
+            next_clips.clear();
+            for &existing in &clip_rects {
+                subtract_rect_px(existing, r, &mut next_clips);
+            }
+            next_clips.push(r);
+            std::mem::swap(&mut clip_rects, &mut next_clips);
+        }
 
         // 1. Clear damaged rectangles to transparent (or opaque theme card background in no-compositor fallback)
         // and populate clip_mask (§13.2 step 1, §13.3)
@@ -151,7 +165,16 @@ impl Renderer {
                 self.dirty_union = self.dirty_union.union(*r);
             }
         }
-        if let Some(ref mut cm) = self.clip_mask {
+        let needs_skia_clip = !scene.stems.is_empty()
+            || scene
+                .wheels
+                .iter()
+                .any(|w| w.kind == WheelVisualKind::Branching)
+            || scene
+                .caption
+                .as_ref()
+                .is_some_and(|c| c.breadcrumb.is_none() && c.box_.h <= 48.0);
+        if needs_skia_clip && let Some(ref mut cm) = self.clip_mask {
             for r in &clip_rects {
                 fill_mask_rect(cm, *r, 255);
             }
@@ -178,7 +201,7 @@ impl Renderer {
         }
 
         // Reset clip_mask regions back to 0 in O(damage_area)
-        if let Some(ref mut cm) = self.clip_mask {
+        if needs_skia_clip && let Some(ref mut cm) = self.clip_mask {
             for r in &clip_rects {
                 fill_mask_rect(cm, *r, 0);
             }
@@ -811,6 +834,25 @@ impl Renderer {
                 )
             });
 
+        let pad_x = (8.0 * scale).ceil() as i32;
+        let pad_y = (16.0 * scale).ceil() as i32;
+        let cx0 = (content.rect.x * scale).floor() as i32 - pad_x;
+        let cy0 = (content.rect.y * scale).floor() as i32 - pad_y;
+        let cx1 = ((content.rect.x + content.rect.w) * scale).ceil() as i32 + pad_x;
+        let cy1 = ((content.rect.y + content.rect.h) * scale).ceil() as i32 + pad_y;
+        let content_rect_px = RectPx::new(
+            cx0,
+            cy0,
+            (cx1 - cx0).max(0) as u32,
+            (cy1 - cy0).max(0) as u32,
+        );
+        if !clips
+            .iter()
+            .any(|c| c.overlaps_or_touches(content_rect_px, 0))
+        {
+            return;
+        }
+
         let content_col = if !seg.enabled {
             self.theme.text_disabled.with_opacity(0.68 * wheel.opacity)
         } else if seg.highlight >= 0.55 {
@@ -1263,26 +1305,33 @@ impl Renderer {
             let sep_arc = self.cache.crumb_sep.clone();
             let ell_arc = self.cache.crumb_ellipsis.clone();
             for run in &layout.runs {
-                let cm = match *run {
-                    BreadcrumbRun::Crumb { index, max_w } => {
+                let (cm, pad_before, pad_after) = match *run {
+                    BreadcrumbRun::Crumb { index, max_w } => (
                         self.cache
-                            .text_mask(&crumbs[index], 11.0 * scale, 500, max_w)
-                    }
-                    BreadcrumbRun::Sep => {
+                            .text_mask(&crumbs[index], 11.0 * scale, 500, max_w),
+                        0i32,
+                        0i32,
+                    ),
+                    BreadcrumbRun::Sep => (
                         self.cache
-                            .text_mask(&sep_arc, 11.0 * scale, 500, max_text_w)
-                    }
-                    BreadcrumbRun::Ellipsis => {
+                            .text_mask(&sep_arc, 11.0 * scale, 500, max_text_w),
+                        layout.sep_pad as i32,
+                        layout.sep_pad as i32,
+                    ),
+                    BreadcrumbRun::Ellipsis => (
                         self.cache
-                            .text_mask(&ell_arc, 11.0 * scale, 500, max_text_w)
-                    }
+                            .text_mask(&ell_arc, 11.0 * scale, 500, max_text_w),
+                        0i32,
+                        0i32,
+                    ),
                 };
+                cx_txt += pad_before;
                 let dy = cur_y + ((layout.height as i32) - (cm.height as i32)) / 2;
                 let run_w = cm.width as i32;
                 if let Some(ref mut pm) = self.pixmap {
                     blit_alpha_mask_clipped(pm, cm, cx_txt, dy, crumb_col, clips);
                 }
-                cx_txt += run_w;
+                cx_txt += run_w + pad_after;
             }
             cur_y += (layout.height as i32) + line_gap;
         }
@@ -1370,6 +1419,31 @@ fn fill_mask_rect(mask: &mut Mask, rect: RectPx, val: u8) {
     }
 }
 
+/// Splits `r \ cut` into up to 4 disjoint rectangles and appends them to `out`.
+fn subtract_rect_px(r: RectPx, cut: RectPx, out: &mut smallvec::SmallVec<[RectPx; 16]>) {
+    let ix0 = r.x.max(cut.x);
+    let iy0 = r.y.max(cut.y);
+    let ix1 = r.right().min(cut.right());
+    let iy1 = r.bottom().min(cut.bottom());
+    if ix0 >= ix1 || iy0 >= iy1 {
+        out.push(r);
+        return;
+    }
+    if iy0 > r.y {
+        out.push(RectPx::new(r.x, r.y, r.w, (iy0 - r.y) as u32));
+    }
+    if iy1 < r.bottom() {
+        out.push(RectPx::new(r.x, iy1, r.w, (r.bottom() - iy1) as u32));
+    }
+    let mid_h = (iy1 - iy0) as u32;
+    if ix0 > r.x {
+        out.push(RectPx::new(r.x, iy0, (ix0 - r.x) as u32, mid_h));
+    }
+    if ix1 < r.right() {
+        out.push(RectPx::new(ix1, iy0, (r.right() - ix1) as u32, mid_h));
+    }
+}
+
 /// Blits an `AlphaMask` tinted with `color` (source-over premultiplied RGBA8) into `pm`,
 /// strictly clipped to the non-overlapping damage rectangles `clips`.
 fn blit_alpha_mask_clipped(
@@ -1390,6 +1464,16 @@ fn blit_alpha_mask_clipped(
     let sg = u32::from(color.g);
     let sb = u32::from(color.b);
     let sa_base = u32::from(color.a);
+    let solid_pr = (sr * sa_base + 127) / 255;
+    let solid_pg = (sg * sa_base + 127) / 255;
+    let solid_pb = (sb * sa_base + 127) / 255;
+    let solid_inv_sa = 255 - sa_base;
+    let solid_pixel = [
+        solid_pr as u8,
+        solid_pg as u8,
+        solid_pb as u8,
+        sa_base as u8,
+    ];
 
     let stride = pm.width() as usize;
     let dst_data = pm.data_mut();
@@ -1404,33 +1488,71 @@ fn blit_alpha_mask_clipped(
         }
 
         for py in y0..y1 {
-            let my = (py - dst_y) as u32;
-            let mask_row = (my * mask.width) as usize;
+            let my = (py - dst_y) as usize;
+            let (s_start, s_end) = mask.row_spans[my];
+            if s_start >= s_end {
+                continue;
+            }
+            let mask_row = my * (mask.width as usize);
             let dst_row = (py as usize) * stride;
-            for px in x0..x1 {
-                let mx = (px - dst_x) as u32;
-                let cov = u32::from(mask.data[mask_row + (mx as usize)]);
-                if cov == 0 {
+            for span in &mask.spans[s_start as usize..s_end as usize] {
+                let rx0 = x0.max(dst_x + i32::from(span.x0));
+                let rx1 = x1.min(dst_x + i32::from(span.x1));
+                if rx0 >= rx1 {
                     continue;
                 }
-                let sa = (sa_base * cov + 127) / 255;
-                if sa == 0 {
-                    continue;
-                }
-                let pr = (sr * sa + 127) / 255;
-                let pg = (sg * sa + 127) / 255;
-                let pb = (sb * sa + 127) / 255;
+                for px in rx0..rx1 {
+                    let mx = (px - dst_x) as usize;
+                    let cov = u32::from(mask.data[mask_row + mx]);
+                    let idx = (dst_row + (px as usize)) * 4;
+                    if cov == 255 {
+                        if sa_base == 255 || dst_data[idx + 3] == 0 {
+                            dst_data[idx..idx + 4].copy_from_slice(&solid_pixel);
+                        } else {
+                            dst_data[idx] = (solid_pr
+                                + (u32::from(dst_data[idx]) * solid_inv_sa + 127) / 255)
+                                .min(255) as u8;
+                            dst_data[idx + 1] = (solid_pg
+                                + (u32::from(dst_data[idx + 1]) * solid_inv_sa + 127) / 255)
+                                .min(255) as u8;
+                            dst_data[idx + 2] = (solid_pb
+                                + (u32::from(dst_data[idx + 2]) * solid_inv_sa + 127) / 255)
+                                .min(255) as u8;
+                            dst_data[idx + 3] = (sa_base
+                                + (u32::from(dst_data[idx + 3]) * solid_inv_sa + 127) / 255)
+                                .min(255) as u8;
+                        }
+                        continue;
+                    }
+                    let sa = if sa_base == 255 {
+                        cov
+                    } else {
+                        (sa_base * cov + 127) / 255
+                    };
+                    if sa == 0 {
+                        continue;
+                    }
+                    let pr = (sr * sa + 127) / 255;
+                    let pg = (sg * sa + 127) / 255;
+                    let pb = (sb * sa + 127) / 255;
+                    if dst_data[idx + 3] == 0 {
+                        dst_data[idx] = pr as u8;
+                        dst_data[idx + 1] = pg as u8;
+                        dst_data[idx + 2] = pb as u8;
+                        dst_data[idx + 3] = sa as u8;
+                        continue;
+                    }
 
-                let idx = (dst_row + (px as usize)) * 4;
-                let inv_sa = 255 - sa;
-                dst_data[idx] =
-                    (pr + (u32::from(dst_data[idx]) * inv_sa + 127) / 255).min(255) as u8;
-                dst_data[idx + 1] =
-                    (pg + (u32::from(dst_data[idx + 1]) * inv_sa + 127) / 255).min(255) as u8;
-                dst_data[idx + 2] =
-                    (pb + (u32::from(dst_data[idx + 2]) * inv_sa + 127) / 255).min(255) as u8;
-                dst_data[idx + 3] =
-                    (sa + (u32::from(dst_data[idx + 3]) * inv_sa + 127) / 255).min(255) as u8;
+                    let inv_sa = 255 - sa;
+                    dst_data[idx] =
+                        (pr + (u32::from(dst_data[idx]) * inv_sa + 127) / 255).min(255) as u8;
+                    dst_data[idx + 1] =
+                        (pg + (u32::from(dst_data[idx + 1]) * inv_sa + 127) / 255).min(255) as u8;
+                    dst_data[idx + 2] =
+                        (pb + (u32::from(dst_data[idx + 2]) * inv_sa + 127) / 255).min(255) as u8;
+                    dst_data[idx + 3] =
+                        (sa + (u32::from(dst_data[idx + 3]) * inv_sa + 127) / 255).min(255) as u8;
+                }
             }
         }
     }

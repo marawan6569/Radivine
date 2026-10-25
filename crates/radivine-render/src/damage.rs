@@ -288,17 +288,29 @@ impl DamageTracker {
 pub fn merge_into_at_most_4(rects: &mut SmallVec<[RectPx; 24]>) -> SmallVec<[RectPx; 4]> {
     rects.retain(|r| !r.is_empty());
 
-    // First pass: merge any overlapping or touching rectangles
+    // First pass: merge overlapping or touching rectangles when doing so adds minimal dead area
     let mut merged_any = true;
     while merged_any {
         merged_any = false;
         'outer: for i in 0..rects.len() {
             for j in (i + 1)..rects.len() {
                 if rects[i].overlaps_or_touches(rects[j], 2) {
-                    rects[i] = rects[i].union(rects[j]);
-                    rects.remove(j);
-                    merged_any = true;
-                    break 'outer;
+                    let a = rects[i];
+                    let b = rects[j];
+                    let u = a.union(b);
+                    let ix0 = a.x.max(b.x);
+                    let iy0 = a.y.max(b.y);
+                    let ix1 = a.right().min(b.right());
+                    let iy1 = a.bottom().min(b.bottom());
+                    let inter = ((ix1 - ix0).max(0) as u64) * ((iy1 - iy0).max(0) as u64);
+                    let true_union = a.area() + b.area() - inter;
+                    let dead_area = u.area().saturating_sub(true_union);
+                    if dead_area <= true_union / 5 {
+                        rects[i] = u;
+                        rects.remove(j);
+                        merged_any = true;
+                        break 'outer;
+                    }
                 }
             }
         }
