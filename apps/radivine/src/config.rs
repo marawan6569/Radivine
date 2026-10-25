@@ -8,7 +8,7 @@ use serde::{Deserialize, Deserializer};
 use radivine_actions::PreviewSettings;
 use radivine_platform::{OverlayWindowType, TriggerDetectionMode, TriggerModifier, X11Config};
 use radivine_render::Theme;
-use radivine_wheel::WheelConfig;
+use radivine_wheel::{WheelConfig, WheelLayout};
 
 /// Scale configuration (`"auto"` or explicit multiplier in `0.5..=4.0`).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -175,10 +175,38 @@ impl Default for TriggerSection {
     }
 }
 
+const INVALID_LAYOUT_TYPE_SENTINEL: &str = "\0invalid-toml-type";
+
+fn default_wheel_layout() -> String {
+    "branching".to_string()
+}
+
+fn deserialize_wheel_layout<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match toml::Value::deserialize(deserializer)? {
+        toml::Value::String(s) => Ok(s),
+        other => {
+            tracing::warn!(
+                "invalid wheel.layout type ({}); expected \"branching\" or \"concentric\"",
+                other.type_str()
+            );
+            Ok(INVALID_LAYOUT_TYPE_SENTINEL.to_string())
+        }
+    }
+}
+
 /// `[wheel]` configuration section.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct WheelSection {
+    /// Spatial layout mode (`"branching"` or `"concentric"`).
+    #[serde(
+        default = "default_wheel_layout",
+        deserialize_with = "deserialize_wheel_layout"
+    )]
+    pub layout: String,
     /// Root wheel inner dead-zone radius in logical px.
     pub root_inner_radius: f32,
     /// Root wheel outer radius in logical px.
@@ -204,6 +232,7 @@ pub struct WheelSection {
 impl Default for WheelSection {
     fn default() -> Self {
         Self {
+            layout: default_wheel_layout(),
             root_inner_radius: 40.0,
             root_outer_radius: 128.0,
             child_inner_radius: 34.0,
@@ -375,6 +404,13 @@ impl AppConfig {
     /// Validates numeric ranges and resets out-of-range fields to safe defaults.
     pub fn sanitize(&mut self) {
         let def = WheelSection::default();
+        if !matches!(self.wheel.layout.as_str(), "branching" | "concentric") {
+            tracing::warn!(
+                "invalid wheel.layout={:?}; resetting to \"branching\"",
+                self.wheel.layout
+            );
+            self.wheel.layout = def.layout;
+        }
         if !(16.0..=200.0).contains(&self.wheel.root_inner_radius) {
             tracing::warn!("wheel.root_inner_radius out of range; resetting to default");
             self.wheel.root_inner_radius = def.root_inner_radius;
@@ -428,6 +464,9 @@ impl AppConfig {
     /// when any field is outside its supported range (used by `radivine-control` before saving).
     pub fn validate_strict(&self) -> Result<(), Vec<String>> {
         let mut errs = Vec::new();
+        if !matches!(self.wheel.layout.as_str(), "branching" | "concentric") {
+            errs.push("wheel.layout must be \"branching\" or \"concentric\"".to_string());
+        }
         if !(16.0..=200.0).contains(&self.wheel.root_inner_radius) {
             errs.push("wheel.root_inner_radius must be between 16.0 and 200.0 px".to_string());
         }
@@ -544,7 +583,12 @@ impl AppConfig {
     /// Builds a [`WheelConfig`] for the radial wheel engine.
     #[must_use]
     pub fn to_wheel_config(&self, reduced_motion: bool) -> WheelConfig {
+        let layout = match self.wheel.layout.as_str() {
+            "concentric" => WheelLayout::Concentric,
+            _ => WheelLayout::Branching,
+        };
         let mut cfg = WheelConfig {
+            layout,
             radius_root: [self.wheel.root_inner_radius, self.wheel.root_outer_radius],
             radius_child: [self.wheel.child_inner_radius, self.wheel.child_outer_radius],
             child_gap: self.wheel.child_offset_gap,
@@ -686,5 +730,40 @@ mod tests {
         );
         assert_eq!(cfg.wheel.root_inner_radius, 40.0);
         assert_eq!(cfg.appearance.scale, ScaleSetting::Auto);
+    }
+
+    #[test]
+    fn wheel_layout_defaults_to_branching_and_resets_only_invalid_layout_field() {
+        let def = AppConfig::default();
+        assert_eq!(def.wheel.layout, "branching");
+        assert_eq!(def.to_wheel_config(false).layout, WheelLayout::Branching);
+
+        let concentric = AppConfig::from_toml_str(
+            r#"
+            [wheel]
+            layout = "concentric"
+            root_inner_radius = 44.0
+            "#,
+        );
+        assert_eq!(concentric.wheel.layout, "concentric");
+        assert_eq!(concentric.wheel.root_inner_radius, 44.0);
+        assert!(concentric.validate_strict().is_ok());
+        assert_eq!(
+            concentric.to_wheel_config(false).layout,
+            WheelLayout::Concentric
+        );
+
+        let invalid_type = AppConfig::from_toml_str(
+            r#"
+            [wheel]
+            layout = 42
+            root_inner_radius = 48.0
+            [trigger]
+            drag_modifier = "ctrl"
+            "#,
+        );
+        assert_eq!(invalid_type.wheel.layout, "branching");
+        assert_eq!(invalid_type.wheel.root_inner_radius, 48.0);
+        assert_eq!(invalid_type.trigger.drag_modifier, "ctrl");
     }
 }

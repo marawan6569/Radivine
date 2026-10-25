@@ -15,7 +15,7 @@ pub mod scene;
 pub mod session;
 
 pub use anim::{Ease, Millis, Tween};
-pub use config::{InvokeSelect, SubmenuOpen, WheelConfig};
+pub use config::{InvokeSelect, SubmenuOpen, WheelConfig, WheelLayout};
 pub use geometry::{Point, Rect, SegmentSpan, Viewport};
 pub use hit::{WheelHitGeometry, Zone, hit_test};
 pub use layout::Placement;

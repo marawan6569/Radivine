@@ -1,5 +1,15 @@
 //! Configuration types and validation for `radivine-wheel`.
 
+/// Spatial layout mode for the radial wheel hierarchy (`PRODUCT_SPEC.md` §P1, §P4).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WheelLayout {
+    /// Submenus open beside their parent, connected by vine stems (default).
+    #[default]
+    Branching,
+    /// Submenus open as concentric full-circle annuli around a shared center.
+    Concentric,
+}
+
 /// Rule controlling how submenus open when hovered or clicked.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SubmenuOpen {
@@ -28,6 +38,8 @@ pub enum InvokeSelect {
 /// from `WHEEL_ENGINE_DESIGN.md` §9–§10.
 #[derive(Clone, Debug, PartialEq)]
 pub struct WheelConfig {
+    /// Spatial layout mode for the radial wheel hierarchy (default `WheelLayout::Branching`).
+    pub layout: WheelLayout,
     /// Maximum items per wheel before overflowing into an automatic "More…" submenu (default 8, hard limit 12).
     pub max_items_per_wheel: u8,
     /// Maximum hierarchy depth where root = 1 (default 4, hard limit 6).
@@ -71,6 +83,7 @@ pub struct WheelConfig {
 impl Default for WheelConfig {
     fn default() -> Self {
         Self {
+            layout: WheelLayout::Branching,
             max_items_per_wheel: 8,
             max_depth: 4,
             activation_slop: 6.0,
