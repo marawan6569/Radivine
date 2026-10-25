@@ -40,6 +40,7 @@ their expectations to fit the new mode.
 
 ## N1 — Configuration model and layout selection seam
 
+**Status:** **Completed (2026-10-25; see [`docs/test-reports/N1.md`](../../test-reports/N1.md)). Stopped awaiting explicit N2 authorization.**  
 **Dependency:** owner approval of this package and explicit N1 authorization.
 
 Expected files:
