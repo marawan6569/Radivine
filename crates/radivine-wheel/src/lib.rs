@@ -18,11 +18,12 @@ pub mod session;
 pub use anim::{Ease, Millis, Tween};
 pub use concentric::{
     CONCENTRIC_ANGULAR_EPS, CONCENTRIC_CAPTION_GAP, CONCENTRIC_CAPTION_H, CONCENTRIC_CAPTION_W,
-    CONCENTRIC_CONTENT_PAD, CONCENTRIC_EDGE_PAD, CONCENTRIC_MIN_TARGET_CORE, CONCENTRIC_RADIAL_EPS,
+    CONCENTRIC_CONTENT_PAD, CONCENTRIC_EDGE_PAD, CONCENTRIC_FRESH_MOTION_LP,
+    CONCENTRIC_MIN_TARGET_CORE, CONCENTRIC_RADIAL_EPS, CONCENTRIC_RADIAL_HYSTERESIS_MAX,
     CONCENTRIC_RING_GAP, CONCENTRIC_RING_THICKNESS, CONCENTRIC_SEPARATOR_WIDTH, ConcentricPlan,
-    ContentMode, NestedSegmentContent, RingGeometry, compute_sector_content, concentric_ring_radii,
-    plan_concentric, ring_geometry, sector_box_fits, separator_half_angle_for_ring,
-    target_core_fits_ring,
+    ContentMode, NestedHit, NestedSegmentContent, RingGeometry, compute_sector_content,
+    concentric_ring_radii, hit_concentric, plan_concentric, retain_hover_hysteresis, ring_geometry,
+    sector_box_fits, separator_half_angle_for_ring, target_core_fits_ring,
 };
 pub use config::{
     InvokeSelect, LayoutFallback, LayoutSelection, SubmenuOpen, WheelConfig, WheelLayout,

@@ -41,6 +41,11 @@ pub enum Zone {
 }
 
 /// Precomputed hit-test geometry for a single active (non-retracting) wheel in the chain.
+///
+/// Note (`ARCHITECTURE.md` §A2): For [`crate::WheelLayout::Concentric`] sessions, `WheelHitGeometry`
+/// is retained as a representation for debug and `item_center` queries only. Concentric hit testing
+/// MUST use [`crate::concentric::hit_concentric`] rather than [`hit_test`], because [`hit_test`]
+/// evaluates child wheels deepest-first and would classify inner ancestor rings as child hubs.
 #[derive(Clone, Debug)]
 pub struct WheelHitGeometry {
     /// Index of this wheel in the chain (`0` = root).

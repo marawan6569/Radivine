@@ -7,7 +7,7 @@ use smallvec::SmallVec;
 
 use crate::config::{LayoutFallback, WheelConfig};
 use crate::geometry::{
-    Point, Rect, SegmentSpan, Viewport, root_segment_spans, segment_content_radius,
+    Point, Rect, SegmentSpan, Viewport, angle_diff, root_segment_spans, segment_content_radius,
 };
 
 /// Fixed radial thickness of each concentric child annulus (`60.0 lp`, `INTERACTION_DESIGN.md` §I1).
@@ -42,6 +42,50 @@ pub const CONCENTRIC_ANGULAR_EPS: f32 = 1e-5;
 
 /// Content box padding inside an annular sector (`4.0 lp`, `INTERACTION_DESIGN.md` §I8).
 pub const CONCENTRIC_CONTENT_PAD: f32 = 4.0;
+
+/// Maximum radial hover-retention distance into an inter-ring gap (`3.0 lp`, never across the
+/// `6.0 lp` gap midpoint; `INTERACTION_DESIGN.md` §I4).
+pub const CONCENTRIC_RADIAL_HYSTERESIS_MAX: f32 = 3.0;
+
+/// Minimum fresh pointer movement (`2.0 lp`) required after new geometry appears before targets
+/// or dwell/band on that level become eligible (`INTERACTION_DESIGN.md` §I4, §I5).
+pub const CONCENTRIC_FRESH_MOTION_LP: f32 = 2.0;
+
+/// Strict hit-test zone for a [`crate::WheelLayout::Concentric`] session (`INTERACTION_DESIGN.md` §I4).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum NestedHit {
+    /// Inside the single shared center hub (`distance(p, C) < inner(0) - 1e-4`).
+    Hub,
+    /// Strictly inside an actionable sector of open ring `level`.
+    Item {
+        /// 0-based ring level (`0` = root).
+        level: u8,
+        /// 0-based clockwise sector index on `level`.
+        index: u8,
+    },
+    /// Inside the `6.0 lp` radial gap between `inner_level` and `inner_level + 1`.
+    RadialGap {
+        /// 0-based level of the inner ring bordering this gap.
+        inner_level: u8,
+    },
+    /// Within `1e-4 lp` of an inner or outer radial boundary of `level`.
+    RadialBoundary {
+        /// 0-based ring level (`0` = root).
+        level: u8,
+    },
+    /// Inside the neutral angular separator (or `1e-5 rad` separator edge epsilon) on `level`.
+    Separator {
+        /// 0-based ring level (`0` = root).
+        level: u8,
+    },
+    /// Beyond the outermost open ring's outer boundary up to `last_open_r_out + hit_margin`.
+    OuterMargin,
+    /// Displaced-origin approach guard active outside the hub interior.
+    Approach,
+    /// Outside `last_open_r_out + hit_margin` (or non-finite coordinates).
+    #[default]
+    Outside,
+}
 
 /// Content layout mode inside a concentric sector (`INTERACTION_DESIGN.md` §I8, `ARCHITECTURE.md` §A4).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -473,4 +517,186 @@ pub fn sector_box_fits(
     }
 
     true
+}
+
+/// Evaluates the strict annular hit-test zone at `p` for `plan` and `open` rings
+/// (`INTERACTION_DESIGN.md` §I4; `ARCHITECTURE.md` §A3).
+///
+/// Strict hit testing is stateless and independent of current hover or hysteresis:
+/// 1. Non-finite coordinates return [`NestedHit::Outside`].
+/// 2. When `plan.approach_required` is active, points inside the hub interior (`d < h - 1e-4`)
+///    return [`NestedHit::Hub`] (allowing hub entry to clear the approach guard) and all other
+///    points return [`NestedHit::Approach`].
+/// 3. Radial boundary epsilon bands (`|d - r_in| <= 1e-4` or `|d - r_out| <= 1e-4`) return
+///    [`NestedHit::RadialBoundary`].
+/// 4. Hub interior (`d < h - 1e-4`) is tested once and returns [`NestedHit::Hub`].
+/// 5. Open annulus interiors (`r_in + 1e-4 < d < r_out - 1e-4`) return [`NestedHit::Item`] when
+///    strictly inside `(a0 + δ + 1e-5, a1 - δ - 1e-5)` (or full `2π` when `n == 1`), and
+///    [`NestedHit::Separator`] otherwise.
+/// 6. Inter-ring `6.0 lp` gaps between adjacent open rings return [`NestedHit::RadialGap`].
+/// 7. Capture margin beyond the last open ring (`last_r_out + 1e-4 < d <= last_r_out + hit_margin`)
+///    returns [`NestedHit::OuterMargin`].
+/// 8. All points beyond `last_r_out + hit_margin` return [`NestedHit::Outside`].
+#[must_use]
+pub fn hit_concentric(p: Point, plan: &ConcentricPlan, open: &[RingGeometry]) -> NestedHit {
+    if !p.x.is_finite()
+        || !p.y.is_finite()
+        || !plan.center.x.is_finite()
+        || !plan.center.y.is_finite()
+    {
+        return NestedHit::Outside;
+    }
+
+    let d = p.distance(plan.center);
+    let (h, r0) = open
+        .first()
+        .map(|r| (r.r_in, r.r_out))
+        .or_else(|| plan.radii.first().copied())
+        .unwrap_or((40.0, 128.0));
+
+    if plan.approach_required {
+        if d < h - CONCENTRIC_RADIAL_EPS {
+            return NestedHit::Hub;
+        }
+        return NestedHit::Approach;
+    }
+
+    for ring in open {
+        if (d - ring.r_in).abs() <= CONCENTRIC_RADIAL_EPS
+            || (d - ring.r_out).abs() <= CONCENTRIC_RADIAL_EPS
+        {
+            return NestedHit::RadialBoundary { level: ring.level };
+        }
+    }
+    if open.is_empty()
+        && ((d - h).abs() <= CONCENTRIC_RADIAL_EPS || (d - r0).abs() <= CONCENTRIC_RADIAL_EPS)
+    {
+        return NestedHit::RadialBoundary { level: 0 };
+    }
+
+    if d < h - CONCENTRIC_RADIAL_EPS {
+        return NestedHit::Hub;
+    }
+
+    for ring in open {
+        if d > ring.r_in + CONCENTRIC_RADIAL_EPS && d < ring.r_out - CONCENTRIC_RADIAL_EPS {
+            let n = ring.spans.len();
+            if n == 0 {
+                return NestedHit::Separator { level: ring.level };
+            }
+            if n == 1 {
+                return NestedHit::Item {
+                    level: ring.level,
+                    index: 0,
+                };
+            }
+            let theta = plan.center.angle_to(p);
+            for (idx, span) in ring.spans.iter().enumerate() {
+                let half_span = (span.a1 - span.a0) * 0.5;
+                let max_selectable = half_span - ring.separator_half_angle - CONCENTRIC_ANGULAR_EPS;
+                if max_selectable > 0.0 && angle_diff(theta, span.center).abs() < max_selectable {
+                    return NestedHit::Item {
+                        level: ring.level,
+                        index: idx as u8,
+                    };
+                }
+            }
+            return NestedHit::Separator { level: ring.level };
+        }
+    }
+
+    for pair in open.windows(2) {
+        let inner_ring = &pair[0];
+        let outer_ring = &pair[1];
+        if d > inner_ring.r_out + CONCENTRIC_RADIAL_EPS
+            && d < outer_ring.r_in - CONCENTRIC_RADIAL_EPS
+        {
+            return NestedHit::RadialGap {
+                inner_level: inner_ring.level,
+            };
+        }
+    }
+
+    let last_open_r_out = open.last().map_or(r0, |r| r.r_out);
+    if d > last_open_r_out + CONCENTRIC_RADIAL_EPS
+        && d <= last_open_r_out + plan.hit_margin.max(0.0)
+    {
+        return NestedHit::OuterMargin;
+    }
+
+    NestedHit::Outside
+}
+
+/// Evaluates whether hover explanation/highlight may be retained at `p` when `strict_hit` is in a
+/// neutral separator, boundary, or `< 3.0 lp` into an adjacent inter-ring gap (`INTERACTION_DESIGN.md` §I4).
+///
+/// Never alters `strict_hit` or action eligibility: if the returned hover target differs from
+/// `strict_hit`, commit/drop MUST reject and no armed outline may be shown.
+#[must_use]
+pub fn retain_hover_hysteresis(
+    p: Point,
+    strict_hit: NestedHit,
+    prev_hover: Option<(u8, u8)>,
+    plan: &ConcentricPlan,
+    open: &[RingGeometry],
+    hysteresis_deg: f32,
+) -> Option<(u8, u8)> {
+    if let NestedHit::Item { level, index } = strict_hit {
+        return Some((level, index));
+    }
+
+    let (prev_level, prev_index) = prev_hover?;
+    let ring = open.iter().find(|r| r.level == prev_level)?;
+    let span = *ring.spans.get(prev_index as usize)?;
+
+    let d = p.distance(plan.center);
+    let theta = plan.center.angle_to(p);
+
+    let angle_ok = if ring.spans.len() <= 1 {
+        true
+    } else {
+        let span_width = span.a1 - span.a0;
+        let hyst_rad = hysteresis_deg.max(0.0).to_radians().min(span_width * 0.15);
+        let half_span = span_width * 0.5;
+        angle_diff(theta, span.center).abs() <= half_span - ring.separator_half_angle + hyst_rad
+    };
+    if !angle_ok {
+        return None;
+    }
+
+    match strict_hit {
+        NestedHit::Separator { level } if level == prev_level => {
+            if d > ring.r_in + CONCENTRIC_RADIAL_EPS && d < ring.r_out - CONCENTRIC_RADIAL_EPS {
+                Some((prev_level, prev_index))
+            } else {
+                None
+            }
+        }
+        NestedHit::RadialBoundary { level } if level == prev_level => {
+            let has_outer_gap = open.iter().any(|r| r.level == prev_level + 1);
+            let on_outer_into_gap =
+                has_outer_gap && (d - ring.r_out).abs() <= CONCENTRIC_RADIAL_EPS;
+            let on_inner_into_gap =
+                prev_level >= 1 && (d - ring.r_in).abs() <= CONCENTRIC_RADIAL_EPS;
+            if on_outer_into_gap || on_inner_into_gap {
+                Some((prev_level, prev_index))
+            } else {
+                None
+            }
+        }
+        NestedHit::RadialGap { inner_level } => {
+            let max_gap_retention = CONCENTRIC_RADIAL_HYSTERESIS_MAX.min(CONCENTRIC_RING_GAP * 0.5);
+            let into_outer_gap =
+                inner_level == prev_level && d > ring.r_out && (d - ring.r_out) < max_gap_retention;
+            let into_inner_gap = inner_level + 1 == prev_level
+                && d < ring.r_in
+                && (ring.r_in - d) < max_gap_retention;
+            if into_outer_gap || into_inner_gap {
+                Some((prev_level, prev_index))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
 }

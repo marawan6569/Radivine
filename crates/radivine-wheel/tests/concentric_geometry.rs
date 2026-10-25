@@ -6,11 +6,12 @@ use std::f32::consts::{PI, TAU};
 use radivine_wheel::geometry::{Rect, angle_diff, normalize_angle, segment_content_radius};
 use radivine_wheel::{
     CONCENTRIC_ANGULAR_EPS, CONCENTRIC_CAPTION_GAP, CONCENTRIC_CAPTION_H, CONCENTRIC_CAPTION_W,
-    CONCENTRIC_EDGE_PAD, CONCENTRIC_MIN_TARGET_CORE, CONCENTRIC_RADIAL_EPS, CONCENTRIC_RING_GAP,
-    CONCENTRIC_RING_THICKNESS, ContentMode, InputMode, ItemPath, LayoutFallback, LayoutSelection,
-    MenuNode, MenuTree, Point, Viewport, WheelConfig, WheelLayout, WheelSession,
-    compute_sector_content, concentric_ring_radii, plan_concentric, ring_geometry, sector_box_fits,
-    separator_half_angle_for_ring, target_core_fits_ring,
+    CONCENTRIC_EDGE_PAD, CONCENTRIC_MIN_TARGET_CORE, CONCENTRIC_RADIAL_EPS,
+    CONCENTRIC_RADIAL_HYSTERESIS_MAX, CONCENTRIC_RING_GAP, CONCENTRIC_RING_THICKNESS, ContentMode,
+    InputMode, ItemPath, LayoutFallback, LayoutSelection, MenuNode, MenuTree, NestedHit, Point,
+    Viewport, WheelConfig, WheelLayout, WheelSession, compute_sector_content,
+    concentric_ring_radii, hit_concentric, plan_concentric, retain_hover_hysteresis, ring_geometry,
+    sector_box_fits, separator_half_angle_for_ring, target_core_fits_ring,
 };
 
 fn app_concentric_config() -> WheelConfig {
@@ -631,5 +632,251 @@ fn t_geo7_sector_content_boxes_and_caption_reservation_containment() {
             plan.caption_box.h
         ),
         plan.caption_box
+    );
+}
+
+/// `T-GEO6`: Radial and angular endpoints `±epsilon`, angle wrap `0 / 2π`, full annulus, separators,
+/// outer padding. Every point has exactly one strict zone. Hub is tested once. Strict hits are
+/// independent of current hover.
+#[test]
+fn t_geo6_strict_hit_testing_boundaries_wrap_and_hysteresis_separation() {
+    let mut cfg = app_concentric_config();
+    cfg.max_depth = 4;
+    let vp = Viewport::new(1920.0, 1080.0, 1.0);
+    let c = Point::new(960.0, 500.0);
+    let plan = plan_concentric(c, vp, &cfg).expect("plan fits");
+
+    // Build 4 open rings with counts [8, 6, 4, 1]
+    let open = vec![
+        ring_geometry(&plan, 0, 8),
+        ring_geometry(&plan, 1, 6),
+        ring_geometry(&plan, 2, 4),
+        ring_geometry(&plan, 3, 1),
+    ];
+
+    let top = 1.5 * PI;
+
+    // 1. Hub interior vs root inner boundary (`h = 40.0`)
+    assert_eq!(hit_concentric(c, &plan, &open), NestedHit::Hub);
+    assert_eq!(
+        hit_concentric(
+            c.offset_polar(40.0 - 2.0 * CONCENTRIC_RADIAL_EPS, top),
+            &plan,
+            &open
+        ),
+        NestedHit::Hub
+    );
+    assert_eq!(
+        hit_concentric(
+            c.offset_polar(40.0 - 0.5 * CONCENTRIC_RADIAL_EPS, top),
+            &plan,
+            &open
+        ),
+        NestedHit::RadialBoundary { level: 0 }
+    );
+    assert_eq!(
+        hit_concentric(c.offset_polar(40.0, top), &plan, &open),
+        NestedHit::RadialBoundary { level: 0 }
+    );
+    assert_eq!(
+        hit_concentric(
+            c.offset_polar(40.0 + 0.5 * CONCENTRIC_RADIAL_EPS, top),
+            &plan,
+            &open
+        ),
+        NestedHit::RadialBoundary { level: 0 }
+    );
+    assert_eq!(
+        hit_concentric(
+            c.offset_polar(40.0 + 2.0 * CONCENTRIC_RADIAL_EPS, top),
+            &plan,
+            &open
+        ),
+        NestedHit::Item { level: 0, index: 0 }
+    );
+
+    // 2. Radial boundaries and 6 lp inter-ring gaps across all 4 open levels,
+    //    verifying that no child ring ever claims an inner ancestor as its hub.
+    for (lvl, rg) in open.iter().enumerate() {
+        let level = lvl as u8;
+        let r_mid = (rg.r_in + rg.r_out) * 0.5;
+        assert_eq!(
+            hit_concentric(c.offset_polar(r_mid, top), &plan, &open),
+            NestedHit::Item { level, index: 0 },
+            "ancestor/child ring {level} interior must never be swallowed by a deeper hub"
+        );
+        assert_eq!(
+            hit_concentric(c.offset_polar(rg.r_in, top), &plan, &open),
+            NestedHit::RadialBoundary { level }
+        );
+        assert_eq!(
+            hit_concentric(c.offset_polar(rg.r_out, top), &plan, &open),
+            NestedHit::RadialBoundary { level }
+        );
+        assert_eq!(
+            hit_concentric(
+                c.offset_polar(rg.r_out - 2.0 * CONCENTRIC_RADIAL_EPS, top),
+                &plan,
+                &open
+            ),
+            NestedHit::Item { level, index: 0 }
+        );
+
+        if lvl + 1 < open.len() {
+            let next_rg = &open[lvl + 1];
+            // Across the entire 6 lp gap at 16 angles
+            for k in 0..16 {
+                let theta = (k as f32) * TAU / 16.0;
+                for r in [
+                    rg.r_out + 2.0 * CONCENTRIC_RADIAL_EPS,
+                    (rg.r_out + next_rg.r_in) * 0.5,
+                    next_rg.r_in - 2.0 * CONCENTRIC_RADIAL_EPS,
+                ] {
+                    assert_eq!(
+                        hit_concentric(c.offset_polar(r, theta), &plan, &open),
+                        NestedHit::RadialGap { inner_level: level }
+                    );
+                }
+            }
+        }
+    }
+
+    // 3. Angular separator edges ±epsilon and 0/2π wrap-around on level 0 (8 items)
+    let rg0 = &open[0];
+    let r_mid0 = (rg0.r_in + rg0.r_out) * 0.5;
+    let delta0 = rg0.separator_half_angle;
+    for (idx, span) in rg0.spans.iter().enumerate() {
+        let left_edge = span.a0 + delta0;
+        let right_edge = span.a1 - delta0;
+
+        // Just outside selectable span (inside separator or within 1e-5 rad epsilon) -> Separator
+        for theta in [
+            span.a0,
+            left_edge - 2.0 * CONCENTRIC_ANGULAR_EPS,
+            left_edge - 0.5 * CONCENTRIC_ANGULAR_EPS,
+            left_edge,
+            left_edge + 0.5 * CONCENTRIC_ANGULAR_EPS,
+            right_edge - 0.5 * CONCENTRIC_ANGULAR_EPS,
+            right_edge,
+            right_edge + 0.5 * CONCENTRIC_ANGULAR_EPS,
+            right_edge + 2.0 * CONCENTRIC_ANGULAR_EPS,
+            span.a1,
+        ] {
+            assert_eq!(
+                hit_concentric(c.offset_polar(r_mid0, theta), &plan, &open),
+                NestedHit::Separator { level: 0 },
+                "sector {idx} boundary angle {theta} must be Separator"
+            );
+        }
+
+        // Strictly inside selectable span (`> 1e-5 rad` past separator edge) -> Item
+        for theta in [
+            left_edge + 3.0 * CONCENTRIC_ANGULAR_EPS,
+            span.center,
+            right_edge - 3.0 * CONCENTRIC_ANGULAR_EPS,
+        ] {
+            assert_eq!(
+                hit_concentric(c.offset_polar(r_mid0, theta), &plan, &open),
+                NestedHit::Item {
+                    level: 0,
+                    index: idx as u8
+                },
+                "sector {idx} interior angle {theta} must be Item"
+            );
+        }
+    }
+
+    // Explicit 0 / 2π wrap check (for 8 items starting at 270°, item 2 is centered at 0° / 2π)
+    for theta in [0.0f32, 1e-6, TAU - 1e-6, TAU] {
+        assert_eq!(
+            hit_concentric(c.offset_polar(r_mid0, theta), &plan, &open),
+            NestedHit::Item { level: 0, index: 2 }
+        );
+    }
+
+    // 4. Full annulus (`n = 1` on level 3) has no separator at any angle
+    let rg3 = &open[3];
+    let r_mid3 = (rg3.r_in + rg3.r_out) * 0.5;
+    for k in 0..72 {
+        let theta = (k as f32) * TAU / 72.0;
+        assert_eq!(
+            hit_concentric(c.offset_polar(r_mid3, theta), &plan, &open),
+            NestedHit::Item { level: 3, index: 0 }
+        );
+    }
+
+    // Placeholder (`n = 0`) has no Item hits at any angle
+    let open_placeholder = [ring_geometry(&plan, 0, 0)];
+    for k in 0..16 {
+        let theta = (k as f32) * TAU / 16.0;
+        assert_eq!(
+            hit_concentric(c.offset_polar(r_mid0, theta), &plan, &open_placeholder),
+            NestedHit::Separator { level: 0 }
+        );
+    }
+
+    // 5. OuterMargin vs Outside (including unused reserved capacity when only root is open)
+    let open_root_only = [ring_geometry(&plan, 0, 8)];
+    // Root outer is 128, hit_margin is 12 -> OuterMargin is (128 + 1e-4, 140], Outside is > 140
+    assert_eq!(
+        hit_concentric(c.offset_polar(128.5, top), &plan, &open_root_only),
+        NestedHit::OuterMargin
+    );
+    assert_eq!(
+        hit_concentric(c.offset_polar(140.0, top), &plan, &open_root_only),
+        NestedHit::OuterMargin
+    );
+    assert_eq!(
+        hit_concentric(c.offset_polar(140.01, top), &plan, &open_root_only),
+        NestedHit::Outside,
+        "unused reserved capacity beyond last_open_r_out + hit_margin must be Outside"
+    );
+
+    // 6. Displaced-center approach state: Hub interior is Hub; everything else is Approach
+    let displaced_plan =
+        plan_concentric(Point::new(10.0, 10.0), vp, &cfg).expect("displaced plan fits");
+    assert!(displaced_plan.approach_required);
+    assert_eq!(
+        hit_concentric(displaced_plan.center, &displaced_plan, &open_root_only),
+        NestedHit::Hub
+    );
+    assert_eq!(
+        hit_concentric(
+            displaced_plan.center.offset_polar(80.0, top),
+            &displaced_plan,
+            &open_root_only
+        ),
+        NestedHit::Approach
+    );
+
+    // 7. Hover hysteresis retention vs strict hit separation
+    // Move slightly into the separator next to item 0 on level 0 (within 3.5° hysteresis):
+    // strict hit is `Separator { level: 0 }`, while hover retention preserves `Some((0, 0))`.
+    let sep_pt = c.offset_polar(
+        r_mid0,
+        rg0.spans[0].a1 - rg0.separator_half_angle + 0.01, // inside separator, within 3.5° (0.061 rad)
+    );
+    let strict_sep = hit_concentric(sep_pt, &plan, &open);
+    assert_eq!(strict_sep, NestedHit::Separator { level: 0 });
+    assert_eq!(
+        retain_hover_hysteresis(sep_pt, strict_sep, Some((0, 0)), &plan, &open, 3.5),
+        Some((0, 0))
+    );
+
+    // Radial hover retention into gap: < 3.0 lp retains hover, >= 3.0 lp (gap midpoint) clears hover
+    let gap_near = c.offset_polar(rg0.r_out + 2.5, top);
+    let strict_gap_near = hit_concentric(gap_near, &plan, &open);
+    assert_eq!(strict_gap_near, NestedHit::RadialGap { inner_level: 0 });
+    assert_eq!(
+        retain_hover_hysteresis(gap_near, strict_gap_near, Some((0, 0)), &plan, &open, 3.5),
+        Some((0, 0))
+    );
+
+    let gap_mid = c.offset_polar(rg0.r_out + CONCENTRIC_RADIAL_HYSTERESIS_MAX, top);
+    let strict_gap_mid = hit_concentric(gap_mid, &plan, &open);
+    assert_eq!(strict_gap_mid, NestedHit::RadialGap { inner_level: 0 });
+    assert_eq!(
+        retain_hover_hysteresis(gap_mid, strict_gap_mid, Some((0, 0)), &plan, &open, 3.5),
+        None
     );
 }
