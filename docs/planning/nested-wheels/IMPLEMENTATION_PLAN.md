@@ -165,6 +165,7 @@ budgets pass; selector remains unexposed until integration safeguards are ready.
 
 ## N4 — Control Center, reload and X11 session integration
 
+**Status:** **Completed (2026-10-25; see [`docs/test-reports/N4.md`](../../test-reports/N4.md)). Stopped awaiting explicit N5 authorization.**  
 **Dependency:** N3 accepted; explicit N4 authorization.
 
 Expected files:
