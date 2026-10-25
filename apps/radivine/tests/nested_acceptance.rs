@@ -1732,13 +1732,6 @@ reduced_motion = true
         "overlay window must use 32-bit ARGB visual (`T-X111`)"
     );
 
-    let children_before = conn
-        .query_tree(root)
-        .expect("query_tree")
-        .reply()
-        .expect("query_tree reply")
-        .children;
-
     let _ = Command::new(&radivine_bin)
         .args([
             "--config",
@@ -1768,18 +1761,37 @@ reduced_motion = true
         "LIVE_XVFB_METRICS: summon_us={summon_us} frame_render_us={render_us} overlay_xid=0x{overlay_win:08x}"
     );
 
+    let mut children_before = conn
+        .query_tree(root)
+        .expect("query_tree")
+        .reply()
+        .expect("query_tree reply")
+        .children;
+    children_before.sort_unstable();
+
     // Press '1' in Invoke mode to open "File Preview" child ring 1, verify no new X11 windows created
     let _ = Command::new("xdotool").args(["key", "1"]).status();
     thread::sleep(Duration::from_millis(30));
-    let children_ring1 = conn
+    let mut children_ring1 = conn
         .query_tree(root)
         .expect("query_tree ring1")
         .reply()
         .expect("query_tree ring1 reply")
         .children;
+    children_ring1.sort_unstable();
     assert_eq!(
         children_before, children_ring1,
         "opening Concentric child ring 1 must never create new X11 windows (`T-X111`)"
+    );
+    let overlay_subwindows = conn
+        .query_tree(overlay_win)
+        .expect("query_tree overlay_win")
+        .reply()
+        .expect("query_tree overlay_win reply")
+        .children;
+    assert!(
+        overlay_subwindows.is_empty(),
+        "overlay_win must have zero child windows (`T-X111`)"
     );
     assert_eq!(
         query_status()["overlay_window_id"].as_u64().unwrap() as u32,
