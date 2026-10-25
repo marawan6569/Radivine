@@ -10,10 +10,16 @@ pub mod cache;
 pub mod damage;
 pub mod theme;
 
-use std::sync::Arc;
-
-use radivine_wheel::geometry::{gap_inset_angle, segment_content_radius, segment_label_max_width};
-use radivine_wheel::{CaptionVisual, Point, Scene, SegmentVisual, StemVisual, WheelVisual};
+use radivine_wheel::concentric::{
+    ContentMode, compute_sector_content, separator_half_angle_for_ring,
+};
+use radivine_wheel::geometry::{
+    SegmentSpan, gap_inset_angle, segment_content_radius, segment_label_max_width,
+};
+use radivine_wheel::{
+    CaptionVisual, OriginGuideVisual, Point, Scene, SegmentVisual, SelectionVisual, StemVisual,
+    WheelVisual, WheelVisualKind,
+};
 use tiny_skia::{FillRule, LineCap, LineJoin, Mask, Paint, PathBuilder, Pixmap, Stroke, Transform};
 
 pub use cache::{AlphaMask, AssetSource, RenderError};
@@ -150,6 +156,11 @@ impl Renderer {
             }
         }
 
+        // 1b. Draw displaced-origin guide below concentric rings (`ARCHITECTURE.md` §A4)
+        if let Some(ref guide) = scene.origin_guide {
+            self.draw_origin_guide(guide, &clip_rects);
+        }
+
         // 2. Draw stems (§13.2 step 2)
         for stem in &scene.stems {
             self.draw_stem(stem, &clip_rects);
@@ -221,6 +232,43 @@ impl Renderer {
 
     // --- Internal drawing pipeline ---
 
+    fn draw_origin_guide(&mut self, guide: &OriginGuideVisual, clips: &[RectPx]) {
+        if guide.opacity <= 1e-3 || guide.anchor.distance(guide.center) <= 0.5 {
+            return;
+        }
+        let Some(ref mut pm) = self.pixmap else {
+            return;
+        };
+        let scale = self.scale;
+        let mut pb = PathBuilder::new();
+        pb.move_to(guide.anchor.x * scale, guide.anchor.y * scale);
+        pb.line_to(guide.center.x * scale, guide.center.y * scale);
+        let Some(path) = pb.finish() else {
+            return;
+        };
+
+        let col = self.theme.stem_on_path.with_opacity(guide.opacity);
+        let mut paint = Paint::default();
+        paint.set_color(col.to_skia());
+        paint.anti_alias = true;
+
+        let stroke = Stroke {
+            width: (1.5 * scale).max(1.0),
+            line_cap: LineCap::Round,
+            line_join: LineJoin::Round,
+            ..Stroke::default()
+        };
+
+        let _ = clips;
+        pm.stroke_path(
+            &path,
+            &paint,
+            &stroke,
+            Transform::identity(),
+            self.clip_mask.as_ref(),
+        );
+    }
+
     fn draw_stem(&mut self, stem: &StemVisual, clips: &[RectPx]) {
         if stem.progress <= 1e-3 || stem.opacity <= 1e-3 {
             return;
@@ -284,7 +332,7 @@ impl Renderer {
         let r_in = wheel.r_in * ws * scale;
         let r_out = wheel.r_out * ws * scale;
 
-        // Skip wheel entirely if its outer shadow bbox doesn't intersect any clip rect
+        // Skip wheel entirely if its outer bbox doesn't intersect any clip rect
         let max_r = (r_out + 28.0 * scale).ceil() as i32;
         let w_rect = RectPx::new(
             (cx as i32) - max_r,
@@ -296,80 +344,99 @@ impl Renderer {
             return;
         }
 
-        // 1. Soft shadow sprite (pre-blurred disc per radius, cached, offset (0, 4 lp); skipped in no-compositor fallback)
-        let r_out_px = r_out.round().max(8.0) as u32;
-        let blur_px = (18.0 * scale).round().max(4.0) as u32;
-        let shadow_alpha = if self.opaque_fallback {
-            0.0
-        } else {
-            (self.theme.shadow_alpha * wheel.opacity).clamp(0.0, 1.0)
-        };
-        if shadow_alpha > 1e-3 {
-            let shadow_col = ColorRgba::new(0, 0, 0, (shadow_alpha * 255.0).round() as u8);
-            let sprite = self.cache.shadow_sprite(r_out_px, blur_px);
-            let sx = (cx - (sprite.width as f32) * 0.5).round() as i32;
-            let sy = (cy + 4.0 * scale - (sprite.height as f32) * 0.5).round() as i32;
-            if let Some(ref mut pm) = self.pixmap {
-                blit_alpha_mask_clipped(pm, sprite, sx, sy, shadow_col, clips);
-            }
-        }
-
-        // 2. Child wheel neutral ring / bridge backdrop
-        if let Some((b0, b1)) = wheel.bridge
-            && let Some(ref mut pm) = self.pixmap
-        {
-            if let Some(ring_path) = build_annulus_path(cx, cy, r_in, r_out) {
-                let mut fill_paint = Paint::default();
-                fill_paint.set_color(
-                    self.theme
-                        .ring_fill
-                        .with_opacity(wheel.opacity * 0.72)
-                        .to_skia(),
-                );
-                fill_paint.anti_alias = true;
-                pm.fill_path(
-                    &ring_path,
-                    &fill_paint,
-                    FillRule::EvenOdd,
-                    Transform::identity(),
-                    self.clip_mask.as_ref(),
-                );
-            }
-            let b_mid = (b0 + b1) * 0.5;
-            let b_half = ((b1 - b0) * 0.32).min(0.45);
-            if let Some(notch_path) =
-                build_arc_path(cx, cy, r_out - 2.5 * scale, b_mid - b_half, b_mid + b_half)
-            {
-                let mut p = Paint::default();
-                p.set_color(
-                    self.theme
-                        .stem_on_path
-                        .with_opacity(wheel.opacity * 0.55)
-                        .to_skia(),
-                );
-                p.anti_alias = true;
-                let st = Stroke {
-                    width: (2.0 * scale).max(1.0),
-                    line_cap: LineCap::Round,
-                    ..Stroke::default()
+        match wheel.kind {
+            WheelVisualKind::Branching => {
+                // 1. Soft shadow sprite (pre-blurred disc per radius, cached, offset (0, 4 lp); skipped in no-compositor fallback)
+                let r_out_px = r_out.round().max(8.0) as u32;
+                let blur_px = (18.0 * scale).round().max(4.0) as u32;
+                let shadow_alpha = if self.opaque_fallback {
+                    0.0
+                } else {
+                    (self.theme.shadow_alpha * wheel.opacity).clamp(0.0, 1.0)
                 };
-                pm.stroke_path(
-                    &notch_path,
-                    &p,
-                    &st,
-                    Transform::identity(),
-                    self.clip_mask.as_ref(),
-                );
+                if shadow_alpha > 1e-3 {
+                    let shadow_col = ColorRgba::new(0, 0, 0, (shadow_alpha * 255.0).round() as u8);
+                    let sprite = self.cache.shadow_sprite(r_out_px, blur_px);
+                    let sx = (cx - (sprite.width as f32) * 0.5).round() as i32;
+                    let sy = (cy + 4.0 * scale - (sprite.height as f32) * 0.5).round() as i32;
+                    if let Some(ref mut pm) = self.pixmap {
+                        blit_alpha_mask_clipped(pm, sprite, sx, sy, shadow_col, clips);
+                    }
+                }
+
+                // 2. Child wheel neutral ring / bridge backdrop
+                if let Some((b0, b1)) = wheel.bridge
+                    && let Some(ref mut pm) = self.pixmap
+                {
+                    if let Some(ring_path) = build_annulus_path(cx, cy, r_in, r_out) {
+                        let mut fill_paint = Paint::default();
+                        fill_paint.set_color(
+                            self.theme
+                                .ring_fill
+                                .with_opacity(wheel.opacity * 0.72)
+                                .to_skia(),
+                        );
+                        fill_paint.anti_alias = true;
+                        pm.fill_path(
+                            &ring_path,
+                            &fill_paint,
+                            FillRule::EvenOdd,
+                            Transform::identity(),
+                            self.clip_mask.as_ref(),
+                        );
+                    }
+                    let b_mid = (b0 + b1) * 0.5;
+                    let b_half = ((b1 - b0) * 0.32).min(0.45);
+                    if let Some(notch_path) =
+                        build_arc_path(cx, cy, r_out - 2.5 * scale, b_mid - b_half, b_mid + b_half)
+                    {
+                        let mut p = Paint::default();
+                        p.set_color(
+                            self.theme
+                                .stem_on_path
+                                .with_opacity(wheel.opacity * 0.55)
+                                .to_skia(),
+                        );
+                        p.anti_alias = true;
+                        let st = Stroke {
+                            width: (2.0 * scale).max(1.0),
+                            line_cap: LineCap::Round,
+                            ..Stroke::default()
+                        };
+                        pm.stroke_path(
+                            &notch_path,
+                            &p,
+                            &st,
+                            Transform::identity(),
+                            self.clip_mask.as_ref(),
+                        );
+                    }
+                }
+
+                // 3. Segments (annular sector with constant linear gap inset, highlight, pop, rim stroke)
+                for seg in &wheel.segments {
+                    self.draw_segment(wheel, seg, cx, cy, r_in, r_out, clips);
+                }
+
+                // 4. Center hub (vine green disc + 1.5 lp inner ring at 70% radius + icon + optional count badge)
+                self.draw_hub(wheel, cx, cy, r_in, clips);
+            }
+            WheelVisualKind::ConcentricRoot => {
+                // ConcentricRoot draws level-0 annular sectors and the shared central hub,
+                // without a blurred full-disc shadow (`ARCHITECTURE.md` §A4, `INTERACTION_DESIGN.md` §I8).
+                for (seg_idx, seg) in wheel.segments.iter().enumerate() {
+                    self.draw_concentric_segment(wheel, seg_idx, seg, cx, cy, r_in, r_out, clips);
+                }
+                self.draw_hub(wheel, cx, cy, r_in, clips);
+            }
+            WheelVisualKind::ConcentricRing => {
+                // ConcentricRing draws annular sectors, separators, rim markers, and sector content only —
+                // never an inner hub disc, never a full-disc drop shadow, and never a bridge notch.
+                for (seg_idx, seg) in wheel.segments.iter().enumerate() {
+                    self.draw_concentric_segment(wheel, seg_idx, seg, cx, cy, r_in, r_out, clips);
+                }
             }
         }
-
-        // 3. Segments (annular sector with constant linear gap inset, highlight, pop, rim stroke)
-        for seg in &wheel.segments {
-            self.draw_segment(wheel, seg, cx, cy, r_in, r_out, clips);
-        }
-
-        // 4. Center hub (vine green disc + 1.5 lp inner ring at 70% radius + icon + optional count badge)
-        self.draw_hub(wheel, cx, cy, r_in, clips);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -528,30 +595,394 @@ impl Renderer {
 
         let gap_px = (3.0 * ws * scale).round() as i32;
 
-        let label_mask = self
-            .cache
-            .text_mask(&seg.label, label_font_px, 500, max_label_w_px)
-            .clone();
+        let (label_w, label_h) =
+            self.cache
+                .text_dims(&seg.label, label_font_px, 500, max_label_w_px);
 
         if let Some(ref icon_key) = seg.icon {
-            let icon_mask = self.cache.icon_mask(icon_key.as_str(), icon_px).clone();
-            let total_h = (icon_mask.height as i32) + gap_px + (label_mask.height as i32);
+            let (icon_w, icon_h) = self.cache.icon_dims(icon_key.as_str(), icon_px);
+            let total_h = (icon_h as i32) + gap_px + (label_h as i32);
             let top_y = (by.round() as i32) - total_h / 2;
 
-            let ix = (bx.round() as i32) - (icon_mask.width as i32) / 2;
+            let ix = (bx.round() as i32) - (icon_w as i32) / 2;
             let iy = top_y;
-            let lx = (bx.round() as i32) - (label_mask.width as i32) / 2;
-            let ly = top_y + (icon_mask.height as i32) + gap_px;
+            let lx = (bx.round() as i32) - (label_w as i32) / 2;
+            let ly = top_y + (icon_h as i32) + gap_px;
 
-            if let Some(ref mut pm) = self.pixmap {
-                blit_alpha_mask_clipped(pm, &icon_mask, ix, iy, content_col, clips);
-                blit_alpha_mask_clipped(pm, &label_mask, lx, ly, content_col, clips);
+            {
+                let icon_mask = self.cache.icon_mask(icon_key.as_str(), icon_px);
+                if let Some(ref mut pm) = self.pixmap {
+                    blit_alpha_mask_clipped(pm, icon_mask, ix, iy, content_col, clips);
+                }
+            }
+            {
+                let label_mask =
+                    self.cache
+                        .text_mask(&seg.label, label_font_px, 500, max_label_w_px);
+                if let Some(ref mut pm) = self.pixmap {
+                    blit_alpha_mask_clipped(pm, label_mask, lx, ly, content_col, clips);
+                }
             }
         } else {
-            let lx = (bx.round() as i32) - (label_mask.width as i32) / 2;
-            let ly = (by.round() as i32) - (label_mask.height as i32) / 2;
+            let lx = (bx.round() as i32) - (label_w as i32) / 2;
+            let ly = (by.round() as i32) - (label_h as i32) / 2;
+            let label_mask = self
+                .cache
+                .text_mask(&seg.label, label_font_px, 500, max_label_w_px);
             if let Some(ref mut pm) = self.pixmap {
-                blit_alpha_mask_clipped(pm, &label_mask, lx, ly, content_col, clips);
+                blit_alpha_mask_clipped(pm, label_mask, lx, ly, content_col, clips);
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn draw_concentric_segment(
+        &mut self,
+        wheel: &WheelVisual,
+        seg_idx: usize,
+        seg: &SegmentVisual,
+        cx: f32,
+        cy: f32,
+        r_in: f32,
+        r_out: f32,
+        clips: &[RectPx],
+    ) {
+        let scale = self.scale;
+        let count = wheel.segments.len();
+        let sep_half = wheel
+            .separator_half_angle
+            .unwrap_or_else(|| separator_half_angle_for_ring(wheel.r_in, count));
+
+        let base_fill = if seg.on_path {
+            self.theme.segment_on_path
+        } else {
+            self.theme.ring_fill
+        };
+        let hl_t = seg.highlight.clamp(0.0, 1.0);
+        let mut seg_col = base_fill.lerp(self.theme.segment_highlight, hl_t);
+        if seg.highlight > 1.0 {
+            seg_col = seg_col.brighten((seg.highlight - 1.0) * 1.4);
+        }
+        seg_col = seg_col.with_opacity(wheel.opacity);
+
+        let stroke_col = if seg.highlight > 0.3 || seg.on_path {
+            self.theme
+                .segment_highlight
+                .lerp(self.theme.ring_stroke, 0.35)
+                .with_opacity(wheel.opacity)
+        } else {
+            self.theme.ring_stroke.with_opacity(wheel.opacity)
+        };
+
+        let is_outlined = matches!(
+            seg.selection,
+            SelectionVisual::Armed | SelectionVisual::KeyboardFocus
+        );
+
+        if count == 1 {
+            // 1-item ring has 0 separators and renders as a seamless full 2π annulus (`INTERACTION_DESIGN.md` §I3)
+            if let Some(ref mut pm) = self.pixmap
+                && let Some(ring_path) = build_annulus_path(cx, cy, r_in, r_out)
+            {
+                let mut fill_paint = Paint::default();
+                fill_paint.set_color(seg_col.to_skia());
+                fill_paint.anti_alias = true;
+                pm.fill_path(
+                    &ring_path,
+                    &fill_paint,
+                    FillRule::EvenOdd,
+                    Transform::identity(),
+                    self.clip_mask.as_ref(),
+                );
+
+                let mut stroke_paint = Paint::default();
+                stroke_paint.set_color(stroke_col.to_skia());
+                stroke_paint.anti_alias = true;
+                let stroke = Stroke {
+                    width: (1.0 * scale).max(1.0),
+                    ..Stroke::default()
+                };
+                pm.stroke_path(
+                    &ring_path,
+                    &stroke_paint,
+                    &stroke,
+                    Transform::identity(),
+                    self.clip_mask.as_ref(),
+                );
+
+                if is_outlined {
+                    let r_in_outl = r_in + 1.0 * scale;
+                    let r_out_outl = (r_out - 1.0 * scale).max(r_in_outl + 1.0);
+                    if let Some(outl_path) = build_annulus_path(cx, cy, r_in_outl, r_out_outl) {
+                        let mut op = Paint::default();
+                        op.set_color(
+                            self.theme
+                                .nested_outline
+                                .with_opacity(wheel.opacity)
+                                .to_skia(),
+                        );
+                        op.anti_alias = true;
+                        let ost = Stroke {
+                            width: (2.0 * scale).max(1.0),
+                            ..Stroke::default()
+                        };
+                        pm.stroke_path(
+                            &outl_path,
+                            &op,
+                            &ost,
+                            Transform::identity(),
+                            self.clip_mask.as_ref(),
+                        );
+                    }
+                }
+            }
+        } else {
+            let a0_s = seg.a0 + sep_half;
+            let a1_s = (seg.a1 - sep_half).max(a0_s + 0.01);
+            let Some(sector_path) = build_sector_path(cx, cy, r_in, r_out, a0_s, a1_s, a0_s, a1_s)
+            else {
+                return;
+            };
+
+            if let Some(ref mut pm) = self.pixmap {
+                let mut fill_paint = Paint::default();
+                fill_paint.set_color(seg_col.to_skia());
+                fill_paint.anti_alias = true;
+                pm.fill_path(
+                    &sector_path,
+                    &fill_paint,
+                    FillRule::Winding,
+                    Transform::identity(),
+                    self.clip_mask.as_ref(),
+                );
+
+                let mut stroke_paint = Paint::default();
+                stroke_paint.set_color(stroke_col.to_skia());
+                stroke_paint.anti_alias = true;
+                let stroke = Stroke {
+                    width: (1.0 * scale).max(1.0),
+                    line_join: LineJoin::Round,
+                    ..Stroke::default()
+                };
+                pm.stroke_path(
+                    &sector_path,
+                    &stroke_paint,
+                    &stroke,
+                    Transform::identity(),
+                    self.clip_mask.as_ref(),
+                );
+
+                if is_outlined {
+                    let r_in_outl = r_in + 1.0 * scale;
+                    let r_out_outl = (r_out - 1.0 * scale).max(r_in_outl + 1.0);
+                    let d_in_outl = 1.0 / wheel.r_in.max(1.0);
+                    let d_out_outl = 1.0 / wheel.r_out.max(1.0);
+                    let oa0_in = a0_s + d_in_outl;
+                    let oa1_in = (a1_s - d_in_outl).max(oa0_in + 0.005);
+                    let oa0_out = a0_s + d_out_outl;
+                    let oa1_out = (a1_s - d_out_outl).max(oa0_out + 0.005);
+                    if let Some(outl_path) = build_sector_path(
+                        cx, cy, r_in_outl, r_out_outl, oa0_in, oa1_in, oa0_out, oa1_out,
+                    ) {
+                        let mut op = Paint::default();
+                        op.set_color(
+                            self.theme
+                                .nested_outline
+                                .with_opacity(wheel.opacity)
+                                .to_skia(),
+                        );
+                        op.anti_alias = true;
+                        let ost = Stroke {
+                            width: (2.0 * scale).max(1.0),
+                            line_join: LineJoin::Round,
+                            ..Stroke::default()
+                        };
+                        pm.stroke_path(
+                            &outl_path,
+                            &op,
+                            &ost,
+                            Transform::identity(),
+                            self.clip_mask.as_ref(),
+                        );
+                    }
+                }
+            }
+        }
+
+        let phi = (seg.a0 + seg.a1) * 0.5;
+        let (sin_p, cos_p) = phi.sin_cos();
+
+        // Submenu rim marker (`INTERACTION_DESIGN.md` §I8):
+        // - Opened parent (`seg.on_path`) has a filled rim marker;
+        // - Unopened submenu (`!seg.on_path`) has the hollow rim marker.
+        if seg.has_children
+            && let Some(ref mut pm) = self.pixmap
+        {
+            let nx = cx + r_out * cos_p;
+            let ny = cy + r_out * sin_p;
+            let node_r = (3.5 * scale).max(2.0);
+            if let Some(circle) = PathBuilder::from_circle(nx, ny, node_r) {
+                let node_stroke_col = if !seg.enabled {
+                    self.theme.text_disabled
+                } else if seg.highlight >= 0.55 {
+                    self.theme.text_on_accent
+                } else {
+                    self.theme.segment_highlight
+                }
+                .with_opacity(wheel.opacity);
+
+                let inner_col = if seg.on_path {
+                    node_stroke_col
+                } else {
+                    self.theme.ring_fill.with_opacity(wheel.opacity)
+                };
+
+                let mut inner_paint = Paint::default();
+                inner_paint.set_color(inner_col.to_skia());
+                inner_paint.anti_alias = true;
+                pm.fill_path(
+                    &circle,
+                    &inner_paint,
+                    FillRule::Winding,
+                    Transform::identity(),
+                    self.clip_mask.as_ref(),
+                );
+
+                let stroke_rim_col = if seg.on_path {
+                    self.theme.nested_outline.with_opacity(wheel.opacity * 0.9)
+                } else {
+                    node_stroke_col
+                };
+
+                let mut sp = Paint::default();
+                sp.set_color(stroke_rim_col.to_skia());
+                sp.anti_alias = true;
+                let st = Stroke {
+                    width: (1.5 * scale).max(1.0),
+                    ..Stroke::default()
+                };
+                pm.stroke_path(
+                    &circle,
+                    &sp,
+                    &st,
+                    Transform::identity(),
+                    self.clip_mask.as_ref(),
+                );
+            }
+        }
+
+        // Sector content placement inside N2-supplied `NestedSegmentContent` box (`INTERACTION_DESIGN.md` §I8):
+        // Always 20 lp icons and 12 lp labels across all concentric levels.
+        let content = wheel
+            .nested_content
+            .as_ref()
+            .and_then(|nc| nc.get(seg_idx).copied())
+            .unwrap_or_else(|| {
+                compute_sector_content(
+                    wheel.center,
+                    wheel.r_in,
+                    wheel.r_out,
+                    SegmentSpan {
+                        a0: seg.a0,
+                        a1: seg.a1,
+                        center: phi,
+                    },
+                    sep_half,
+                    count,
+                    seg.icon.is_some(),
+                )
+            });
+
+        let content_col = if !seg.enabled {
+            self.theme.text_disabled.with_opacity(0.68 * wheel.opacity)
+        } else if seg.highlight >= 0.55 {
+            self.theme.text_on_accent.with_opacity(wheel.opacity)
+        } else {
+            self.theme.text_primary.with_opacity(wheel.opacity)
+        };
+
+        let box_cx = (content.rect.x + content.rect.w * 0.5) * scale;
+        let box_cy = (content.rect.y + content.rect.h * 0.5) * scale;
+        let icon_px = (20.0 * scale).round().max(10.0) as u32;
+        let label_font_px = (12.0 * scale).max(8.0);
+        let max_label_w_px = (content.rect.w * scale).floor().max(16.0) as u32;
+        let gap_px = (3.0 * scale).round() as i32;
+
+        match content.mode {
+            ContentMode::IconAndLabel => {
+                let (label_w, label_h) =
+                    self.cache
+                        .text_dims(&seg.label, label_font_px, 500, max_label_w_px);
+                if let Some(ref icon_key) = seg.icon {
+                    let (icon_w, icon_h) = self.cache.icon_dims(icon_key.as_str(), icon_px);
+                    let total_h = (icon_h as i32) + gap_px + (label_h as i32);
+                    let top_y = (box_cy.round() as i32) - total_h / 2;
+
+                    let ix = (box_cx.round() as i32) - (icon_w as i32) / 2;
+                    let iy = top_y;
+                    let lx = (box_cx.round() as i32) - (label_w as i32) / 2;
+                    let ly = top_y + (icon_h as i32) + gap_px;
+
+                    {
+                        let icon_mask = self.cache.icon_mask(icon_key.as_str(), icon_px);
+                        if let Some(ref mut pm) = self.pixmap {
+                            blit_alpha_mask_clipped(pm, icon_mask, ix, iy, content_col, clips);
+                        }
+                    }
+                    {
+                        let label_mask =
+                            self.cache
+                                .text_mask(&seg.label, label_font_px, 500, max_label_w_px);
+                        if let Some(ref mut pm) = self.pixmap {
+                            blit_alpha_mask_clipped(pm, label_mask, lx, ly, content_col, clips);
+                        }
+                    }
+                } else {
+                    let lx = (box_cx.round() as i32) - (label_w as i32) / 2;
+                    let ly = (box_cy.round() as i32) - (label_h as i32) / 2;
+                    let label_mask =
+                        self.cache
+                            .text_mask(&seg.label, label_font_px, 500, max_label_w_px);
+                    if let Some(ref mut pm) = self.pixmap {
+                        blit_alpha_mask_clipped(pm, label_mask, lx, ly, content_col, clips);
+                    }
+                }
+            }
+            ContentMode::IconOnly => {
+                if let Some(ref icon_key) = seg.icon {
+                    let (icon_w, icon_h) = self.cache.icon_dims(icon_key.as_str(), icon_px);
+                    let ix = (box_cx.round() as i32) - (icon_w as i32) / 2;
+                    let iy = (box_cy.round() as i32) - (icon_h as i32) / 2;
+                    let icon_mask = self.cache.icon_mask(icon_key.as_str(), icon_px);
+                    if let Some(ref mut pm) = self.pixmap {
+                        blit_alpha_mask_clipped(pm, icon_mask, ix, iy, content_col, clips);
+                    }
+                } else {
+                    let (label_w, label_h) =
+                        self.cache
+                            .text_dims(&seg.label, label_font_px, 500, max_label_w_px);
+                    let lx = (box_cx.round() as i32) - (label_w as i32) / 2;
+                    let ly = (box_cy.round() as i32) - (label_h as i32) / 2;
+                    let label_mask =
+                        self.cache
+                            .text_mask(&seg.label, label_font_px, 500, max_label_w_px);
+                    if let Some(ref mut pm) = self.pixmap {
+                        blit_alpha_mask_clipped(pm, label_mask, lx, ly, content_col, clips);
+                    }
+                }
+            }
+            ContentMode::LabelOnly => {
+                let (label_w, label_h) =
+                    self.cache
+                        .text_dims(&seg.label, label_font_px, 500, max_label_w_px);
+                let lx = (box_cx.round() as i32) - (label_w as i32) / 2;
+                let ly = (box_cy.round() as i32) - (label_h as i32) / 2;
+                let label_mask =
+                    self.cache
+                        .text_mask(&seg.label, label_font_px, 500, max_label_w_px);
+                if let Some(ref mut pm) = self.pixmap {
+                    blit_alpha_mask_clipped(pm, label_mask, lx, ly, content_col, clips);
+                }
             }
         }
     }
@@ -620,50 +1051,51 @@ impl Renderer {
         if let Some(ref icon_key) = wheel.hub.icon {
             let icon_lp = if wheel.r_in >= 34.0 { 20.0 } else { 16.0 };
             let icon_px = (icon_lp * ws * scale).round().max(10.0) as u32;
-            let mask = self.cache.icon_mask(icon_key.as_str(), icon_px).clone();
+            let mask = self.cache.icon_mask(icon_key.as_str(), icon_px);
             let ix = (cx.round() as i32) - (mask.width as i32) / 2;
             let iy = (cy.round() as i32) - (mask.height as i32) / 2;
             // Hub fill is always #044C3C vine green in both dark and light themes (§13.4),
             // so the hub icon uses #E8F5F0 to maintain high contrast in both themes.
             let col = ColorRgba::rgb(0xE8, 0xF5, 0xF0).with_opacity(wheel.opacity);
             if let Some(ref mut pm) = self.pixmap {
-                blit_alpha_mask_clipped(pm, &mask, ix, iy, col, clips);
+                blit_alpha_mask_clipped(pm, mask, ix, iy, col, clips);
             }
         }
 
         if let Some(count) = wheel.hub.badge
             && count > 1
         {
-            let badge_str: Arc<str> = Arc::from(count.to_string());
             let font_px = (11.0 * ws * scale).max(8.0);
-            let mask = self.cache.text_mask(&badge_str, font_px, 700, 48).clone();
+            let (bw, bh) = self.cache.badge_dims(count, font_px);
             let bx = cx + r_in * 0.52;
             let by = cy + r_in * 0.52;
-            let pill_r =
-                ((mask.height.max(mask.width) as f32) * 0.5 + 4.0 * scale).max(7.0 * scale);
+            let pill_r = ((bh.max(bw) as f32) * 0.5 + 4.0 * scale).max(7.0 * scale);
+            if let Some(ref mut pm) = self.pixmap
+                && let Some(pill) = PathBuilder::from_circle(bx, by, pill_r)
+            {
+                let mut p = Paint::default();
+                p.set_color(
+                    self.theme
+                        .segment_highlight
+                        .with_opacity(wheel.opacity)
+                        .to_skia(),
+                );
+                p.anti_alias = true;
+                pm.fill_path(
+                    &pill,
+                    &p,
+                    FillRule::Winding,
+                    Transform::identity(),
+                    self.clip_mask.as_ref(),
+                );
+            }
+            let tx = (bx.round() as i32) - (bw as i32) / 2;
+            let ty = (by.round() as i32) - (bh as i32) / 2;
+            let mask = self.cache.badge_mask(count, font_px);
             if let Some(ref mut pm) = self.pixmap {
-                if let Some(pill) = PathBuilder::from_circle(bx, by, pill_r) {
-                    let mut p = Paint::default();
-                    p.set_color(
-                        self.theme
-                            .segment_highlight
-                            .with_opacity(wheel.opacity)
-                            .to_skia(),
-                    );
-                    p.anti_alias = true;
-                    pm.fill_path(
-                        &pill,
-                        &p,
-                        FillRule::Winding,
-                        Transform::identity(),
-                        self.clip_mask.as_ref(),
-                    );
-                }
-                let tx = (bx.round() as i32) - (mask.width as i32) / 2;
-                let ty = (by.round() as i32) - (mask.height as i32) / 2;
                 blit_alpha_mask_clipped(
                     pm,
-                    &mask,
+                    mask,
                     tx,
                     ty,
                     self.theme.text_on_accent.with_opacity(wheel.opacity),
@@ -677,31 +1109,32 @@ impl Renderer {
         if caption.opacity <= 1e-3 {
             return;
         }
+        let is_concentric_caption = caption.breadcrumb.is_some() || caption.box_.h > 48.0;
+        if !is_concentric_caption {
+            self.draw_caption_branching(caption, clips);
+        } else {
+            self.draw_caption_concentric(caption, clips);
+        }
+    }
+
+    fn draw_caption_branching(&mut self, caption: &CaptionVisual, clips: &[RectPx]) {
         let scale = self.scale;
         let max_text_w = ((caption.box_.w - 24.0).max(40.0) * scale).round() as u32;
 
-        let title_mask = self
-            .cache
-            .text_mask(&caption.title, 13.0 * scale, 600, max_text_w)
-            .clone();
-        let detail_mask = caption.detail.as_ref().map(|d| {
+        let (title_w, title_h) =
             self.cache
-                .text_mask(d, 11.0 * scale, 400, max_text_w)
-                .clone()
-        });
+                .text_dims(&caption.title, 13.0 * scale, 600, max_text_w);
+        let detail_dims = caption
+            .detail
+            .as_ref()
+            .map(|d| self.cache.text_dims(d, 11.0 * scale, 400, max_text_w));
 
         let pad_x = (14.0 * scale).round() as i32;
         let pad_y = (8.0 * scale).round() as i32;
         let line_gap = (4.0 * scale).round() as i32;
 
-        let content_w = detail_mask
-            .as_ref()
-            .map_or(title_mask.width, |dm| dm.width.max(title_mask.width))
-            as i32;
-        let content_h = (title_mask.height as i32)
-            + detail_mask
-                .as_ref()
-                .map_or(0, |dm| line_gap + (dm.height as i32));
+        let content_w = detail_dims.map_or(title_w, |(dw, _)| dw.max(title_w)) as i32;
+        let content_h = (title_h as i32) + detail_dims.map_or(0, |(_, dh)| line_gap + (dh as i32));
 
         let box_x = (caption.box_.x * scale).round() as i32;
         let box_y = (caption.box_.y * scale).round() as i32;
@@ -714,72 +1147,228 @@ impl Renderer {
         let pill_y = box_y + (box_h - pill_h) / 2;
         let radius = 10.0 * scale;
 
-        if let Some(ref mut pm) = self.pixmap {
-            if let Some(pill_path) = build_rounded_rect_path(
+        if let Some(ref mut pm) = self.pixmap
+            && let Some(pill_path) = build_rounded_rect_path(
                 pill_x as f32,
                 pill_y as f32,
                 pill_w as f32,
                 pill_h as f32,
                 radius,
-            ) {
-                let mut fill_p = Paint::default();
-                fill_p.set_color(
-                    self.theme
-                        .caption_fill
-                        .with_opacity(caption.opacity)
-                        .to_skia(),
-                );
-                fill_p.anti_alias = true;
-                pm.fill_path(
-                    &pill_path,
-                    &fill_p,
-                    FillRule::Winding,
-                    Transform::identity(),
-                    self.clip_mask.as_ref(),
-                );
-
-                let mut stroke_p = Paint::default();
-                stroke_p.set_color(
-                    self.theme
-                        .ring_stroke
-                        .with_opacity(caption.opacity)
-                        .to_skia(),
-                );
-                stroke_p.anti_alias = true;
-                let st = Stroke {
-                    width: (1.0 * scale).max(1.0),
-                    ..Stroke::default()
-                };
-                pm.stroke_path(
-                    &pill_path,
-                    &stroke_p,
-                    &st,
-                    Transform::identity(),
-                    self.clip_mask.as_ref(),
-                );
-            }
-
-            let tx = pill_x + (pill_w - (title_mask.width as i32)) / 2;
-            let ty = pill_y + (pill_h - content_h) / 2;
-            blit_alpha_mask_clipped(
-                pm,
-                &title_mask,
-                tx,
-                ty,
-                self.theme.text_primary.with_opacity(caption.opacity),
-                clips,
+            )
+        {
+            let mut fill_p = Paint::default();
+            fill_p.set_color(
+                self.theme
+                    .caption_fill
+                    .with_opacity(caption.opacity)
+                    .to_skia(),
+            );
+            fill_p.anti_alias = true;
+            pm.fill_path(
+                &pill_path,
+                &fill_p,
+                FillRule::Winding,
+                Transform::identity(),
+                self.clip_mask.as_ref(),
             );
 
-            if let Some(ref dm) = detail_mask {
-                let dx = pill_x + (pill_w - (dm.width as i32)) / 2;
-                let dy = ty + (title_mask.height as i32) + line_gap;
-                let detail_col = if caption.disabled {
-                    self.theme.text_disabled_reason
-                } else {
-                    self.theme.text_secondary
-                }
-                .with_opacity(caption.opacity);
+            let mut stroke_p = Paint::default();
+            stroke_p.set_color(
+                self.theme
+                    .ring_stroke
+                    .with_opacity(caption.opacity)
+                    .to_skia(),
+            );
+            stroke_p.anti_alias = true;
+            let st = Stroke {
+                width: (1.0 * scale).max(1.0),
+                ..Stroke::default()
+            };
+            pm.stroke_path(
+                &pill_path,
+                &stroke_p,
+                &st,
+                Transform::identity(),
+                self.clip_mask.as_ref(),
+            );
+        }
+
+        let tx = pill_x + (pill_w - (title_w as i32)) / 2;
+        let ty = pill_y + (pill_h - content_h) / 2;
+        {
+            let title_mask = self
+                .cache
+                .text_mask(&caption.title, 13.0 * scale, 600, max_text_w);
+            if let Some(ref mut pm) = self.pixmap {
+                blit_alpha_mask_clipped(
+                    pm,
+                    title_mask,
+                    tx,
+                    ty,
+                    self.theme.text_primary.with_opacity(caption.opacity),
+                    clips,
+                );
+            }
+        }
+
+        if let (Some(detail_str), Some((dw, _))) = (&caption.detail, detail_dims) {
+            let dx = pill_x + (pill_w - (dw as i32)) / 2;
+            let dy = ty + (title_h as i32) + line_gap;
+            let detail_col = if caption.disabled {
+                self.theme.text_disabled_reason
+            } else {
+                self.theme.text_secondary
+            }
+            .with_opacity(caption.opacity);
+            let dm = self
+                .cache
+                .text_mask(detail_str, 11.0 * scale, 400, max_text_w);
+            if let Some(ref mut pm) = self.pixmap {
                 blit_alpha_mask_clipped(pm, dm, dx, dy, detail_col, clips);
+            }
+        }
+    }
+
+    fn draw_caption_concentric(&mut self, caption: &CaptionVisual, clips: &[RectPx]) {
+        let scale = self.scale;
+        let max_text_w = ((caption.box_.w - 24.0).max(40.0) * scale).floor() as u32;
+
+        let crumb_dims = caption
+            .breadcrumb
+            .as_ref()
+            .filter(|c| !c.is_empty())
+            .map(|c| self.cache.breadcrumb_dims(c, 11.0 * scale, 500, max_text_w));
+
+        let (title_w, title_h) =
+            self.cache
+                .text_dims(&caption.title, 13.0 * scale, 600, max_text_w);
+
+        let detail_dims = caption.detail.as_ref().map(|d| {
+            self.cache
+                .multiline_text_dims(d, 11.0 * scale, 400, max_text_w, 2)
+        });
+
+        let pad_x = (12.0 * scale).round() as i32;
+        let pad_y = (6.0 * scale).round() as i32;
+        let line_gap = (3.0 * scale).round() as i32;
+
+        let mut content_w = title_w as i32;
+        let mut content_h = title_h as i32;
+        if let Some((cw, ch)) = crumb_dims {
+            content_w = content_w.max(cw as i32);
+            content_h += line_gap + (ch as i32);
+        }
+        if let Some((dw, dh)) = detail_dims {
+            content_w = content_w.max(dw as i32);
+            content_h += line_gap + (dh as i32);
+        }
+
+        let box_x = (caption.box_.x * scale).round() as i32;
+        let box_y = (caption.box_.y * scale).round() as i32;
+        let box_w = (caption.box_.w * scale).round() as i32;
+        let box_h = (caption.box_.h * scale).round() as i32;
+
+        let pill_w = (content_w + pad_x * 2).clamp((112.0 * scale) as i32, box_w);
+        let pill_h = (content_h + pad_y * 2).clamp((32.0 * scale) as i32, box_h);
+        let pill_x = box_x + (box_w - pill_w) / 2;
+        let pill_y = box_y + (box_h - pill_h) / 2;
+        let radius = 10.0 * scale;
+
+        if let Some(ref mut pm) = self.pixmap
+            && let Some(pill_path) = build_rounded_rect_path(
+                pill_x as f32,
+                pill_y as f32,
+                pill_w as f32,
+                pill_h as f32,
+                radius,
+            )
+        {
+            let mut fill_p = Paint::default();
+            fill_p.set_color(
+                self.theme
+                    .caption_fill
+                    .with_opacity(caption.opacity)
+                    .to_skia(),
+            );
+            fill_p.anti_alias = true;
+            pm.fill_path(
+                &pill_path,
+                &fill_p,
+                FillRule::Winding,
+                Transform::identity(),
+                self.clip_mask.as_ref(),
+            );
+
+            let mut stroke_p = Paint::default();
+            stroke_p.set_color(
+                self.theme
+                    .ring_stroke
+                    .with_opacity(caption.opacity)
+                    .to_skia(),
+            );
+            stroke_p.anti_alias = true;
+            let st = Stroke {
+                width: (1.0 * scale).max(1.0),
+                ..Stroke::default()
+            };
+            pm.stroke_path(
+                &pill_path,
+                &stroke_p,
+                &st,
+                Transform::identity(),
+                self.clip_mask.as_ref(),
+            );
+        }
+
+        let mut cur_y = (pill_y + (pill_h - content_h) / 2).max(pill_y + 2);
+
+        if let (Some(crumbs), Some((cw, ch))) = (&caption.breadcrumb, crumb_dims) {
+            let cx_txt = pill_x + (pill_w - (cw as i32)) / 2;
+            let crumb_col = self
+                .theme
+                .stem_on_path
+                .lerp(self.theme.text_secondary, 0.45)
+                .with_opacity(caption.opacity);
+            let cm = self
+                .cache
+                .breadcrumb_mask(crumbs, 11.0 * scale, 500, max_text_w);
+            if let Some(ref mut pm) = self.pixmap {
+                blit_alpha_mask_clipped(pm, cm, cx_txt, cur_y, crumb_col, clips);
+            }
+            cur_y += (ch as i32) + line_gap;
+        }
+
+        let tx = pill_x + (pill_w - (title_w as i32)) / 2;
+        {
+            let title_mask = self
+                .cache
+                .text_mask(&caption.title, 13.0 * scale, 600, max_text_w);
+            if let Some(ref mut pm) = self.pixmap {
+                blit_alpha_mask_clipped(
+                    pm,
+                    title_mask,
+                    tx,
+                    cur_y,
+                    self.theme.text_primary.with_opacity(caption.opacity),
+                    clips,
+                );
+            }
+        }
+        cur_y += (title_h as i32) + line_gap;
+
+        if let (Some(detail_str), Some((dw, _))) = (&caption.detail, detail_dims) {
+            let dx = pill_x + (pill_w - (dw as i32)) / 2;
+            let detail_col = if caption.disabled {
+                self.theme.text_disabled_reason
+            } else {
+                self.theme.text_secondary
+            }
+            .with_opacity(caption.opacity);
+            let dm = self
+                .cache
+                .multiline_text_mask(detail_str, 11.0 * scale, 400, max_text_w, 2);
+            if let Some(ref mut pm) = self.pixmap {
+                blit_alpha_mask_clipped(pm, dm, dx, cur_y, detail_col, clips);
             }
         }
     }

@@ -9,6 +9,7 @@ use cosmic_text::{
     Attrs, Buffer, Family, FontSystem, Metrics, Shaping, SwashCache, Weight, Wrap,
     fontdb::{Database, Source},
 };
+use smallvec::SmallVec;
 use tiny_skia::{Pixmap, Transform};
 
 /// Source for font and SVG icon assets (`WHEEL_ENGINE_DESIGN.md` §13.1).
@@ -112,14 +113,25 @@ struct TextCacheKey {
     font_px_tenths: u32,
     weight: u16,
     max_width_px: u32,
+    max_lines: u8,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct BreadcrumbCacheKey {
+    crumbs: SmallVec<[Arc<str>; 6]>,
+    font_px_tenths: u32,
+    weight: u16,
+    max_width_px: u32,
 }
 
 pub(crate) struct AssetCache {
     font_system: FontSystem,
     swash_cache: SwashCache,
     svg_sources: HashMap<String, String>,
-    icon_masks: HashMap<(String, u32), AlphaMask>,
+    icon_masks: HashMap<u32, HashMap<Box<str>, AlphaMask>>,
+    badge_masks: HashMap<(u32, u32), AlphaMask>,
     text_masks: HashMap<TextCacheKey, AlphaMask>,
+    breadcrumb_masks: HashMap<BreadcrumbCacheKey, AlphaMask>,
     shadow_sprites: HashMap<(u32, u32), AlphaMask>,
 }
 
@@ -170,8 +182,10 @@ impl AssetCache {
             font_system,
             swash_cache,
             svg_sources,
-            icon_masks: HashMap::with_capacity(64),
+            icon_masks: HashMap::with_capacity(8),
+            badge_masks: HashMap::with_capacity(16),
             text_masks: HashMap::with_capacity(128),
+            breadcrumb_masks: HashMap::with_capacity(32),
             shadow_sprites: HashMap::with_capacity(16),
         })
     }
@@ -180,23 +194,64 @@ impl AssetCache {
         if self.text_masks.len() > 256 {
             self.text_masks.clear();
         }
+        if self.breadcrumb_masks.len() > 64 {
+            self.breadcrumb_masks.clear();
+        }
     }
 
     pub(crate) fn icon_mask(&mut self, raw_key: &str, size_px: u32) -> &AlphaMask {
         let size_px = size_px.clamp(8, 256);
         let key_name = raw_key.strip_prefix("lucide:").unwrap_or(raw_key);
-        let map_key = (key_name.to_owned(), size_px);
 
-        if !self.icon_masks.contains_key(&map_key) {
+        let needs_insert = self
+            .icon_masks
+            .get(&size_px)
+            .is_none_or(|by_name| !by_name.contains_key(key_name));
+        if needs_insert {
             let mask = if let Some(svg_str) = self.svg_sources.get(key_name) {
                 rasterize_svg_mask(svg_str, size_px).unwrap_or_else(|| fallback_icon_mask(size_px))
             } else {
                 fallback_icon_mask(size_px)
             };
-            self.icon_masks.insert(map_key.clone(), mask);
+            self.icon_masks
+                .entry(size_px)
+                .or_insert_with(|| HashMap::with_capacity(24))
+                .insert(key_name.into(), mask);
         }
 
-        self.icon_masks.get(&map_key).unwrap()
+        self.icon_masks
+            .get(&size_px)
+            .and_then(|by_name| by_name.get(key_name))
+            .unwrap()
+    }
+
+    pub(crate) fn icon_dims(&mut self, raw_key: &str, size_px: u32) -> (u32, u32) {
+        let m = self.icon_mask(raw_key, size_px);
+        (m.width, m.height)
+    }
+
+    pub(crate) fn badge_mask(&mut self, count: u32, font_px: f32) -> &AlphaMask {
+        let font_px_tenths = (font_px.clamp(6.0, 96.0) * 10.0).round() as u32;
+        let key = (count, font_px_tenths);
+        if !self.badge_masks.contains_key(&key) {
+            let actual_font_px = (font_px_tenths as f32) * 0.1;
+            let text = count.to_string();
+            let mask = rasterize_text_mask(
+                &mut self.font_system,
+                &mut self.swash_cache,
+                &text,
+                actual_font_px,
+                700,
+                48,
+            );
+            self.badge_masks.insert(key, mask);
+        }
+        self.badge_masks.get(&key).unwrap()
+    }
+
+    pub(crate) fn badge_dims(&mut self, count: u32, font_px: f32) -> (u32, u32) {
+        let m = self.badge_mask(count, font_px);
+        (m.width, m.height)
     }
 
     pub(crate) fn text_mask(
@@ -213,6 +268,7 @@ impl AssetCache {
             font_px_tenths,
             weight,
             max_width_px,
+            max_lines: 1,
         };
 
         if !self.text_masks.contains_key(&key) {
@@ -229,6 +285,111 @@ impl AssetCache {
         }
 
         self.text_masks.get(&key).unwrap()
+    }
+
+    pub(crate) fn text_dims(
+        &mut self,
+        text: &Arc<str>,
+        font_px: f32,
+        weight: u16,
+        max_width_px: u32,
+    ) -> (u32, u32) {
+        let m = self.text_mask(text, font_px, weight, max_width_px);
+        (m.width, m.height)
+    }
+
+    pub(crate) fn multiline_text_mask(
+        &mut self,
+        text: &Arc<str>,
+        font_px: f32,
+        weight: u16,
+        max_width_px: u32,
+        max_lines: u8,
+    ) -> &AlphaMask {
+        let max_lines = max_lines.max(1);
+        if max_lines == 1 {
+            return self.text_mask(text, font_px, weight, max_width_px);
+        }
+        let font_px_tenths = (font_px.clamp(6.0, 96.0) * 10.0).round() as u32;
+        let max_width_px = max_width_px.max(16);
+        let key = TextCacheKey {
+            text: text.clone(),
+            font_px_tenths,
+            weight,
+            max_width_px,
+            max_lines,
+        };
+
+        if !self.text_masks.contains_key(&key) {
+            let actual_font_px = (font_px_tenths as f32) * 0.1;
+            let mask = rasterize_multiline_text_mask(
+                &mut self.font_system,
+                &mut self.swash_cache,
+                text,
+                actual_font_px,
+                weight,
+                max_width_px,
+                usize::from(max_lines),
+            );
+            self.text_masks.insert(key.clone(), mask);
+        }
+
+        self.text_masks.get(&key).unwrap()
+    }
+
+    pub(crate) fn multiline_text_dims(
+        &mut self,
+        text: &Arc<str>,
+        font_px: f32,
+        weight: u16,
+        max_width_px: u32,
+        max_lines: u8,
+    ) -> (u32, u32) {
+        let m = self.multiline_text_mask(text, font_px, weight, max_width_px, max_lines);
+        (m.width, m.height)
+    }
+
+    pub(crate) fn breadcrumb_mask(
+        &mut self,
+        crumbs: &SmallVec<[Arc<str>; 6]>,
+        font_px: f32,
+        weight: u16,
+        max_width_px: u32,
+    ) -> &AlphaMask {
+        let font_px_tenths = (font_px.clamp(6.0, 96.0) * 10.0).round() as u32;
+        let max_width_px = max_width_px.max(16);
+        let key = BreadcrumbCacheKey {
+            crumbs: crumbs.clone(),
+            font_px_tenths,
+            weight,
+            max_width_px,
+        };
+
+        if !self.breadcrumb_masks.contains_key(&key) {
+            let actual_font_px = (font_px_tenths as f32) * 0.1;
+            let mask = rasterize_breadcrumb_mask(
+                &mut self.font_system,
+                &mut self.swash_cache,
+                crumbs,
+                actual_font_px,
+                weight,
+                max_width_px,
+            );
+            self.breadcrumb_masks.insert(key.clone(), mask);
+        }
+
+        self.breadcrumb_masks.get(&key).unwrap()
+    }
+
+    pub(crate) fn breadcrumb_dims(
+        &mut self,
+        crumbs: &SmallVec<[Arc<str>; 6]>,
+        font_px: f32,
+        weight: u16,
+        max_width_px: u32,
+    ) -> (u32, u32) {
+        let m = self.breadcrumb_mask(crumbs, font_px, weight, max_width_px);
+        (m.width, m.height)
     }
 
     pub(crate) fn shadow_sprite(&mut self, r_out_px: u32, blur_px: u32) -> &AlphaMask {
@@ -317,9 +478,164 @@ fn rasterize_text_mask(
             }
             keep -= 1;
         }
+        if measure_w(&buffer) > (max_width_px as f32) {
+            buffer.set_text(font_system, "…", attrs, Shaping::Advanced);
+            buffer.shape_until_scroll(font_system, false);
+        }
     }
 
-    // Collect glyph coverages and bounding box
+    buffer_to_alpha_mask(&buffer, font_system, swash_cache, max_width_px, 1)
+}
+
+fn rasterize_multiline_text_mask(
+    font_system: &mut FontSystem,
+    swash_cache: &mut SwashCache,
+    raw_text: &str,
+    font_px: f32,
+    weight: u16,
+    max_width_px: u32,
+    max_lines: usize,
+) -> AlphaMask {
+    let line_h = (font_px * 1.25).ceil();
+    let metrics = Metrics::new(font_px, line_h);
+    let mut buffer = Buffer::new(font_system, metrics);
+    buffer.set_wrap(font_system, Wrap::WordOrGlyph);
+    buffer.set_size(
+        font_system,
+        Some(max_width_px as f32),
+        Some(line_h * ((max_lines + 4) as f32)),
+    );
+
+    let attrs = Attrs::new()
+        .family(Family::Name("Inter"))
+        .weight(Weight(weight));
+
+    buffer.set_text(font_system, raw_text, attrs, Shaping::Advanced);
+    buffer.shape_until_scroll(font_system, false);
+
+    let count_runs = |buf: &Buffer| -> usize { buf.layout_runs().count() };
+
+    if count_runs(&buffer) > max_lines && raw_text.chars().count() > 2 {
+        let chars: Vec<char> = raw_text.chars().collect();
+        let mut low = 1usize;
+        let mut high = chars.len().saturating_sub(1);
+        let mut best = 1usize;
+        while low <= high {
+            let mid = (low + high) / 2;
+            let mut candidate: String = chars[..mid].iter().collect();
+            candidate.push('…');
+            buffer.set_text(font_system, &candidate, attrs, Shaping::Advanced);
+            buffer.shape_until_scroll(font_system, false);
+            if count_runs(&buffer) <= max_lines {
+                best = mid;
+                low = mid + 1;
+            } else if mid == 0 {
+                break;
+            } else {
+                high = mid - 1;
+            }
+        }
+        let mut final_cand: String = chars[..best].iter().collect();
+        final_cand.push('…');
+        buffer.set_text(font_system, &final_cand, attrs, Shaping::Advanced);
+        buffer.shape_until_scroll(font_system, false);
+    }
+
+    buffer_to_alpha_mask(&buffer, font_system, swash_cache, max_width_px, max_lines)
+}
+
+/// Formats and shapes a breadcrumb chain (`A0 › A1 › ...`), eliding the oldest middle ancestors
+/// first (`A0 › … › A_{k} › ...`) so the most recent context and root context remain visible
+/// (`INTERACTION_DESIGN.md` §I8).
+fn rasterize_breadcrumb_mask(
+    font_system: &mut FontSystem,
+    swash_cache: &mut SwashCache,
+    crumbs: &[Arc<str>],
+    font_px: f32,
+    weight: u16,
+    max_width_px: u32,
+) -> AlphaMask {
+    if crumbs.is_empty() {
+        return AlphaMask {
+            width: 1,
+            height: 1,
+            data: vec![0],
+        };
+    }
+
+    let line_h = (font_px * 1.3).ceil();
+    let metrics = Metrics::new(font_px, line_h);
+    let mut buffer = Buffer::new(font_system, metrics);
+    buffer.set_wrap(font_system, Wrap::None);
+    buffer.set_size(font_system, Some(4096.0), Some(line_h * 2.0));
+    let attrs = Attrs::new()
+        .family(Family::Name("Inter"))
+        .weight(Weight(weight));
+
+    let fits_width = |buf: &mut Buffer, fs: &mut FontSystem, s: &str| -> bool {
+        buf.set_text(fs, s, attrs, Shaping::Advanced);
+        buf.shape_until_scroll(fs, false);
+        buf.layout_runs().next().map_or(0.0, |run| run.line_w) <= (max_width_px as f32)
+    };
+
+    let full = crumbs
+        .iter()
+        .map(AsRef::as_ref)
+        .collect::<Vec<_>>()
+        .join(" › ");
+    if fits_width(&mut buffer, font_system, &full) {
+        return buffer_to_alpha_mask(&buffer, font_system, swash_cache, max_width_px, 1);
+    }
+
+    // Elide oldest middle ancestors first: keep `crumbs[0]`, `"…"`, and `crumbs[start_tail..]`
+    if crumbs.len() >= 3 {
+        for start_tail in 2..crumbs.len() {
+            let mut parts = Vec::with_capacity(crumbs.len() - start_tail + 2);
+            parts.push(crumbs[0].as_ref());
+            parts.push("…");
+            for item in &crumbs[start_tail..] {
+                parts.push(item.as_ref());
+            }
+            let cand = parts.join(" › ");
+            if fits_width(&mut buffer, font_system, &cand) {
+                return buffer_to_alpha_mask(&buffer, font_system, swash_cache, max_width_px, 1);
+            }
+        }
+    }
+
+    // Try `"… › <deepest>"`
+    if crumbs.len() >= 2 {
+        let tail_only = format!("… › {}", crumbs[crumbs.len() - 1]);
+        if fits_width(&mut buffer, font_system, &tail_only) {
+            return buffer_to_alpha_mask(&buffer, font_system, swash_cache, max_width_px, 1);
+        }
+        return rasterize_text_mask(
+            font_system,
+            swash_cache,
+            &tail_only,
+            font_px,
+            weight,
+            max_width_px,
+        );
+    }
+
+    rasterize_text_mask(
+        font_system,
+        swash_cache,
+        &full,
+        font_px,
+        weight,
+        max_width_px,
+    )
+}
+
+fn buffer_to_alpha_mask(
+    buffer: &Buffer,
+    font_system: &mut FontSystem,
+    swash_cache: &mut SwashCache,
+    max_width_px: u32,
+    max_lines: usize,
+) -> AlphaMask {
     struct PlacedPixel {
         x: i32,
         y: i32,
@@ -331,7 +647,7 @@ fn rasterize_text_mask(
     let mut max_x = i32::MIN;
     let mut max_y = i32::MIN;
 
-    for run in buffer.layout_runs() {
+    for run in buffer.layout_runs().take(max_lines) {
         let line_y = run.line_y;
         for glyph in run.glyphs {
             let physical = glyph.physical((0.0, line_y), 1.0);
@@ -412,14 +728,17 @@ fn rasterize_text_mask(
         };
     }
 
-    let width = ((max_x - min_x) + 1) as u32;
+    let raw_width = ((max_x - min_x) + 1) as u32;
+    let width = raw_width.min(max_width_px.max(1));
     let height = ((max_y - min_y) + 1) as u32;
     let mut data = vec![0u8; (width * height) as usize];
     for p in pixels {
         let ux = (p.x - min_x) as u32;
         let uy = (p.y - min_y) as u32;
-        let idx = (uy * width + ux) as usize;
-        data[idx] = data[idx].max(p.a);
+        if ux < width && uy < height {
+            let idx = (uy * width + ux) as usize;
+            data[idx] = data[idx].max(p.a);
+        }
     }
 
     AlphaMask {

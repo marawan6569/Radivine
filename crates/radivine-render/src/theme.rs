@@ -108,6 +108,8 @@ pub struct Theme {
     pub shadow_alpha: f32,
     /// Caption pill background fill (`#0A1A16` @ 94% in dark).
     pub caption_fill: ColorRgba,
+    /// Armed / keyboard-focus `2 lp` inside outline for concentric sectors (`#E8F5F0` in dark; `#073B30` in light).
+    pub nested_outline: ColorRgba,
 }
 
 impl Theme {
@@ -130,6 +132,7 @@ impl Theme {
             stem_on_path: ColorRgba::rgb(0x00, 0xA8, 0x7C),   // #00A87C
             shadow_alpha: 0.35,
             caption_fill: ColorRgba::new(0x0A, 0x1A, 0x16, 240), // #0A1A16 @ 94%
+            nested_outline: ColorRgba::rgb(0xE8, 0xF5, 0xF0),    // #E8F5F0
         }
     }
 
@@ -152,6 +155,7 @@ impl Theme {
             stem_on_path: ColorRgba::rgb(0x00, 0xA8, 0x7C),
             shadow_alpha: 0.24,
             caption_fill: ColorRgba::new(0xF4, 0xFB, 0xF8, 245),
+            nested_outline: ColorRgba::rgb(0x07, 0x3B, 0x30), // #073B30
         }
     }
 }
