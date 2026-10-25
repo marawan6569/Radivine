@@ -275,7 +275,8 @@ No safety defects were found in production daemon, wheel, renderer, or X11 platf
 |---|---|
 | `d8c8f4b` | `test(x11): verify live Xvfb concentric XDND, XShape, and 668x742 viewport gates` |
 | `3bcb025` | `fix(test): harden Xvfb timing in m2/m3 acceptance and clear inherited RADIVINE_FORCE_ARGB` |
-| *(this commit)* | `docs(n5): add Milestone N5 Phase A safety and Xvfb verification report` |
+| `cdb02c7` | `docs(n5): add Milestone N5 Phase A safety and Xvfb verification report` |
+| `70f8877` | `test(x11): assert zero overlay subwindows and order-independent root tree in T-X111` |
 
 - **Untracked files preserved untouched:** `.idea/`
 - **Installed system state:** Existing `v0.2.0` installation, user configuration, Nemo integration, systemd user services, tags, and releases remain completely untouched.
