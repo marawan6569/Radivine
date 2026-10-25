@@ -38,10 +38,12 @@
 
 - **Primary Target Desktop:** **Linux Mint 22.3 Cinnamon (X11, `amd64`)** (Installed or Live USB session)
 - **Compatible Base:** **Ubuntu 24.04 LTS+** (`amd64`, `glibc >= 2.34`)
-- **Package Filename:** `radivine_0.3.0~rc1_amd64.deb` (`16,152,808` bytes / `15.40 MiB`)
+- **Debian Package Version (`DEBIAN/control`):** `0.3.0~rc1` (local build `radivine_0.3.0~rc1_amd64.deb`; GitHub release asset filename normalized to `radivine_0.3.0.rc1_amd64.deb`, `16,152,808` bytes / `15.40 MiB`)
+- **Direct Anonymous `.deb` Download URL:**
+  https://github.com/marawan6569/Radivine/releases/download/v0.3.0-rc.1/radivine_0.3.0.rc1_amd64.deb
 - **SHA-256 Checksum:**
   ```text
-  78ded9478b980b01165b264059d1192715a8f33f10d1cfca04f528e06a84297a  radivine_0.3.0~rc1_amd64.deb
+  78ded9478b980b01165b264059d1192715a8f33f10d1cfca04f528e06a84297a  radivine_0.3.0.rc1_amd64.deb
   ```
 
 ### Quick Install on Linux Mint 22.3 Cinnamon (Live USB or Installed System)
@@ -51,14 +53,14 @@ Open a terminal in your Linux Mint 22.3 Cinnamon session (no GitHub account or t
 ```bash
 # 1. Download the pre-release .deb and SHA256SUMS.txt directly
 mkdir -p /tmp/radivine-rc1 && cd /tmp/radivine-rc1
-curl -fLO https://github.com/marawan6569/Radivine/releases/download/v0.3.0-rc.1/radivine_0.3.0~rc1_amd64.deb
+curl -fLO https://github.com/marawan6569/Radivine/releases/download/v0.3.0-rc.1/radivine_0.3.0.rc1_amd64.deb
 curl -fLO https://github.com/marawan6569/Radivine/releases/download/v0.3.0-rc.1/SHA256SUMS.txt
 
 # 2. Verify the SHA-256 checksum
 sha256sum -c SHA256SUMS.txt
 
-# 3. Install the package via apt
-sudo apt install -y ./radivine_0.3.0~rc1_amd64.deb
+# 3. Install the package via apt (installs radivine 0.3.0~rc1 + fonts-dejavu-core + libfontconfig1)
+sudo apt install -y ./radivine_0.3.0.rc1_amd64.deb
 
 # 4. Start the background radial wheel service and open Radivine Control Center
 systemctl --user daemon-reload
