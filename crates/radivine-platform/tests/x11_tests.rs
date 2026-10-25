@@ -960,6 +960,11 @@ fn concentric_xshape_solid_disc_has_zero_annular_holes_and_covers_approach_corri
     assert!(covers(20, 20), "anchor disc must be covered");
     assert!(covers(180, 180), "approach corridor must be covered");
 
-    // 4. Far outside the cluster (1200, 800) must NOT be covered when passthrough=true
+    // 4. Caption box (280x64 at y = 340 + 326 + 10 = 676..740) and points outside the cluster
+    //    must be excluded from pass-through ShapeInput (`ARCHITECTURE.md` §A7, `T-X112`)
+    assert!(
+        !covers(340, 708),
+        "caption box below R_reserve + hit_margin must be excluded from pass-through ShapeInput"
+    );
     assert!(!covers(1200, 800));
 }

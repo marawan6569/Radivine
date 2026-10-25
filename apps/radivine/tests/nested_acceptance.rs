@@ -799,7 +799,7 @@ hide = ["radivine.preview", "radivine.convert"]
         ctrl.pending_drop_selection(),
         Some(&PendingDropSelection {
             path: ItemPath::from_slice(&[0, 0]),
-            action_id: Some(ActionId::from("custom.text_only")),
+            action_id: ActionId::from("custom.text_only"),
         })
     );
     assert!(
@@ -1204,6 +1204,195 @@ fn t_x111_t_x118_concentric_fallbacks_edges_negative_origin_fractional_scale_and
             Some("radivine.copy")
         );
     }
+
+    // --- Scenario 10 (`T-X112` & `ARCHITECTURE.md` §A7): Input region capture policy ---
+    // (a) Invoke mode and default Drag mode (`passthrough = false`) must use full-overlay capture (`None`).
+    ctrl_edges
+        .summon_invoke(
+            vec!["file:///tmp/invoke_full_capture.txt".into()],
+            Some(PhysPoint::new(960, 540)),
+        )
+        .expect("summon invoke full capture");
+    ctrl_edges.dismiss_immediate();
+
+    let (plat_cap, state_cap) = FakePlatform::new(default_1080p_monitor(), 1.0, true);
+    let mut ctrl_cap = make_controller(plat_cap, Arc::new(builtin_registry()), concentric_config());
+    ctrl_cap.handle_platform_events(vec![
+        PlatformEvent::DragArmed {
+            source: PlatSourceInfo {
+                app: Some("nemo".into()),
+                pid: Some(601),
+            },
+        },
+        PlatformEvent::Trigger {
+            at: PhysPoint::new(960, 540),
+        },
+        PlatformEvent::DndEnter {
+            types: vec!["text/uri-list".into()],
+        },
+        PlatformEvent::Payload {
+            mime: "text/uri-list".into(),
+            result: Ok(b"file:///tmp/default_drag_capture.txt\r\n".to_vec()),
+        },
+    ]);
+    assert_eq!(
+        state_cap.lock().unwrap().input_regions.last(),
+        Some(&None),
+        "default Drag mode (`passthrough = false`) must use full-overlay ShapeInput (`None`)"
+    );
+    ctrl_cap.dismiss_immediate();
+
+    // (b) Explicit Drag pass-through (`passthrough = true`) uses reserved-disc ShapeInput (excluding caption)
+    // and never shrinks when child rings open or retract.
+    let (plat_pt, state_pt) = FakePlatform::new(default_1080p_monitor(), 1.0, true);
+    let mut cfg_pt = concentric_config();
+    cfg_pt.input.passthrough = true;
+    let mut ctrl_pt = make_controller(plat_pt, Arc::new(builtin_registry()), cfg_pt);
+    ctrl_pt.handle_platform_events(vec![
+        PlatformEvent::DragArmed {
+            source: PlatSourceInfo {
+                app: Some("nemo".into()),
+                pid: Some(602),
+            },
+        },
+        PlatformEvent::Trigger {
+            at: PhysPoint::new(10, 540),
+        },
+        PlatformEvent::DndEnter {
+            types: vec!["text/uri-list".into()],
+        },
+        PlatformEvent::Payload {
+            mime: "text/uri-list".into(),
+            result: Ok(b"file:///tmp/passthrough_drag.txt\r\n".to_vec()),
+        },
+    ]);
+    let initial_shapes = state_pt
+        .lock()
+        .unwrap()
+        .input_regions
+        .last()
+        .and_then(|r| r.clone())
+        .expect("passthrough Drag must install reserved-disc ShapeInput");
+    let has_reserved_disc = initial_shapes
+        .iter()
+        .any(|s| matches!(s, ShapePx::Circle { r, .. } if (*r - 338.0).abs() < 1e-3));
+    let has_anchor_disc = initial_shapes.iter().any(|s| {
+        matches!(
+            s,
+            ShapePx::Circle { cx, cy, r }
+                if (*cx - 10.0).abs() < 1e-3 && (*cy - 540.0).abs() < 1e-3 && (*r - 24.0).abs() < 1e-3
+        )
+    });
+    let has_corridor = initial_shapes
+        .iter()
+        .any(|s| matches!(s, ShapePx::Polygon(_)));
+    assert!(
+        initial_shapes.len() == 3 && has_reserved_disc && has_anchor_disc && has_corridor,
+        "passthrough Concentric ShapeInput must consist strictly of reserved disc (Rreserve 326 + hit_margin 12 = 338 px), anchor (24 px), and corridor polygon (caption excluded): {initial_shapes:?}"
+    );
+    // Open ring 1 and verify ShapeInput does not shrink or change
+    let center_pt = ctrl_pt.wheel_session().unwrap().debug_state().wheels[0].center;
+    let seg0_pt = ring_segment_phys_point(&ctrl_pt, PhysPoint::new(0, 0), 1.0, 0, 0);
+    ctrl_pt.handle_platform_events(vec![
+        PlatformEvent::DndPosition {
+            at: PhysPoint::new(center_pt.x.round() as i32, center_pt.y.round() as i32),
+        },
+        PlatformEvent::DndPosition { at: seg0_pt },
+    ]);
+    ctrl_pt.on_timer(Instant::now() + Duration::from_millis(200));
+    assert_eq!(
+        ctrl_pt.wheel_session().unwrap().debug_state().wheels.len(),
+        2
+    );
+    let open_shapes = state_pt
+        .lock()
+        .unwrap()
+        .input_regions
+        .last()
+        .and_then(|r| r.clone())
+        .expect("ShapeInput while ring 1 open");
+    assert_eq!(
+        initial_shapes, open_shapes,
+        "reserved-disc ShapeInput must remain stable as child rings open"
+    );
+    ctrl_pt.dismiss_immediate();
+
+    // --- Scenario 11 (`T-SAFE8` & `ARCHITECTURE.md` §A7): Display / scale / compositor guards ---
+    let (plat_guard, state_guard) = FakePlatform::new(default_1080p_monitor(), 1.0, true);
+    let mut ctrl_guard = make_controller(
+        plat_guard,
+        Arc::new(builtin_registry()),
+        concentric_config(),
+    );
+    let t_start = Instant::now();
+    ctrl_guard.handle_platform_events(vec![
+        PlatformEvent::DragArmed {
+            source: PlatSourceInfo {
+                app: Some("nemo".into()),
+                pid: Some(603),
+            },
+        },
+        PlatformEvent::Trigger {
+            at: PhysPoint::new(960, 540),
+        },
+        PlatformEvent::DndEnter {
+            types: vec!["text/uri-list".into()],
+        },
+        PlatformEvent::Payload {
+            mime: "text/uri-list".into(),
+            result: Ok(b"file:///tmp/guard_test.txt\r\n".to_vec()),
+        },
+    ]);
+    assert_eq!(ctrl_guard.status().session_state, "Active");
+    // 11a: Scale change (`SettingsChanged` while compositor + monitor unchanged) is deferred during active Drag
+    state_guard.lock().unwrap().scale = 1.5;
+    ctrl_guard.handle_platform_events(vec![PlatformEvent::SettingsChanged]);
+    assert_eq!(
+        ctrl_guard.status().session_state,
+        "Active",
+        "scale change during active Concentric Drag must be deferred"
+    );
+    // 11b: Monitor change (`MonitorsChanged`) or compositor loss enters `reject_until_drag_end`,
+    // keeps the capture window mapped (`mapped == true`, `hide_count` unchanged) even past MAX_SESSION_DURATION,
+    // replies `dnd_reply(false)`, and rejects `DndDrop` with `dnd_finish(false)`.
+    let hide_before = state_guard.lock().unwrap().hide_count;
+    state_guard.lock().unwrap().translucent = false;
+    ctrl_guard.handle_platform_events(vec![PlatformEvent::SettingsChanged]);
+    assert!(
+        state_guard.lock().unwrap().mapped && state_guard.lock().unwrap().hide_count == hide_before,
+        "reject_until_drag_end must keep the capture overlay mapped until the source drag ends"
+    );
+    ctrl_guard.on_timer(t_start + Duration::from_secs(130));
+    assert!(
+        state_guard.lock().unwrap().mapped && state_guard.lock().unwrap().hide_count == hide_before,
+        "MAX_SESSION_DURATION must not prematurely hide the capture overlay while drag_armed && reject_until_drag_end"
+    );
+    let copy_pt = ring_segment_phys_point(&ctrl_guard, PhysPoint::new(0, 0), 1.0, 0, 1);
+    state_guard.lock().unwrap().dnd_replies.clear();
+    state_guard.lock().unwrap().dnd_finishes.clear();
+    ctrl_guard.handle_platform_events(vec![
+        PlatformEvent::DndPosition { at: copy_pt },
+        PlatformEvent::DndDrop,
+    ]);
+    assert_eq!(state_guard.lock().unwrap().dnd_replies, vec![false]);
+    assert_eq!(state_guard.lock().unwrap().dnd_finishes, vec![false]);
+    assert!(ctrl_guard.status().last_committed_action.is_none());
+    // 11c: ConnectionLost during active Drag dispatches nothing and resets cleanly
+    state_guard.lock().unwrap().translucent = true;
+    ctrl_guard.handle_platform_events(vec![
+        PlatformEvent::DragArmed {
+            source: PlatSourceInfo {
+                app: Some("nemo".into()),
+                pid: Some(604),
+            },
+        },
+        PlatformEvent::Trigger {
+            at: PhysPoint::new(960, 540),
+        },
+        PlatformEvent::ConnectionLost,
+    ]);
+    assert_eq!(ctrl_guard.status().session_state, "Idle");
+    assert!(ctrl_guard.status().last_committed_action.is_none());
 }
 
 /// Live isolated X11 / `Xvfb` end-to-end Concentric test (`Authorization` §6, `T-X111`–`T-X118`):

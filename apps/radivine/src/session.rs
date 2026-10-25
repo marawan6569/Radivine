@@ -119,6 +119,8 @@ pub struct ActiveSessionSettings {
     pub layout_selection: LayoutSelection,
     /// Effective UI scale factor for this session.
     pub scale: f32,
+    /// Snapshotted monitor origin and size `(x, y, w, h)` in physical pixels (`ARCHITECTURE.md` §A7).
+    pub monitor_rect: (i32, i32, u32, u32),
     /// Resolved [`Theme`] for this session.
     pub theme: Theme,
     /// Effective reduced-motion preference for this session.
@@ -139,7 +141,7 @@ pub struct PendingDropSelection {
     /// Menu path committed at drop time.
     pub path: ItemPath,
     /// Captured [`ActionId`] from the provisional [`ActionIndex`] at drop time.
-    pub action_id: Option<ActionId>,
+    pub action_id: ActionId,
 }
 
 /// Orchestrates the platform backend, radial wheel engine, software renderer, context enricher, and action dispatcher.
@@ -434,8 +436,33 @@ impl SessionController {
         self.active_menu_tree = None;
         self.reject_until_drag_end = false;
         self.config_reloaded_during_session = false;
+        self.platform.sync_graphical_state();
+        let reduced_motion = self
+            .config
+            .effective_reduced_motion(self.platform.reduced_motion());
+        self.wheel_cfg = self.config.to_wheel_config(reduced_motion);
         self.renderer.set_theme(self.config.resolve_theme());
         self.effective_scale = self.config.effective_scale(self.platform.scale());
+    }
+
+    fn has_concentric_display_invalidated(&self) -> bool {
+        let compositor_active = matches!(
+            self.platform.capabilities().translucency,
+            radivine_platform::Support::Yes
+        );
+        if !compositor_active {
+            return true;
+        }
+        let Some(ref settings) = self.active_session_settings else {
+            return false;
+        };
+        let Some(ref info) = self.overlay_info else {
+            return false;
+        };
+        !self.platform.monitors().iter().any(|m| {
+            m.id == info.monitor.id
+                && (m.rect.x, m.rect.y, m.rect.w, m.rect.h) == settings.monitor_rect
+        })
     }
 
     /// Emits a startup or diagnostic notification through the daemon notification channel.
@@ -788,6 +815,12 @@ impl SessionController {
             wheel_cfg,
             layout_selection: LayoutSelection::branching(),
             scale,
+            monitor_rect: (
+                info.monitor.rect.x,
+                info.monitor.rect.y,
+                info.monitor.rect.w,
+                info.monitor.rect.h,
+            ),
             theme,
             reduced_motion,
             menu_limits,
@@ -827,15 +860,21 @@ impl SessionController {
             .build_menu(&ctx, session_settings.menu_limits)
             .ok_or_else(|| anyhow::anyhow!("no actions available for context"))?;
 
+        let mut effective_wheel_cfg = session_settings.wheel_cfg.clone();
+        let no_compositor_fallback =
+            effective_wheel_cfg.layout == WheelLayout::Concentric && !info.translucent;
+        if no_compositor_fallback {
+            effective_wheel_cfg.layout = WheelLayout::Branching;
+        }
         let mut ws = WheelSession::new(
             Some(menu_tree.clone()),
             cursor_logical,
             viewport,
             InputMode::Pointer,
-            &session_settings.wheel_cfg,
+            &effective_wheel_cfg,
             0,
         );
-        if session_settings.wheel_cfg.layout == WheelLayout::Concentric && !info.translucent {
+        if no_compositor_fallback {
             ws.record_layout_fallback(LayoutFallback::NoCompositor);
         }
         if item_count > 1 {
@@ -928,6 +967,12 @@ impl SessionController {
             wheel_cfg,
             layout_selection: LayoutSelection::branching(),
             scale,
+            monitor_rect: (
+                info.monitor.rect.x,
+                info.monitor.rect.y,
+                info.monitor.rect.w,
+                info.monitor.rect.h,
+            ),
             theme,
             reduced_motion,
             menu_limits,
@@ -945,15 +990,21 @@ impl SessionController {
 
         // Start with a hub-only placeholder wheel (`menu = None`) while `request_payload` is in flight;
         // segments populate in ~0.2 ms when `SelectionNotify` arrives (`ARCHITECTURE.md` §5).
+        let mut effective_wheel_cfg = session_settings.wheel_cfg.clone();
+        let no_compositor_fallback =
+            effective_wheel_cfg.layout == WheelLayout::Concentric && !info.translucent;
+        if no_compositor_fallback {
+            effective_wheel_cfg.layout = WheelLayout::Branching;
+        }
         let mut ws = WheelSession::new(
             None,
             cursor_logical,
             viewport,
             InputMode::Drag,
-            &session_settings.wheel_cfg,
+            &effective_wheel_cfg,
             0,
         );
-        if session_settings.wheel_cfg.layout == WheelLayout::Concentric && !info.translucent {
+        if no_compositor_fallback {
             ws.record_layout_fallback(LayoutFallback::NoCompositor);
         }
         session_settings.layout_selection = ws.layout_selection();
@@ -1123,6 +1174,12 @@ impl SessionController {
                         "XdndEnter received on overlay"
                     );
 
+                    if self.reject_until_drag_end {
+                        self.last_dnd_accept = Some(false);
+                        self.platform.dnd_reply(false);
+                        continue;
+                    }
+
                     if !self.offered_uri_list {
                         // Non-file drag (e.g. text selection in an editor): never activate (`AC-3.1`)
                         tracing::info!(
@@ -1130,12 +1187,6 @@ impl SessionController {
                             "drag source does not offer text/uri-list; dismissing"
                         );
                         self.dismiss_drag_session(DismissReason::Cancelled, now);
-                        continue;
-                    }
-
-                    if self.reject_until_drag_end {
-                        self.last_dnd_accept = Some(false);
-                        self.platform.dnd_reply(false);
                         continue;
                     }
 
@@ -1322,12 +1373,9 @@ impl SessionController {
                     ) {
                         if self.is_effective_concentric_session() {
                             // `ARCHITECTURE.md` §A7: defer Xft DPI / scale / reduced-motion changes
-                            // during an active Concentric session, unless compositor translucency was lost.
-                            let compositor_active = matches!(
-                                self.platform.capabilities().translucency,
-                                radivine_platform::Support::Yes
-                            );
-                            if !compositor_active {
+                            // during an active Concentric session, unless compositor translucency or
+                            // the snapshotted monitor geometry changed.
+                            if self.has_concentric_display_invalidated() {
                                 self.handle_concentric_display_invalidation(now);
                             }
                         } else {
@@ -1403,7 +1451,10 @@ impl SessionController {
             );
             self.reject_until_drag_end = true;
             self.leave_grace_deadline = None;
-            if self.state == SessionState::LeftGrace {
+            if matches!(
+                self.state,
+                SessionState::Summoning | SessionState::LeftGrace
+            ) {
                 self.state = SessionState::Active;
             }
             let ms = self.elapsed_millis(now);
@@ -1470,7 +1521,15 @@ impl SessionController {
             }
         } else {
             // Capture the provisional ActionId before requesting the deferred real payload (`ARCHITECTURE.md` §A6).
-            let captured_action_id = self.action_index.get(&path).cloned();
+            let Some(captured_action_id) = self.action_index.get(&path).cloned() else {
+                tracing::info!(
+                    path = ?path,
+                    "provisional XdndDrop path has no captured ActionId; finishing with success=false"
+                );
+                self.platform.dnd_finish(false);
+                self.dismiss_drag_session(DismissReason::Cancelled, now);
+                return;
+            };
             self.state = SessionState::Committing;
             self.pending_drop_commit = Some(PendingDropSelection {
                 path,
@@ -1488,6 +1547,11 @@ impl SessionController {
         result: Result<Vec<u8>, radivine_platform::PayloadError>,
         now: Instant,
     ) {
+        if self.reject_until_drag_end && self.state != SessionState::Committing {
+            self.last_dnd_accept = Some(false);
+            self.platform.dnd_reply(false);
+            return;
+        }
         match result {
             Ok(bytes) => {
                 let basic = BasicContext::from_uri_list_bytes(
@@ -1539,20 +1603,15 @@ impl SessionController {
 
                 if self.state == SessionState::Committing {
                     if let Some(pending) = self.pending_drop_commit.take() {
-                        let resolved = pending.action_id.and_then(|target_id| {
-                            let real_path = self
-                                .action_index
-                                .entries()
-                                .iter()
-                                .find(|(_, id)| *id == target_id)
-                                .map(|(p, _)| p.clone())?;
-                            if self.can_commit_action(&real_path, &target_id) {
-                                Some((real_path, target_id))
-                            } else {
-                                None
-                            }
-                        });
-                        if let Some((real_path, target_id)) = resolved {
+                        let target_id = pending.action_id;
+                        let resolved = self
+                            .action_index
+                            .entries()
+                            .iter()
+                            .find(|(_, id)| *id == target_id)
+                            .map(|(p, _)| p.clone())
+                            .filter(|real_path| self.can_commit_action(real_path, &target_id));
+                        if let Some(real_path) = resolved {
                             self.platform.dnd_finish(true);
                             self.commit_resolved_action(&real_path, target_id, now);
                         } else {
@@ -1729,7 +1788,9 @@ impl SessionController {
                 }
                 merge(self.next_frame_deadline);
                 merge(self.leave_grace_deadline);
-                merge(Some(self.session_epoch + MAX_SESSION_DURATION));
+                if !(self.reject_until_drag_end && self.drag_armed) {
+                    merge(Some(self.session_epoch + MAX_SESSION_DURATION));
+                }
                 if self.active_mode == Some(InvocationMode::Invoke) {
                     merge(Some(self.last_interaction + ACTIVE_WATCHDOG_TIMEOUT));
                 }
@@ -1774,8 +1835,11 @@ impl SessionController {
             return;
         }
 
-        // 120 s max session duration watchdog (`ARCHITECTURE.md` §5)
-        if now.duration_since(self.session_epoch) >= MAX_SESSION_DURATION {
+        // 120 s max session duration watchdog (`ARCHITECTURE.md` §5, §A7: do not unmap while
+        // `reject_until_drag_end` is retaining capture for a held source drag)
+        if !(self.reject_until_drag_end && self.drag_armed)
+            && now.duration_since(self.session_epoch) >= MAX_SESSION_DURATION
+        {
             tracing::warn!("session hit 120 s max duration watchdog; force-dismissing");
             self.dismiss_drag_session(DismissReason::Timeout, now);
             return;
@@ -3016,7 +3080,7 @@ hide = ["radivine.preview", "radivine.convert"]
             ctrl.pending_drop_selection(),
             Some(&PendingDropSelection {
                 path: ItemPath::from_slice(&[0, 0]),
-                action_id: Some(ActionId::from("custom.text_only")),
+                action_id: ActionId::from("custom.text_only"),
             })
         );
 
