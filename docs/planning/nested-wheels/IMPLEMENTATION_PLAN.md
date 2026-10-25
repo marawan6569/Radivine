@@ -124,6 +124,7 @@ user config. Complete at pure-engine acceptance; no desktop sign-off implied.
 
 ## N3 — Scene, rendering and animation
 
+**Status:** **Completed (2026-10-25; see [`docs/test-reports/N3.md`](../../test-reports/N3.md)). Stopped awaiting explicit N4 authorization.**  
 **Dependency:** N2 accepted; explicit N3 authorization.
 
 Expected files:
