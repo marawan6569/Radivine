@@ -72,3 +72,22 @@ Executed in clean `ubuntu:24.04` Docker containers with only `target/debian:/deb
 | **4. Authentic Upgrade B (`v0.3.0~rc1 -> v0.3.0`)** | Install `radivine_0.3.0~rc1_amd64.deb`, then upgrade via `dpkg -i /debs/radivine_0.3.0_amd64.deb` and submit `Job #3` (`src3.png -> src3.webp`) | **PASS** — Upgraded cleanly to `Version: 0.3.0` (`radivine 0.3.0`); `sha256sum -c` confirmed all user TOML files byte-identical; `jobs.sqlite3` retained all `3` succeeded jobs (`v0.2.0`, `0.3.0~rc1`, `0.3.0`). |
 | **5. Documented Rollback (`0.3.0 -> 0.2.0`)** | `dpkg -i --force-downgrade /debs/radivine_0.2.0_amd64.deb` | **PASS** — Cleanly downgraded to `radivine 0.2.0` with all user config and SQLite state intact. |
 | **6. Clean Package Removal (`dpkg -r radivine`)** | `dpkg -r radivine` | **PASS** — Removed `/usr/bin/radivine*` cleanly while preserving `~/.config/radivine/{config,actions,convert}.toml` and `~/.local/state/radivine/jobs.sqlite3` (`3` jobs intact). |
+
+---
+
+## 5. GitHub Actions CI, Release Publication & Unauthenticated Verification Evidence
+
+- **Release Commit (`v0.3.0` Tag Target):** `1aa009a` (`chore(release): promote Radivine v0.3.0 to final stable release`)
+- **Annotated Git Tag:** `v0.3.0` (`Radivine v0.3.0 — Concentric Rings`)
+- **GitHub Actions CI Run (`main` @ `1aa009a`):** Run ID `40249317998` — **PASS** (`Supply-Chain & License Audit (cargo-deny)` + `Format, Clippy, Tests & Debian Package`)
+- **Public Stable Release URL:** https://github.com/marawan6569/Radivine/releases/tag/v0.3.0
+- **Direct Anonymous `.deb` Download URL:** https://github.com/marawan6569/Radivine/releases/download/v0.3.0/radivine_0.3.0_amd64.deb
+- **Direct Anonymous `SHA256SUMS.txt` Download URL:** https://github.com/marawan6569/Radivine/releases/download/v0.3.0/SHA256SUMS.txt
+- **Direct Anonymous Release Notes URL:** https://github.com/marawan6569/Radivine/releases/download/v0.3.0/RELEASE_NOTES_v0.3.0.md
+- **Unauthenticated GitHub API & Download Verification (`env -i` with zero credentials/cookies/tokens):**
+  - `https://github.com/marawan6569/Radivine/releases/tag/v0.3.0` returned `HTTP 200`.
+  - `https://api.github.com/repos/marawan6569/Radivine/releases/tags/v0.3.0` confirmed `tag_name = "v0.3.0"`, `name = "Radivine v0.3.0 — Concentric Rings"`, `draft = false`, `prerelease = false`.
+  - `https://api.github.com/repos/marawan6569/Radivine/releases/latest` confirmed `tag_name = "v0.3.0"`, `draft = false`, `prerelease = false` (`v0.3.0` is the active `Latest` stable release).
+  - Previous releases `v0.2.0` (`draft = false`, `prerelease = false`) and `v0.3.0-rc.1` (`draft = false`, `prerelease = true`) and all their uploaded assets remain intact.
+  - Anonymous download of `radivine_0.3.0_amd64.deb` (`16,149,118` bytes) and `SHA256SUMS.txt` succeeded without login, matched SHA-256 `4c0b8cc719963dec2f2457588a500a3530dd4aa88b01d0b3954eeb57edb37156`, and verified `dpkg-deb -f radivine_0.3.0_amd64.deb Version` = `0.3.0`.
+
