@@ -61,14 +61,14 @@ jobs:
       - name: Verify headless screenshot export
         run: DISPLAY="" cargo run -p radivine-control -- --export-screenshots /tmp/radivine-ci-screenshots
 
-      - name: Build and verify Debian package (radivine_0.3.0~rc1_amd64.deb)
+      - name: Build and verify Debian package (radivine_0.3.0_amd64.deb)
         run: |
           ./scripts/build-deb.sh
-          lintian --tag-display-limit 0 target/debian/radivine_0.3.0~rc1_amd64.deb
+          lintian --tag-display-limit 0 target/debian/radivine_0.3.0_amd64.deb
 
       - name: Report release binary and Debian package sizes
         run: |
-          echo "### Radivine v0.3.0-rc.1 Release Artifact Sizes" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Radivine v0.3.0 Release Artifact Sizes" >> "$GITHUB_STEP_SUMMARY"
           echo "| Artifact | Size (bytes) | Size (human) | SHA-256 |" >> "$GITHUB_STEP_SUMMARY"
           echo "|----------|-------------:|-------------:|---------|" >> "$GITHUB_STEP_SUMMARY"
           for bin in radivine radivine-viewer radivine-control radivine-worker; do
@@ -78,11 +78,11 @@ jobs:
             sha=$(sha256sum "$p" | awk '{print $1}')
             echo "| \`$bin\` | $sz_b | $sz_h | \`$sha\` |" >> "$GITHUB_STEP_SUMMARY"
           done
-          deb="target/debian/radivine_0.3.0~rc1_amd64.deb"
+          deb="target/debian/radivine_0.3.0_amd64.deb"
           deb_b=$(stat -c%s "$deb")
           deb_h=$(ls -lh "$deb" | awk '{print $5}')
           deb_sha=$(sha256sum "$deb" | awk '{print $1}')
-          echo "| \`radivine_0.3.0~rc1_amd64.deb\` | $deb_b | $deb_h | \`$deb_sha\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| \`radivine_0.3.0_amd64.deb\` | $deb_b | $deb_h | \`$deb_sha\` |" >> "$GITHUB_STEP_SUMMARY"
 
   supply-chain:
     name: Supply-Chain & License Audit (cargo-deny)

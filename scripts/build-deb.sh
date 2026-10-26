@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Build `target/debian/radivine_0.3.0~rc1_amd64.deb` and `target/debian/SHA256SUMS.txt` (`IMPLEMENTATION_PLAN.md` N6).
+# Build `target/debian/radivine_0.3.0_amd64.deb` and `target/debian/SHA256SUMS.txt` (`IMPLEMENTATION_PLAN.md` N6).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 PKG_NAME="radivine"
-PKG_VERSION="0.3.0~rc1"
+PKG_VERSION="0.3.0"
 PKG_ARCH="amd64"
 DEB_BASENAME="${PKG_NAME}_${PKG_VERSION}_${PKG_ARCH}"
 OUT_DIR="${REPO_ROOT}/target/debian"
@@ -84,7 +84,7 @@ if [ -f "${REPO_ROOT}/THIRD_PARTY_NOTICES.md" ]; then
 fi
 
 cat <<'MAN1' | gzip -9nc > "${STAGE_DIR}/usr/share/man/man1/radivine.1.gz"
-.TH RADIVINE 1 "October 2026" "Radivine 0.3.0-rc.1" "User Commands"
+.TH RADIVINE 1 "October 2026" "Radivine 0.3.0" "User Commands"
 .SH NAME
 radivine \- context-aware radial action wheel daemon and CLI client
 .SH SYNOPSIS
@@ -119,7 +119,7 @@ MAN1
 chmod 0644 "${STAGE_DIR}/usr/share/man/man1/radivine.1.gz"
 
 cat <<'MAN2' | gzip -9nc > "${STAGE_DIR}/usr/share/man/man1/radivine-viewer.1.gz"
-.TH RADIVINE-VIEWER 1 "October 2026" "Radivine 0.3.0-rc.1" "User Commands"
+.TH RADIVINE-VIEWER 1 "October 2026" "Radivine 0.3.0" "User Commands"
 .SH NAME
 radivine-viewer \- read-only file preview window for Radivine
 .SH SYNOPSIS
@@ -132,7 +132,7 @@ MAN2
 chmod 0644 "${STAGE_DIR}/usr/share/man/man1/radivine-viewer.1.gz"
 
 cat <<'MAN3' | gzip -9nc > "${STAGE_DIR}/usr/share/man/man1/radivine-control.1.gz"
-.TH RADIVINE-CONTROL 1 "October 2026" "Radivine 0.3.0-rc.1" "User Commands"
+.TH RADIVINE-CONTROL 1 "October 2026" "Radivine 0.3.0" "User Commands"
 .SH NAME
 radivine-control \- graphical Control Center and Advanced Convert window for Radivine
 .SH SYNOPSIS
@@ -151,7 +151,7 @@ MAN3
 chmod 0644 "${STAGE_DIR}/usr/share/man/man1/radivine-control.1.gz"
 
 cat <<'MAN4' | gzip -9nc > "${STAGE_DIR}/usr/share/man/man1/radivine-worker.1.gz"
-.TH RADIVINE-WORKER 1 "October 2026" "Radivine 0.3.0-rc.1" "User Commands"
+.TH RADIVINE-WORKER 1 "October 2026" "Radivine 0.3.0" "User Commands"
 .SH NAME
 radivine-worker \- on-demand background conversion and job worker for Radivine
 .SH SYNOPSIS

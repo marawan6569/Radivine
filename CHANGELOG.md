@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.0] - 2026-10-26
+
+### Added
+- **Optional Concentric (Nested Rings) Radial Wheel Layout (`radivine-wheel`, `radivine-render`, `apps/radivine`, `apps/radivine-control`):**
+  - Added selectable `WheelLayout::Concentric` (`wheel.layout = "concentric"` in `~/.config/radivine/config.toml` or **Control Center → Wheel → Wheel Layout**) alongside the unchanged default `WheelLayout::Branching` (`wheel.layout = "branching"`).
+  - Single immobile root center (`C_0`) across all open submenu rings (`R_hub = 50 lp`, root ring `50..118 lp`, outer ring `L >= 1` at `118 + 66·(L-1)..118 + 66·(L-1) + 60 lp`, inter-ring radial gap `6 lp`, minimum `30°` sector sweep with overflow pagination up to 6 rings).
+  - Reserved 4-ring + fixed bottom caption box (`Cy + 326..388 lp`) viewport contract requiring a minimum workarea of **`668 × 742` logical pixels** (`1366×768@1x` and `1920×1080@1.25x` activate Concentric; `1280×720@1x` and `1920×1080@1.5x` automatically fall back to `Branching` with `LayoutFallbackReason::InsufficientViewportSpace` without modifying `config.toml`).
+  - Strict non-actionable drop & click safety envelope (`T-SAFE1`–`T-SAFE10`): central hub (`r < 50 lp`), inter-ring radial gaps (`6 lp`), angular separator gaps, outer ring margin (`r > R_out(D)`), fixed bottom caption box, displaced-center approach corridor (`> 4 lp` anchor offset), protected pending-switch sibling sectors (`90 ms` outer-ring steering guard), and submenu parent sectors on drag release never arm or execute an action (`XdndStatus(accept=0)`, `XdndFinished(success=0)`), with final drop-time coordinate re-evaluation.
+  - Zero warm heap allocations (`0.0 allocs/frame`) during Concentric rendering after cache warmup, path-continuity boundary markers between parent sectors and child rings, breadcrumb caption bar (`Parent › Child › Leaf`), and displaced-origin approach guide.
+  - Deferred active-session layout switching (`layout_pending` in `DaemonStatus`) so saving `config.toml` while a wheel session is open never mutates the live session mid-gesture.
+- **Portable Arabic Font Fallback in Wheel Renderer & Debian Package Dependencies:**
+  - Added Arabic script glyph shaping fallback (`DejaVuSans.ttf` / `DejaVuSans-Bold.ttf`) in `radivine-render::cache::GlyphCache` while keeping embedded `Inter-Variable.ttf` isolated for deterministic Latin rendering.
+  - Updated `packaging/debian/control` (`Version: 0.3.0`) to declare `Depends: libc6 (>= 2.34), libgcc-s1 (>= 3.0), fonts-dejavu-core, libfontconfig1` and `Recommends: nemo, libx11-6, libegl1, libgl1, systemd, fonts-noto-core`.
+
+---
+
 ## [0.3.0-rc.1] - 2026-10-25 (Public Pre-release — Testing Only)
 
 > **PRE-RELEASE — FOR TESTING ONLY. FINAL DESKTOP ACCEPTANCE PENDING.**

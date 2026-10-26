@@ -7,8 +7,7 @@
 
   <p>
     <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-teal.svg" alt="License: MIT OR Apache-2.0" /></a>
-    <img src="https://img.shields.io/badge/stable-v0.2.0-blue.svg" alt="Stable: v0.2.0" />
-    <img src="https://img.shields.io/badge/pre--release-v0.3.0--rc.1-amber.svg" alt="Pre-release: v0.3.0-rc.1" />
+    <img src="https://img.shields.io/badge/version-0.3.0-blue.svg" alt="Version: 0.3.0" />
     <img src="https://img.shields.io/badge/platform-Linux%20X11%20(amd64)-orange.svg" alt="Platform: Linux X11 amd64" />
   </p>
 </div>
@@ -20,7 +19,7 @@
 **Radivine** brings fluid, hierarchical radial interaction to Linux desktops. Instead of navigating deep linear context menus or switching windows during file operations, summon a branching radial wheel directly under your cursor:
 
 - **Mid-Drag Activation (`Drag + Shift`):** Begin dragging one or more files in **Nemo** (or any XDND v5 source on X11) and press <kbd>Shift</kbd>. Radivine intercepts the drag in place (`< 27 ms`), displays context-aware actions around your cursor, and commits the chosen action on mouse release without moving or deleting your source files.
-- **Two Selectable Radial Wheel Layouts (`Branching` & `Concentric`):** Use the classic **Branching (Child Wheels)** layout (`wheel.layout = "branching"`, default) or switch to the optional **Concentric (Nested Rings)** layout (`wheel.layout = "concentric"` in `v0.3.0-rc.1`), where submenus expand as outward concentric rings around a single immobile center with strict non-actionable hub/gap/corridor drop rejection and automatic fallback on small viewports (`< 668×742` logical px).
+- **Two Selectable Radial Wheel Layouts (`Branching` & `Concentric`):** Use the classic **Branching (Child Wheels)** layout (`wheel.layout = "branching"`, default) or switch to the optional **Concentric (Nested Rings)** layout (`wheel.layout = "concentric"`), where submenus expand as outward concentric rings around a single immobile center with strict non-actionable hub/gap/corridor drop rejection and automatic fallback on small viewports (`< 668×742` logical px).
 - **Invoke Mode (`radivine invoke`):** Summon the exact same radial wheel at any time via the **Nemo "Open in Radivine"** right-click action, a desktop keyboard shortcut, or the command line—with full mouse and keyboard navigation.
 - **Built-In Image Conversion (`Convert ▸ Image`):** Convert single or batch images between **PNG**, **JPEG**, and **WebP** directly from the radial wheel (**Quick Convert**) or open the dedicated **Advanced Convert** dialog (`radivine-control convert`) for presets (`Web Optimized`, `Balanced`, `High Quality`, `Lossless`, `Compact Share`, plus custom presets), explicit quality/subsampling/compression controls, Lanczos3 resizing, alpha background flattening, EXIF auto-orientation, ICC color-profile preservation, and privacy-by-default EXIF stripping.
 - **Durable Background Job Worker (`radivine-worker`):** Conversions run out-of-process in an on-demand worker backed by SQLite WAL (`~/.local/state/radivine/jobs.sqlite3`) with atomic `renameat2(RENAME_NOREPLACE)` no-overwrite output guarantees, cooperative cancellation, linked immutable retries, crash-recovery reconciliation, and automatic idle shutdown (`60 s`).
@@ -68,14 +67,14 @@
 
 ### Option 1: Install from the Debian Package (`.deb`)
 
-Download the stable `radivine_0.2.0_amd64.deb` (or the public testing pre-release `radivine_0.3.0~rc1_amd64.deb`) and `SHA256SUMS.txt` from the [GitHub Releases](https://github.com/marawan6569/Radivine/releases) page:
+Download `radivine_0.3.0_amd64.deb` and `SHA256SUMS.txt` from the [GitHub Releases](https://github.com/marawan6569/Radivine/releases) page:
 
 ```bash
 # 1. Verify the package checksum
 sha256sum -c SHA256SUMS.txt
 
-# 2. Install the package (use radivine_0.3.0~rc1_amd64.deb for RC1 testing, or radivine_0.2.0_amd64.deb for stable)
-sudo apt install ./radivine_0.3.0~rc1_amd64.deb
+# 2. Install the package
+sudo apt install ./radivine_0.3.0_amd64.deb
 ```
 
 What the `.deb` package installs:
@@ -102,7 +101,7 @@ cd Radivine
 # Build optimized release binaries
 cargo build --release
 
-# Or build the installable Debian package at target/debian/radivine_0.3.0~rc1_amd64.deb
+# Or build the installable Debian package at target/debian/radivine_0.3.0_amd64.deb
 ./scripts/build-deb.sh
 ```
 
