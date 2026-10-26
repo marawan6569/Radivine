@@ -202,6 +202,6 @@ Caching: `Swatinem/rust-cache`. Benchmarks in CI are informational only; authori
 
 Issue template requires: `radivine doctor` output, `radivine --version`, desktop/session type, file manager and version, steps, and `RADIVINE_LOG=debug` excerpt.
 
-## 11. Concentric / Nested Rings Verification Matrix (`N1`–`N6`, `v0.3.0-rc.1`)
+## 11. Concentric / Nested Rings Verification Matrix (`N1`–`N6`, `v0.3.0`)
 
-See [`docs/planning/nested-wheels/TEST_MATRIX.md`](planning/nested-wheels/TEST_MATRIX.md), [`docs/test-reports/N5.md`](test-reports/N5.md), and [`docs/test-reports/N6.md`](test-reports/N6.md) for the complete `T-GEO*`, `T-NAV*`, `T-SAFE*`, `T-MENU*`, `T-REN*`, `T-REG*`, `T-CFG*`, `T-X11*`, and `T-PERF*` verification suites, including isolated `Xvfb` X11 wire-protocol gates (`T-X111`–`T-X118`), `--release` latency/allocation/memory gates (`T-PERF1`–`T-PERF5`), and the 1-hour (`3,605 s`) mixed-layout M6 soak + `2×600 s` fuzz + `3,605 s` C5 worker reliability soak (`T-PERF6`).
+See [`docs/planning/nested-wheels/TEST_MATRIX.md`](planning/nested-wheels/TEST_MATRIX.md), [`docs/test-reports/N5.md`](test-reports/N5.md), [`docs/test-reports/N6.md`](test-reports/N6.md), and [`docs/test-reports/RELEASE_v0.3.0.md`](test-reports/RELEASE_v0.3.0.md) for the complete `T-GEO*`, `T-NAV*`, `T-SAFE*`, `T-MENU*`, `T-REN*`, `T-REG*`, `T-CFG*`, `T-X11*`, and `T-PERF*` verification suites, including isolated `Xvfb` X11 wire-protocol gates (`T-X111`–`T-X118`), `--release` latency/allocation/memory gates (`T-PERF1`–`T-PERF5`), and the 1-hour (`3,605 s`) mixed-layout M6 soak + `2×600 s` fuzz + `3,605 s` C5 worker reliability soak (`T-PERF6`).

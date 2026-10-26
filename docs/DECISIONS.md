@@ -311,10 +311,10 @@ To change a decision: add a new ADR that supersedes the old one; never silently 
 
 ---
 
-## v0.3.0-rc.1 Architecture Decisions (`ADR-045` / `ADR-NW-001`)
+## v0.3.0 Architecture Decisions (`ADR-045` / `ADR-NW-001`)
 
-## ADR-045 (`ADR-NW-001`) — Optional Concentric (Nested Rings) Wheel Layout & Non-Actionable Safety Envelope (`v0.3.0-rc.1`)
-**Status:** Proposed (Pending Final Owner Desktop Acceptance — Published in `v0.3.0-rc.1` Public Pre-release; `ADR-010` historical default preserved)
+## ADR-045 (`ADR-NW-001`) — Optional Concentric (Nested Rings) Wheel Layout & Non-Actionable Safety Envelope (`v0.3.0`)
+**Status:** Accepted (2026-10-26 — Approved after RC1 Live Testing on Linux Mint 22.3 Cinnamon & Published in `v0.3.0` Stable; `ADR-010` historical default preserved)
 **Context:** `ADR-010` selected Branching / Vine offset child wheels for `v0.1.0`–`v0.2.0` and recorded Concentric radial menus for future evaluation. Users with deeper submenus (`File Preview`, `Convert ▸ Image`, `Custom Actions`) requested an optional single-center concentric rings layout (`wheel.layout = "concentric"`) that eliminates multi-wheel screen travel while preserving 100% of `Branching` behavior as the default (`wheel.layout = "branching"`).
 **Decision:**
 1. **Default Preserved (`wheel.layout = "branching"`):** Missing or invalid `wheel.layout` defaults to `Branching` with byte-identical rendering and historical trace parity (`T-REN5`, `T-PERF1`).

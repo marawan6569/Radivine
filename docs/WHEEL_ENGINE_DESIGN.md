@@ -606,7 +606,7 @@ Icons: bundled **Lucide** subset — `eye`, `file-text`, `arrow-up-to-line`, `ar
 - A tiny script DSL in tests: `at(0).summon((500,400)).at(10).move_to((560,400)).at(200).expect_open([0])…` (see [TESTING_STRATEGY.md](TESTING_STRATEGY.md)).
 - `RADIVINE_DEBUG_OVERLAY=1` in the app draws zones, corridors, intent triangles and the input region.
 
-## 17. Selectable Wheel Layouts — Branching (Default) & Concentric Radial (`v0.3.0-rc.1`)
+## 17. Selectable Wheel Layouts — Branching (Default) & Concentric Radial (`v0.3.0`)
 
 - **Default Layout (`Branching / Vine`, `wheel.layout = "branching"`):** Spawns each child submenu as an offset adjacent wheel (`d = R_p + g + R_c`) connected by a curved vine stem, with all ancestor wheels remaining visible.
 - **Optional Layout (`Concentric / Nested Rings`, `wheel.layout = "concentric"`):** Selectable via `~/.config/radivine/config.toml` or **Control Center → Wheel → Wheel Layout**. Opening a submenu promotes its items onto an outer concentric annulus (`R_in(L) = 118 + 66·(L-1) lp`, `R_out(L) = R_in(L) + 60 lp`, inter-ring gap `6 lp`, central hub `R_hub = 50 lp`, root ring `50..118 lp`) centered on the single immobile root origin `C_0`.

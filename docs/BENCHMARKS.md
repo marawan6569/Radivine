@@ -246,9 +246,9 @@ RADIVINE_C5_SOAK_SECS=3605 RADIVINE_C5_SOAK_REPORT_JSON=/tmp/c5_soak_report.json
 
 ---
 
-## 11. Milestone N5/N6 (`v0.3.0-rc.1` Pre-release) — Concentric (Nested Rings) Engine, Renderer, Live `Xvfb` X11 & 1-Hour Mixed-Layout Endurance Suite
+## 11. Milestone N5/N6 (`v0.3.0`) — Concentric (Nested Rings) Engine, Renderer, Live `Xvfb` X11 & 1-Hour Mixed-Layout Endurance Suite
 
-Measured on 2026-10-25 on the reference Linux Mint 22.3 desktop (`11th Gen Intel® Core™ i5-11400F @ 2.60 GHz`, `46 GiB DDR4`, `Linux 6.8.0-147-generic x86_64`, `rustc 1.95.0`, `--release` profile). Full tables and traceability in [`docs/test-reports/N5.md`](test-reports/N5.md) and [`docs/test-reports/N6.md`](test-reports/N6.md).
+Measured on 2026-10-25 on the reference Linux Mint 22.3 desktop (`11th Gen Intel® Core™ i5-11400F @ 2.60 GHz`, `46 GiB DDR4`, `Linux 6.8.0-147-generic x86_64`, `rustc 1.95.0`, `--release` profile). Full tables and traceability in [`docs/test-reports/N5.md`](test-reports/N5.md), [`docs/test-reports/N6.md`](test-reports/N6.md), and [`docs/test-reports/RELEASE_v0.3.0.md`](test-reports/RELEASE_v0.3.0.md).
 
 ### 11.1 Engine, Renderer & Live `Xvfb` End-to-End Benchmarks (`T-PERF1`–`T-PERF5`)
 

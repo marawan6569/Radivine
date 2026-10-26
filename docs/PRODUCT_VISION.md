@@ -98,7 +98,7 @@ The wheel engine is validated with **logging dummy actions first** (M1–M3); re
 
 Measured dominant colours: **dark vine green ≈ `#044C3C`** (`#004C3C`–`#084838`), **leaf green ≈ `#00A87C`** (`#00A478`–`#04986C`).
 
-The symbol (central node with ring, radiating branches ending in hollow circle "nodes", and leaves) directly informs the wheel's visual language: hub = central node, submenu indicator = hollow node, parent→child connector = vine stem in the default **Branching** layout, or outward concentric rings with angular parent-sector alignment and path-continuity boundary markers in the optional **Concentric (Nested Rings)** layout (`wheel.layout = "concentric"`, introduced as a pre-release option in `v0.3.0-rc.1`).
+The symbol (central node with ring, radiating branches ending in hollow circle "nodes", and leaves) directly informs the wheel's visual language: hub = central node, submenu indicator = hollow node, parent→child connector = vine stem in the default **Branching** layout, or outward concentric rings with angular parent-sector alignment and path-continuity boundary markers in the optional **Concentric (Nested Rings)** layout (`wheel.layout = "concentric"`, introduced in `v0.3.0`).
 
 > [!NOTE]
 > Most branding PNGs have opaque white backgrounds and none are SVG. For dark-mode UI (wheel hub, viewer, notifications) transparent and/or vector variants will eventually be needed. **This plan does not create or modify branding**; producing such variants is a task for the project owner/designer (tracked in [RISKS_AND_MITIGATIONS.md](RISKS_AND_MITIGATIONS.md), R-24).
