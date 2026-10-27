@@ -1,6 +1,6 @@
 # Radivine official website — repository audit and implementation plan
 
-**Status:** Planning complete. W0 and W1 were subsequently authorized and implemented locally; see the [W0 contract](website/W0-contract.md) and [W0/W1 verification report](test-reports/W0-W1.md). W2–W5 and publication remain unauthorized. Planning-only scope statements below describe the original audit task.
+**Status:** Planning complete. W0 and W1 were subsequently authorized and implemented locally; see the [W0 contract](website/W0-contract.md) and [W0/W1 verification report](test-reports/W0-W1.md). W1.5 was subsequently authorized and implemented locally; see its [motion contract](website/W1.5-motion.md) and [visual review](test-reports/W1.5.md). W2–W5 and publication remain unauthorized. Planning-only scope statements below describe the original audit task.
 
 **Audit date:** 2026-10-27 UTC.
 

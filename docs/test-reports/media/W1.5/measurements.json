@@ -1,0 +1,75 @@
+{
+  "note": "Local Chromium, unthrottled production build with video capture; not field data or a Lighthouse score. Full-page PNGs use reduced motion; recordings use normal motion.",
+  "inlineJavaScript": {
+    "rawBytes": 3930,
+    "gzipBytes": 1456
+  },
+  "css": {
+    "rawBytes": 33118,
+    "gzipBytes": 7731
+  },
+  "runs": [
+    {
+      "device": "desktop",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "cls": 0,
+      "lcp": 176,
+      "longTasks": [
+        64
+      ],
+      "requests": 5,
+      "transferBytes": 120439,
+      "domNodes": 371,
+      "errors": []
+    },
+    {
+      "device": "desktop",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "cls": 0,
+      "lcp": 160,
+      "longTasks": [],
+      "requests": 5,
+      "transferBytes": 120439,
+      "domNodes": 371,
+      "errors": []
+    },
+    {
+      "device": "mobile",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "cls": 0,
+      "lcp": 124,
+      "longTasks": [],
+      "requests": 5,
+      "transferBytes": 120439,
+      "domNodes": 371,
+      "errors": []
+    },
+    {
+      "device": "mobile",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "cls": 0,
+      "lcp": 108,
+      "longTasks": [],
+      "requests": 5,
+      "transferBytes": 120439,
+      "domNodes": 371,
+      "errors": []
+    }
+  ]
+}
