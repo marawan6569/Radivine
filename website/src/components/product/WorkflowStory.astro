@@ -1,0 +1,382 @@
+---
+import RadialArt from "../motion/RadialArt.astro";
+import SectionHeading from "../ui/SectionHeading.astro";
+import { site } from "../../data/site";
+---
+
+<section
+  id="product"
+  class="container section workflow"
+  aria-labelledby="product-title"
+>
+  <div class="story-intro">
+    <SectionHeading
+      eyebrow="01 / Follow the flow"
+      title="One gesture. A new direction."
+      id="product-title"
+    >
+      <p class="muted">
+        From the files in front of you to the action you need. A wheel that
+        meets you where you are, then branches as you go.
+      </p>
+    </SectionHeading>
+    <p class="story-intro-note">
+      Less searching through menus.
+      <br />
+      More staying in the moment.
+    </p>
+  </div>
+  <div class="story-layout" data-story>
+    <figure class="story-stage" data-reveal>
+      <div class="story-stage-top">
+        <span>THE ANATOMY OF A GESTURE</span>
+        <span aria-hidden="true">↗</span>
+      </div>
+      <RadialArt variant="story" />
+      <div class="story-meter" aria-hidden="true">
+        <span></span>
+      </div>
+      <figcaption>
+        Workflow illustration · not application UI or an interactive demo
+      </figcaption>
+    </figure>
+    <ol class="story-steps">
+      <li data-story-step>
+        <span class="story-number">01</span>
+        <div>
+          <p class="step-kicker">THE STARTING POINT</p>
+          <h3>Begin with your files.</h3>
+          <p>
+            Select files in Nemo. Start a drag on the primary tested Cinnamon
+            X11 setup, or choose <strong>Open in Radivine</strong> from Nemo’s
+            actions.
+          </p>
+          <span class="step-detail">YOUR FILES → YOUR CONTEXT</span>
+        </div>
+      </li>
+      <li data-story-step>
+        <span class="story-number">02</span>
+        <div>
+          <p class="step-kicker">MEET AT THE CURSOR</p>
+          <h3>A little Shift in direction.</h3>
+          <p>
+            During a drag, tap <kbd>Shift</kbd> to summon the wheel. Actions
+            arrive around your cursor, close to the files you’re already working
+            with.
+          </p>
+          <span class="step-detail">DRAG + SHIFT → THE WHEEL</span>
+        </div>
+      </li>
+      <li data-story-step>
+        <span class="story-number">03</span>
+        <div>
+          <p class="step-kicker">ROOM TO BRANCH</p>
+          <h3>Follow the possibility.</h3>
+          <p>
+            Move into an action or a submenu. Branching is the default layout;
+            optional Concentric Rings offer another way to navigate the
+            hierarchy.
+          </p>
+          <span class="step-detail">A DIRECTION → A SUBMENU</span>
+        </div>
+      </li>
+      <li data-story-step>
+        <span class="story-number">04</span>
+        <div>
+          <p class="step-kicker">BACK TO YOUR FLOW</p>
+          <h3>Choose. Release. Continue.</h3>
+          <p>
+            In drag mode, release over an enabled action to select it. With
+            default settings, releasing outside the wheel cancels the session.
+          </p>
+          <span class="step-detail">AN ACTION → WHAT’S NEXT</span>
+        </div>
+      </li>
+    </ol>
+  </div>
+  <aside
+    class="story-footnote"
+    aria-label="Application guide and future practice area"
+  >
+    <p>
+      This is a visual introduction. A browser practice area is planned; current
+      desktop captures are being prepared.
+    </p>
+    <a class="text-link" href={site.guide}>
+      Explore the real application <span aria-hidden="true">↗</span>
+    </a>
+  </aside>
+</section>
+<style>
+  .story-intro {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 3rem;
+    margin-bottom: 2rem;
+  }
+  .story-intro :global(.section-heading) {
+    max-width: 43rem;
+    margin-bottom: 0;
+  }
+  .story-intro-note {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    border-left: 1px solid var(--border);
+    padding-left: 1.5rem;
+    flex-shrink: 0;
+  }
+  .story-layout {
+    display: grid;
+    grid-template-columns: 1.12fr 1fr;
+    gap: clamp(2rem, 7vw, 7rem);
+    align-items: start;
+  }
+  .story-stage {
+    margin: 0;
+    padding: 1.5rem;
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    position: sticky;
+    top: max(1rem, calc((100vh - 640px) / 2));
+    overflow: hidden;
+  }
+  .story-stage-top {
+    display: flex;
+    justify-content: space-between;
+    color: var(--text-muted);
+    font:
+      0.6rem ui-monospace,
+      monospace;
+    letter-spacing: 0.08em;
+  }
+  .story-stage :global(.art-labels) {
+    display: none;
+  }
+  .story-stage :global(.story-files) {
+    fill: var(--surface);
+    stroke: var(--accent);
+    stroke-width: 1.5;
+    transform: translate(-130px, 120px) scale(0.7);
+    transform-origin: 260px 340px;
+  }
+  .story-stage :global(.story-files text) {
+    fill: var(--accent);
+    stroke: none;
+    font:
+      12px ui-monospace,
+      monospace;
+  }
+  .story-stage :global(.story-files path) {
+    fill: none;
+  }
+  .story-stage :global(.story-done circle) {
+    fill: var(--action);
+  }
+  .story-stage :global(.story-done path) {
+    stroke: var(--on-action);
+    stroke-width: 2;
+  }
+  .story-stage :global(.root-wheel),
+  .story-stage :global(.child-wheel),
+  .story-stage :global(.story-files),
+  .story-stage :global(.story-done) {
+    transition:
+      transform var(--duration-travel) var(--ease-out),
+      opacity var(--duration-travel) var(--ease-out);
+  }
+  .story-stage :global(.branch-path) {
+    transition: opacity var(--duration-travel) var(--ease-out);
+  }
+  .story-stage :global(.root-wheel) {
+    transform-origin: 270px 340px;
+  }
+  .story-stage :global(.child-wheel) {
+    transform-origin: 455px 155px;
+  }
+  .story-stage :global(.story-done) {
+    transform-origin: 520px 78px;
+  }
+  .story-meter {
+    height: 2px;
+    background: var(--border);
+    margin-top: 0.5rem;
+    overflow: hidden;
+  }
+  .story-meter span {
+    display: block;
+    height: 100%;
+    background: var(--accent);
+    transform-origin: left;
+    transform: scaleX(var(--story-progress, 1));
+  }
+  figcaption {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    padding-top: 1rem;
+  }
+  .story-steps {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .story-steps li {
+    display: grid;
+    grid-template-columns: 2.5rem 1fr;
+    gap: 1.5rem;
+    padding-block: 5rem;
+    position: relative;
+    min-height: 24rem;
+    align-content: center;
+  }
+  .story-steps li::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 1.2rem;
+    border-left: 1px solid var(--border);
+    z-index: -1;
+  }
+  .story-number {
+    display: grid;
+    place-items: center;
+    height: 2.5rem;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    font:
+      0.7rem ui-monospace,
+      monospace;
+    color: var(--accent);
+    background: var(--canvas);
+    transition:
+      background-color var(--duration-fast),
+      color var(--duration-fast);
+  }
+  .is-current .story-number {
+    color: var(--on-action);
+    background: var(--action);
+    border-color: var(--action);
+  }
+  .step-kicker {
+    color: var(--accent);
+    font:
+      0.6rem ui-monospace,
+      monospace;
+    letter-spacing: 0.12em;
+    margin-block: 0.8rem 1rem;
+  }
+  h3 {
+    font-size: clamp(1.7rem, 2.6vw, 2.5rem);
+    font-weight: 540;
+    letter-spacing: -0.055em;
+    line-height: 1.1;
+    margin-bottom: 1rem;
+  }
+  .story-steps p:not(.step-kicker) {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+  }
+  strong {
+    color: var(--text);
+    font-weight: 550;
+  }
+  kbd {
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 0.1rem 0.35rem;
+    font: inherit;
+  }
+  .step-detail {
+    font:
+      0.58rem ui-monospace,
+      monospace;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+  }
+  .story-footnote {
+    border-block: 1px solid var(--border);
+    padding-block: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 2rem;
+    margin-top: 2rem;
+    font-size: 0.8rem;
+  }
+  .story-footnote p {
+    margin: 0;
+    color: var(--text-muted);
+    max-width: 65ch;
+  }
+  .story-footnote a {
+    flex-shrink: 0;
+  }
+  @media (prefers-reduced-motion: no-preference) and (min-width: 52rem) and (min-height: 38rem) {
+    [data-step="0"] :global(.root-wheel),
+    [data-step="0"] :global(.child-wheel),
+    [data-step="1"] :global(.child-wheel) {
+      opacity: 0;
+      transform: scale(0.72) rotate(-18deg);
+    }
+    [data-step="0"] :global(.story-files) {
+      transform: translate(0, 0) scale(1);
+    }
+    [data-step="0"] :global(.branch-path),
+    [data-step="1"] :global(.branch-path) {
+      opacity: 0;
+    }
+    [data-step="0"] :global(.story-done),
+    [data-step="1"] :global(.story-done),
+    [data-step="2"] :global(.story-done) {
+      opacity: 0;
+      transform: scale(0.7);
+    }
+    [data-step="3"] :global(.child-selected) {
+      fill: var(--action);
+      stroke: var(--action);
+    }
+  }
+  @media (max-width: 52rem), (max-height: 38rem) {
+    .story-intro {
+      display: block;
+    }
+    .story-intro-note {
+      display: none;
+    }
+    .story-layout {
+      grid-template-columns: 1fr;
+      gap: 1rem;
+    }
+    .story-stage {
+      position: relative;
+      top: auto;
+      max-width: 34rem;
+      width: 100%;
+      justify-self: center;
+    }
+    .story-steps li {
+      padding-block: 2rem;
+      min-height: 0;
+      gap: 1rem;
+    }
+    .story-footnote {
+      flex-direction: column;
+      align-items: start;
+      gap: 1rem;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .story-stage {
+      position: relative;
+      top: auto;
+    }
+    .story-steps li {
+      min-height: 0;
+      padding-block: 1.5rem;
+    }
+  }
+</style>

@@ -1,6 +1,8 @@
 ---
 import SiteLayout from "../layouts/SiteLayout.astro";
 import Hero from "../components/product/Hero.astro";
+import WorkflowStory from "../components/product/WorkflowStory.astro";
+import Features from "../components/product/Features.astro";
 import SectionHeading from "../components/ui/SectionHeading.astro";
 import Button from "../components/ui/Button.astro";
 import { site } from "../data/site";
@@ -8,70 +10,8 @@ import { site } from "../data/site";
 
 <SiteLayout>
   <Hero />
-  <section
-    id="product"
-    class="container section"
-    aria-labelledby="product-title"
-  >
-    <div class="intro-row">
-      <SectionHeading
-        eyebrow="Less distance. More flow."
-        title="Your files. A fresh direction."
-        id="product-title"
-      >
-        <p class="muted">
-          Keep the next action close. Radivine brings a context-aware wheel to
-          your file workflow, with Branching as the default and optional
-          Concentric Rings.
-        </p>
-      </SectionHeading>
-      <span class="section-number" aria-hidden="true">
-        01—03
-      </span>
-    </div>
-    <ol class="gesture-steps">
-      <li>
-        <span class="step-number">01</span>
-        <h3>Start with your files.</h3>
-        <p>
-          Drag a selection in Nemo on the primary tested Cinnamon X11 setup.
-        </p>
-      </li>
-      <li>
-        <span class="step-number">02</span>
-        <h3>A little Shift in direction.</h3>
-        <p>
-          Tap <kbd>Shift</kbd> during the drag to bring the wheel to your
-          cursor.
-        </p>
-      </li>
-      <li>
-        <span class="step-number">03</span>
-        <h3>Choose your next action.</h3>
-        <p>
-          Navigate to an enabled action and release. With default settings,
-          release outside the wheel to cancel.
-        </p>
-      </li>
-    </ol>
-    <p class="invoke-note muted">
-      Prefer a click or the keyboard? Use Nemo’s{" "}
-      <strong>Open in Radivine</strong> action.
-    </p>
-    <aside class="practice-placeholder" aria-labelledby="practice-title">
-      <div>
-        <p class="eyebrow">A space to explore</p>
-        <h3 id="practice-title">A closer look at the wheel, soon.</h3>
-        <p class="muted">
-          An interactive browser practice area is planned here. For now, explore
-          the real application and its usage guide.
-        </p>
-      </div>
-      <a class="text-link" href={site.guide}>
-        Read the application guide <span aria-hidden="true">↗</span>
-      </a>
-    </aside>
-  </section>
+  <WorkflowStory />
+  <Features />
   <section
     id="compatibility"
     class="compatibility-section"
@@ -128,33 +68,26 @@ import { site } from "../data/site";
       </dl>
     </div>
   </section>
-  <section class="container section next-section" aria-labelledby="next-title">
-    <SectionHeading
-      eyebrow="Small gestures. Useful tools."
-      title="A wheel is just the beginning."
-      id="next-title"
+  <section
+    class="container closing"
+    aria-labelledby="closing-title"
+    data-reveal
+  >
+    <svg
+      class="closing-branches"
+      viewBox="0 0 800 400"
+      fill="none"
+      aria-hidden="true"
     >
-      <p class="muted">
-        Read-only text preview, static PNG/JPEG/WebP conversion, and a native
-        Control Center are already part of Radivine.
-      </p>
-    </SectionHeading>
-    <div class="next-copy">
-      <p>
-        Product walkthroughs and fresh desktop captures are being prepared for
-        this site. The application guide covers the available tools today.
-      </p>
-      <p class="muted small-note">
-        Custom commands need configuration and installed programs. Default
-        terminal, checksum, and executable examples only log; they do not
-        perform those commands.
-      </p>
-      <a class="text-link" href={site.guide}>
-        Explore the available tools <span aria-hidden="true">↗</span>
-      </a>
-    </div>
-  </section>
-  <section class="container closing" aria-labelledby="closing-title">
+      <path
+        class="draw-path"
+        pathLength="1"
+        d="M400 450V260Q400 180 470 120L610 0 M400 330Q400 240 320 190L80 30 M400 260Q400 200 620 210L830 200"
+      />
+      <circle cx="470" cy="120" r="8" />
+      <circle cx="320" cy="190" r="8" />
+      <circle cx="620" cy="210" r="8" />
+    </svg>
     <div>
       <p class="eyebrow">Open source. Open possibilities.</p>
       <h2 id="closing-title">
@@ -175,85 +108,6 @@ import { site } from "../data/site";
   </section>
 </SiteLayout>
 <style>
-  .intro-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 2rem;
-  }
-  .section-number {
-    color: var(--text-muted);
-    font-family: ui-monospace, monospace;
-    font-size: 0.75rem;
-    white-space: nowrap;
-    padding-top: 0.25rem;
-  }
-  .gesture-steps {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 2.5rem;
-    list-style: none;
-    padding: 0;
-    margin: 0;
-  }
-  .gesture-steps li {
-    border-top: 1px solid var(--border);
-    padding-top: 1.25rem;
-  }
-  .step-number {
-    color: var(--accent);
-    font-family: ui-monospace, monospace;
-    font-size: 0.7rem;
-    display: inline-block;
-    margin-bottom: 1.75rem;
-  }
-  .gesture-steps p {
-    font-size: 0.88rem;
-    color: var(--text-muted);
-    margin-bottom: 0;
-  }
-  kbd {
-    border: 1px solid var(--border);
-    border-bottom-width: 2px;
-    border-radius: 0.25rem;
-    padding: 0.1rem 0.35rem;
-    font-family: inherit;
-    font-size: 0.8rem;
-    color: var(--text);
-  }
-  .invoke-note {
-    font-size: 0.8rem;
-    margin-top: 2rem;
-  }
-  .invoke-note strong {
-    color: var(--text);
-    font-weight: 500;
-  }
-  .practice-placeholder {
-    margin-top: 3.5rem;
-    display: flex;
-    align-items: center;
-    gap: 2rem;
-    justify-content: space-between;
-    border-left: 2px solid var(--accent);
-    background: var(--surface-muted);
-    padding: 1.75rem 2rem;
-  }
-  .practice-placeholder .eyebrow {
-    font-size: 0.6rem;
-    margin-bottom: 0.7rem;
-  }
-  .practice-placeholder h3 {
-    margin-bottom: 0.5rem;
-  }
-  .practice-placeholder p:last-child {
-    margin-bottom: 0;
-    max-width: 52ch;
-    font-size: 0.85rem;
-  }
-  .practice-placeholder a {
-    font-size: 0.8rem;
-    flex-shrink: 0;
-  }
   .compatibility-section {
     background: var(--surface);
     padding-block: var(--space-section);
@@ -295,35 +149,21 @@ import { site } from "../data/site";
     display: inline-block;
     width: 1.8rem;
   }
-  .next-section {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 5rem;
-  }
-  .next-section :global(.section-heading) {
-    margin-bottom: 0;
-  }
-  .next-copy {
-    align-self: center;
-    font-size: 0.95rem;
-  }
-  .small-note {
-    font-size: 0.8rem;
-    border-left: 1px solid var(--border);
-    padding-left: 1rem;
-    margin-block: 1.5rem;
-  }
   .closing {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: 2rem;
-    padding: 3rem;
+    padding: clamp(2rem, 5vw, 5rem);
     background: var(--surface-muted);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: 0;
     margin-bottom: var(--space-section);
+    margin-top: 2rem;
   }
   .closing h2 {
     font-size: clamp(2rem, 4vw, 3.5rem);
@@ -337,48 +177,34 @@ import { site } from "../data/site";
     align-items: stretch;
     flex-direction: column;
   }
+  .closing-branches {
+    position: absolute;
+    right: -7%;
+    bottom: -15%;
+    height: 130%;
+    width: 70%;
+    z-index: -1;
+    stroke: var(--border);
+    stroke-width: 1.5;
+  }
+  .closing-branches circle {
+    fill: var(--surface);
+  }
   @media (max-width: 52rem) {
-    .compatibility-grid,
-    .next-section {
+    .compatibility-grid {
       grid-template-columns: 1fr;
       gap: 2.5rem;
-    }
-    .practice-placeholder {
-      align-items: start;
-      flex-direction: column;
-    }
-    .gesture-steps {
-      gap: 1.5rem;
     }
     .closing {
       padding: 2rem;
     }
+    .closing-branches {
+      width: 100%;
+      right: -35%;
+      opacity: 0.6;
+    }
   }
   @media (max-width: 40rem) {
-    .gesture-steps {
-      grid-template-columns: 1fr;
-    }
-    .gesture-steps li {
-      display: grid;
-      grid-template-columns: 2rem 1fr;
-      gap: 0.35rem 1rem;
-    }
-    .gesture-steps h3 {
-      margin-bottom: 0.5rem;
-    }
-    .gesture-steps p {
-      grid-column: 2;
-    }
-    .step-number {
-      margin: 0;
-      padding-top: 0.2rem;
-    }
-    .section-number {
-      display: none;
-    }
-    .practice-placeholder {
-      padding: 1.5rem;
-    }
     .closing {
       padding: 1.5rem;
     }

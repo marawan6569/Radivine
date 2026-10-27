@@ -127,7 +127,7 @@ test("no-JavaScript mobile disclosure and system theme remain usable", async ({
   });
   const page = await context.newPage();
   await page.goto(home);
-  await page.getByText("Menu", { exact: false }).click();
+  await page.locator("summary").click();
   await expect(
     page
       .getByRole("navigation", { name: "Mobile navigation" })
@@ -158,7 +158,7 @@ test("keyboard skip, focus visibility, mobile Escape and 200% equivalent layout"
   ).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page.locator("#main")).toBeFocused();
-  await page.getByText("Menu", { exact: false }).click();
+  await page.locator("summary").click();
   const navigation = page.getByRole("navigation", {
     name: "Mobile navigation",
   });

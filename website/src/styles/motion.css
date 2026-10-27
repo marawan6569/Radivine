@@ -109,7 +109,8 @@
   stroke: var(--action);
 }
 .art-core {
-  fill: var(--surface);
+  /* A pale mount preserves the original green symbol in both themes. */
+  fill: #f4fbf8;
   stroke: var(--border);
 }
 .sector-marks {
