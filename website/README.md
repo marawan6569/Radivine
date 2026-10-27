@@ -49,3 +49,25 @@ Inputs outside website: `assets/branding/logo-icon.png`, `assets/fonts/Inter-Var
 Before changing copied/derived assets, verify provenance and license and update the hash registry. The capture checklist in W0 is the gate for replacing the media placeholder. Do not regenerate any protected logo/icon or invent application UI.
 
 Reference integration: [Astro styles](https://docs.astro.build/en/guides/styling/) and [Tailwind Astro](https://tailwindcss.com/docs/installation/framework-guides/astro). Node selected from the [official LTS release line](https://github.com/nodejs/Release).
+
+## Project map
+
+```text
+website/
+  astro.config.mjs, tsconfig.json, package.json, package-lock.json
+  public/notices/                project licenses and Inter OFL
+  src/assets/                    local Inter WOFF2 derivative
+  src/components/layout/         brand, header, footer, theme select
+  src/components/product/        hero and honest capture placeholder
+  src/components/ui/             buttons and section headings
+  src/data/                      source-asset hashes and site snapshot
+  src/layouts/SiteLayout.astro    HTML, SEO, early theme setup, shared shell
+  src/lib/urls.ts                base-aware internal paths
+  src/pages/                     homepage, 404, sitemap
+  src/scripts/theme.ts           preference, OS and cross-tab synchronization
+  src/styles/                    semantic tokens and shared styles
+  scripts/check-links.mjs         artifact URL/fragment/asset/provenance checks
+  tests/foundation.spec.ts        production-browser behavior and axe checks
+```
+
+Tests also run against root-hosted output with `SITE_BASE=/ npm test` after a root build. Keep build and tests sequential. Astro 7 can auto-background its server in agent environments; the Playwright command uses `--ignore-lock` so the runner owns and stops the foreground process. For an ordinary manually started background server, `npx astro preview stop` stops it.
