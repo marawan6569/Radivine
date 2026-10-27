@@ -78,10 +78,10 @@ for (const file of files.filter((path) =>
     }
     references++;
   }
-  if (file.endsWith("index.html")) {
+  if (file.endsWith(".html")) {
     assert(
-      content.includes(`rel="canonical" href="${origin}${base}"`),
-      "Home canonical differs from configured base",
+      content.includes(`rel="canonical" href="${pageUrl.href}"`),
+      `Canonical differs from configured route: ${file}`,
     );
   }
 }
@@ -96,7 +96,16 @@ for (const asset of JSON.parse(
   );
 }
 const sitemap = await readFile(join(output, "sitemap.xml"), "utf8");
-assert(sitemap.includes(`<loc>${origin}${base}</loc>`));
+for (const file of files.filter((p) => p.endsWith("index.html"))) {
+  const url = new URL(
+    base + file.slice(output.length + 1).replace(/index\.html$/, ""),
+    origin,
+  );
+  assert(
+    sitemap.includes(`<loc>${url.href}</loc>`),
+    `Missing sitemap route: ${url}`,
+  );
+}
 console.log(
   `PASS: ${references} internal references; ${files.length} artifact files; ${base} canonicals/sitemap; consumed original hashes; no symlinks or local paths.`,
 );

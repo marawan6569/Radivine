@@ -7,19 +7,14 @@ import ContentLayout from "../../layouts/ContentLayout.astro";
 import DocumentationNav from "../../components/data/DocumentationNav.astro";
 import EvidenceLinks from "../../components/data/EvidenceLinks.astro";
 import CommandBlock from "../../components/data/CommandBlock.astro";
-import { catalog, stable } from "../../data/catalog";
+import { catalog } from "../../data/catalog";
+import { validateGuide } from "../../lib/schemas.mjs";
 import { withBase } from "../../lib/urls";
 import configExample from "../../content/examples/config.toml?raw";
 import actionExample from "../../content/examples/actions.toml?raw";
 export async function getStaticPaths() {
   return (await getCollection("guides")).map((entry) => {
-    if (
-      entry.data.productVersion !== stable.version ||
-      entry.data.evidenceIds.some(
-        (id) => !catalog.evidence.some((e) => e.id === id),
-      )
-    )
-      throw new Error(`Invalid guide references: ${entry.id}`);
+    validateGuide(entry.data, catalog);
     return {
       params: {
         slug: entry.data.slug === "start" ? undefined : entry.data.slug,

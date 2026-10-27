@@ -1,6 +1,6 @@
 # Radivine website
 
-Local-only W1 foundation with the W1.5 motion homepage. No website deployment workflow or hosting registration is included. W0 decisions and capture requirements: [contract](../docs/website/W0-contract.md). W1.5 direction and motion contract: [radial motion](../docs/website/W1.5-motion.md). W2–W5 require separate authorization.
+Local-only W2 product content and installation site, preserving the W1 foundation and W1.5 motion homepage. No deployment workflow or hosting registration is included. W0 decisions: [contract](../docs/website/W0-contract.md). W1.5 direction: [radial motion](../docs/website/W1.5-motion.md). W2 validation: [report](../docs/test-reports/W2.md). W3–W5 require separate authorization.
 
 Use Node **24.22.1** (`nvm use` with `.nvmrc`), npm, and:
 
@@ -10,6 +10,7 @@ npm ci
 npm run dev
 # Open the printed URL with /Radivine/ (normally http://localhost:4321/Radivine/).
 npm run check
+npm run test:content
 npm run format:check
 npm run build
 npm run check:links
@@ -38,7 +39,13 @@ Playwright starts its own production preview server after a default-base build. 
 
 Astro static HTML, strict TypeScript, Tailwind 4 Vite integration; no framework, backend, visitor API calls, analytics or client router. `src/styles/tokens.css` owns semantic theme variables. `SiteLayout` owns metadata, no-flash theme initialization and the shell. Native disclosure navigation works without JavaScript. Theme preference is the only browser-local persisted state, under `radivine:theme`; blocked storage is tolerated. The website theme does not change application settings.
 
-W1.5 home sections provide a motion-driven, illustrated introduction to existing features. Dedicated product/download/guide/compatibility/roadmap pages, content schemas, full release manifest, real media gallery and installation instructions are W2. The interactive demo is W3. Validation workflows and publication remain W4/W5; no CI files are added here.
+W1.5 home sections provide the motion-driven introduction. W2 adds `/download/`, `/compatibility/`, `/guide/`, `/guide/configuration/`, `/guide/troubleshooting/`, `/roadmap/`, `/contribute/` and `/licenses/`. Every route produces static HTML; native disclosures, tables, commands and links remain useful without JavaScript. Copy buttons are optional enhancements. The interactive demo is W3. Validation workflows and publication remain W4/W5; no CI files are added here.
+
+`src/lib/schemas.mjs` provides strict Zod structures and semantic checks shared by Astro content collections and validation scripts. JSON catalogs in `src/data/` separate implementation, evidence, compatibility and roadmap status. Markdown guides in `src/content/guides/` have validated frontmatter and cross-references. Repository evidence is pinned to audited commits. New desktop verification needs a dated report and named environment; source inspection is not manual testing.
+
+`src/data/release.json` is the sole current-stable manifest. `src/lib/install.ts`, download assets and SoftwareApplication metadata derive versions, URLs and commands from it. `npm run check:release` performs read-only GitHub verification of the pinned tag, commit, release date, asset metadata, checksum file and freshly downloaded package bytes. It reports the latest observed tag but never edits the manifest. This network check is deliberately separate from offline builds. A future release update needs an explicit audit of metadata, checksum, package requirements, claims, guides and history; do not auto-promote GitHub's latest release.
+
+`npm run build` validates catalog cross-references and media source hashes before Astro rendering. `npm run test:content` exercises invalid support/release/evidence combinations. Guide examples are real TOML accepted by the repository parsers; rerun parser checks when changing them, without executing configured commands. The [W2 media handoff](../docs/website/W2-media.md) records historical media exclusions and required owner captures. Current public visuals remain honestly labeled illustrations.
 
 ## Assets
 
@@ -61,17 +68,22 @@ website/
   src/components/product/        hero, workflow story, illustrated features
   src/components/motion/          reusable radial SVG illustration
   src/components/ui/             buttons and section headings
-  src/data/                      source-asset hashes and site snapshot
+  src/components/data/           evidence, support matrix, roadmap, commands, docs nav
+  src/data/                      validated features, evidence, releases, roadmap, media
+  src/content/                   Markdown guides and parser-checked TOML examples
   src/layouts/SiteLayout.astro    HTML, SEO, early theme setup, shared shell
   src/lib/urls.ts                base-aware internal paths
-  src/pages/                     homepage, 404, sitemap
+  src/pages/                     homepage, eight content routes, 404, sitemap
   src/scripts/theme.ts           preference, OS and cross-tab synchronization
   src/scripts/motion.ts           event-driven visual enhancement and cleanup
   src/styles/                    semantic tokens and shared styles
   scripts/check-links.mjs         artifact URL/fragment/asset/provenance checks
   tests/foundation.spec.ts        production-browser behavior and axe checks
   tests/motion.spec.ts            workflow, reduced motion, stability, theme contrast
+  tests/content-pages.spec.ts     all new routes, axe, no-JS, clipboard, SEO, themes
+  tests/content.test.mjs          schema and cross-reference rejection cases
   scripts/capture-review.mjs      reproducible screenshots, videos, local metrics
+  scripts/capture-content-review.mjs  W2 full-page screenshots and layout metrics
 ```
 
 Tests also run against root-hosted output with `SITE_BASE=/ npm test` after a root build. Keep build and tests sequential. Astro 7 can auto-background its server in agent environments; the Playwright command uses `--ignore-lock` so the runner owns and stops the foreground process. For an ordinary manually started background server, `npx astro preview stop` stops it.
@@ -92,3 +104,5 @@ node scripts/capture-review.mjs
 `REVIEW_URL` overrides the URL (including the base path); `REVIEW_OUTPUT` overrides the output directory, which defaults to `docs/test-reports/media/W1.5`. The script deliberately replaces its named review files. Desktop screenshots use 1440×960; videos scale to 960×640 for repository size. Mobile uses 390×844. Metrics come from local unthrottled Chromium with video capture, not field data or a Lighthouse score. The recorder's interpolated scrolling is test machinery, not application behavior.
 
 Use `SITE_TEST_PORT=4331 npm test` to avoid an existing preview on the default port. Keep root/project builds and tests sequential. The original W1 shell tests remain in place; motion tests cover both scroll directions, live reduced-motion changes, touch/short viewport fallback, no JavaScript, settled animation state, CLS, and immediate theme contrast.
+
+For W2 screenshots, serve the default-base production build on 4332, then run `node scripts/capture-content-review.mjs` from `website/`. It captures home, download, compatibility, configuration and roadmap at both desktop/mobile sizes and both system color schemes. `REVIEW_URL` and `REVIEW_OUTPUT` override defaults; output defaults to `docs/test-reports/media/W2`. No native desktop application is exercised by this browser capture.

@@ -2,6 +2,7 @@ import { defineConfig } from "@playwright/test";
 const port = process.env.SITE_TEST_PORT || "4321";
 export default defineConfig({
   testDir: "./tests",
+  testMatch: "**/*.spec.ts",
   fullyParallel: true,
   use: { baseURL: `http://127.0.0.1:${port}`, browserName: "chromium" },
   webServer: {

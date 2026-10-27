@@ -7,6 +7,7 @@ import { stable } from "../data/catalog";
 import { installCommands as commands } from "../lib/install";
 import { withBase } from "../lib/urls";
 const asset = stable.assets[0];
+const downloadCanonical = new URL(withBase("download/"), Astro.site).href;
 ---
 
 <ContentLayout
@@ -14,6 +15,22 @@ const asset = stable.assets[0];
   eyebrow={`Download / Stable v${stable.version}`}
   description="Get the official Linux amd64 package. Check your environment, verify the download, then choose how Radivine starts."
 >
+  <script
+    type="application/ld+json"
+    set:html={JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      name: "Radivine",
+      applicationCategory: "UtilitiesApplication",
+      operatingSystem: "Linux (X11 wheel)",
+      softwareVersion: stable.version,
+      downloadUrl: asset.url,
+      datePublished: stable.publishedOn,
+      url: downloadCanonical,
+      description:
+        "Context-aware radial file-action wheel and native utility suite. MIT OR Apache-2.0.",
+    }).replaceAll("<", "\\u003c")}
+  />
   <div class="download-layout">
     <ReleaseDownload />
     <article class="prose">

@@ -10,10 +10,7 @@ const date = z
       new Date(s).toISOString().slice(0, 10) === s,
     "Invalid calendar date",
   );
-const url = z
-  .string()
-  .url()
-  .refine((s) => s.startsWith("https://"), "HTTPS required");
+const url = z.url().refine((s) => s.startsWith("https://"), "HTTPS required");
 const version = z.string().regex(/^\d+\.\d+\.\d+$/);
 const refs = z.array(text).min(1);
 export const verificationSchema = z
@@ -68,7 +65,11 @@ export const featureSchema = z
     verification: z.array(verificationSchema).min(1),
     group: z.enum(["wheel", "tools", "personalize"]),
   })
-  .strict();
+  .strict()
+  .refine(
+    (f) => (f.implementation === "absent" ? !f.since : !!f.since),
+    "Shipping features need a release; absent features cannot claim one",
+  );
 const capability = z
   .object({
     availability: z.enum([
@@ -113,6 +114,11 @@ export const compatibilitySchema = z
   })
   .strict()
   .superRefine((r, c) => {
+    if (r.session === "wayland-native" && r.status !== "unsupported")
+      c.addIssue({
+        code: "custom",
+        message: "Native Wayland wheel remains unsupported",
+      });
     if (
       r.session.startsWith("wayland") &&
       r.capabilities.drag.availability !== "unavailable"
@@ -244,6 +250,16 @@ export const guideSchema = z
   })
   .strict();
 
+export function validateGuide(input, catalog) {
+  const guide = guideSchema.parse(input);
+  if (
+    guide.productVersion !== catalog.release.version ||
+    guide.evidenceIds.some((id) => !catalog.evidence.some((e) => e.id === id))
+  )
+    throw new Error("Invalid guide references");
+  return guide;
+}
+
 /** Shared semantic checks run before builds and from every catalog consumer. */
 export function validateCatalog(input) {
   const c = {
@@ -304,6 +320,12 @@ export function validateCatalog(input) {
   for (const f of c.features)
     if (f.since && !c.history.some((h) => h.version === f.since))
       throw new Error(`Unknown feature release: ${f.id}`);
+  for (const m of c.media)
+    if (
+      m.productVersion &&
+      !c.history.some((h) => h.version === m.productVersion)
+    )
+      throw new Error(`Unknown media release: ${m.id}`);
   if (
     !c.history.some(
       (h) =>

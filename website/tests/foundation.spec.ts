@@ -143,7 +143,7 @@ test("no-JavaScript mobile disclosure and system theme remain usable", async ({
     .getByRole("navigation", { name: "Mobile navigation" })
     .getByText("Compatibility")
     .click();
-  await expect(page).toHaveURL(/#compatibility$/);
+  await expect(page).toHaveURL(new RegExp(`${home}compatibility/$`));
   await context.close();
 });
 

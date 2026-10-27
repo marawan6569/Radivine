@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { loadCatalog } from "../scripts/check-content.mjs";
-import { validateCatalog } from "../src/lib/schemas.mjs";
+import { validateCatalog, validateGuide } from "../src/lib/schemas.mjs";
 const valid = await loadCatalog();
 test("audited catalog accepts valid records", () =>
   assert.doesNotThrow(() => validateCatalog(valid)));
@@ -11,6 +11,10 @@ for (const [name, mutate] of [
     (c) => c.features[0].verification[0].evidenceIds.push("missing"),
   ],
   ["duplicate IDs", (c) => c.features.push(c.features[0])],
+  ["absent feature release", (c) => (c.features[0].implementation = "absent")],
+  ["missing feature release", (c) => delete c.features[0].since],
+  ["unpublished media version", (c) => (c.media[0].productVersion = "9.0.0")],
+  ["native Wayland status", (c) => (c.compatibility[6].status = "conditional")],
   ["invalid calendar date", (c) => (c.release.publishedOn = "2026-02-30")],
   ["bad checksum", (c) => (c.release.assets[0].sha256 = "123")],
   [
@@ -62,3 +66,24 @@ for (const [name, mutate] of [
     mutate(c);
     assert.throws(() => validateCatalog(c));
   });
+
+const guide = {
+  title: "Guide",
+  description: "Usage",
+  slug: "start",
+  lang: "en",
+  updatedOn: "2026-10-27",
+  productVersion: valid.release.version,
+  evidenceIds: ["cli"],
+  draft: false,
+};
+test("guide references agree with the audited catalog", () =>
+  assert.doesNotThrow(() => validateGuide(guide, valid)));
+test("guide rejects unknown evidence", () =>
+  assert.throws(() =>
+    validateGuide({ ...guide, evidenceIds: ["unknown"] }, valid),
+  ));
+test("guide rejects stale product version", () =>
+  assert.throws(() =>
+    validateGuide({ ...guide, productVersion: "0.1.0" }, valid),
+  ));

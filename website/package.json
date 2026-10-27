@@ -16,7 +16,8 @@
     "test": "playwright test",
     "check:links": "node scripts/check-links.mjs",
     "check:content": "node scripts/check-content.mjs",
-    "test:content": "node --test tests/content.test.mjs"
+    "test:content": "node --test tests/content.test.mjs",
+    "check:release": "node scripts/check-release.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "4.3.3",
