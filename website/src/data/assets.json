@@ -1,0 +1,14 @@
+[
+  {
+    "source": "assets/branding/logo-icon.png",
+    "sha256": "dae9685f8bad7f9c98b1d43510e46e3ac1810793f88a352e517a9ff27ddb64c0",
+    "license": "MIT OR Apache-2.0",
+    "use": "Website derivative only; original immutable"
+  },
+  {
+    "source": "assets/fonts/Inter-Variable.ttf",
+    "sha256": "29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031",
+    "license": "OFL-1.1",
+    "use": "Website derivative only; original immutable"
+  }
+]
