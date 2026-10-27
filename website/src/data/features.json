@@ -1,0 +1,218 @@
+[
+  {
+    "id": "branching",
+    "title": "Branching wheels",
+    "summary": "Adjacent child wheels keep each submenu connected to its parent. The default layout on new installations and upgrades.",
+    "implementation": "implemented",
+    "since": "0.1.0",
+    "constraints": [
+      "Geometry adapts to the screen; foreign drag keyboard grabs remain best effort."
+    ],
+    "verification": [
+      {
+        "method": "source-inspection",
+        "evidenceIds": ["wheel", "config"],
+        "date": "2026-10-27"
+      }
+    ],
+    "group": "wheel"
+  },
+  {
+    "id": "concentric",
+    "title": "Optional Concentric Rings",
+    "summary": "Explore submenus as outward rings around a fixed session center. Choose the layout in Control Center → Wheel.",
+    "implementation": "implemented",
+    "since": "0.3.0",
+    "constraints": [
+      "Requires compositing and sufficient space. The application defaults reserve 668 × 742 logical pixels; custom geometry changes the requirement. A session can fall back to Branching without rewriting settings."
+    ],
+    "verification": [
+      {
+        "method": "source-inspection",
+        "evidenceIds": ["config", "wheel", "n5"],
+        "date": "2026-10-27"
+      }
+    ],
+    "group": "wheel"
+  },
+  {
+    "id": "drag",
+    "title": "Drag + Shift",
+    "summary": "Start dragging files in Nemo, then press Shift to bring actions to the cursor. A second press hides the wheel and resumes native dragging.",
+    "implementation": "implemented",
+    "since": "0.1.0",
+    "constraints": [
+      "X11 only. With input.passthrough=false, release outside the active wheel to cancel. The modifier is configurable."
+    ],
+    "verification": [
+      {
+        "method": "source-inspection",
+        "evidenceIds": ["cli", "doctor", "n5"],
+        "date": "2026-10-27"
+      }
+    ],
+    "group": "wheel"
+  },
+  {
+    "id": "invoke",
+    "title": "Invoke mode",
+    "summary": "Use Nemo’s Open in Radivine action or radivine invoke with file paths. Navigate by pointer or keyboard.",
+    "implementation": "implemented",
+    "since": "0.1.0",
+    "constraints": [
+      "The wheel requires an X11 connection. Desktop shortcuts are configured manually. XWayland Invoke is experimental, not native Wayland support."
+    ],
+    "verification": [
+      {
+        "method": "source-inspection",
+        "evidenceIds": ["cli", "platform", "wheel"],
+        "date": "2026-10-27"
+      }
+    ],
+    "group": "wheel"
+  },
+  {
+    "id": "context",
+    "title": "Context-aware actions",
+    "summary": "Menus reflect the selection. Inspection can show Checking… or a disabled action with a reason.",
+    "implementation": "implemented",
+    "since": "0.1.0",
+    "constraints": [
+      "Inspection is bounded; multiple selections do not imply every file has been examined before display. Properties needs a compatible file-manager D-Bus service. Copy places file URIs on the X11 clipboard, not bytes in a destination folder."
+    ],
+    "verification": [
+      {
+        "method": "source-inspection",
+        "evidenceIds": ["actions", "action-tests"],
+        "date": "2026-10-27"
+      }
+    ],
+    "group": "wheel"
+  },
+  {
+    "id": "preview",
+    "title": "Read-only text preview",
+    "summary": "Full, Head and Tail open a separate viewer with virtualized reads and search.",
+    "implementation": "implemented",
+    "since": "0.1.0",
+    "constraints": [
+      "One eligible local text file at a time. No editing, graphical image preview or live-follow tail -f."
+    ],
+    "verification": [
+      {
+        "method": "source-inspection",
+        "evidenceIds": ["preview", "actions"],
+        "date": "2026-10-27"
+      }
+    ],
+    "group": "tools"
+  },
+  {
+    "id": "quick-convert",
+    "title": "Quick image conversion",
+    "summary": "Choose Convert → Image → PNG, JPEG or WebP to queue a conversion, including supported batch selections.",
+    "implementation": "implemented",
+    "since": "0.2.0",
+    "constraints": [
+      "Static raster images only. Mixed batches report skipped inputs; same-target Quick Convert may be disabled or skipped. No animated GIF/APNG/WebP, AVIF, HEIC, SVG, PDF or audio/video conversion."
+    ],
+    "verification": [
+      {
+        "method": "source-inspection",
+        "evidenceIds": ["convert", "action-tests"],
+        "date": "2026-10-27"
+      }
+    ],
+    "group": "tools"
+  },
+  {
+    "id": "advanced-convert",
+    "title": "Advanced Convert",
+    "summary": "Use a native dialog for presets, quality, resize, orientation, metadata and output-location choices. Same-format re-encoding is available.",
+    "implementation": "implemented",
+    "since": "0.2.0",
+    "constraints": [
+      "Defaults limit source size to 512 MiB, allocation to 256 MiB, each dimension to 16,384 px and total pixels to 100 MP; effective settings may differ. EXIF is stripped by default; metadata behavior depends on target format."
+    ],
+    "verification": [
+      {
+        "method": "source-inspection",
+        "evidenceIds": ["convert", "control"],
+        "date": "2026-10-27"
+      }
+    ],
+    "group": "tools"
+  },
+  {
+    "id": "jobs",
+    "title": "Background jobs",
+    "summary": "A separate on-demand worker keeps durable job history. Follow progress, cancel, or create linked retries in Control Center → Jobs.",
+    "implementation": "implemented",
+    "since": "0.2.0",
+    "constraints": [
+      "Crash recovery reconciles jobs; it does not promise automatic continuation of unfinished work. Output uses separate, no-overwrite commits. Filesystem and custom-command effects still need care."
+    ],
+    "verification": [
+      {
+        "method": "source-inspection",
+        "evidenceIds": ["worker", "control"],
+        "date": "2026-10-27"
+      }
+    ],
+    "group": "tools"
+  },
+  {
+    "id": "custom-actions",
+    "title": "Custom executable actions",
+    "summary": "Connect installed programs using validated TOML argv templates, selection filters, timeouts and notification policies.",
+    "implementation": "implemented",
+    "since": "0.1.0",
+    "constraints": [
+      "Programs must exist at absolute paths. No shell expansion or partial placeholders. Default terminal, checksum and executable menu examples only log; they do not run those commands."
+    ],
+    "verification": [
+      {
+        "method": "source-inspection",
+        "evidenceIds": ["custom", "action-tests", "actions"],
+        "date": "2026-10-27"
+      }
+    ],
+    "group": "personalize"
+  },
+  {
+    "id": "control-center",
+    "title": "Native Control Center",
+    "summary": "Manage the daemon, wheel, custom actions, conversion settings, Jobs, Diagnostics and About from a separate native window.",
+    "implementation": "implemented",
+    "since": "0.1.1",
+    "constraints": [
+      "Login startup is opt-in. Closing Control Center leaves the daemon running. System tray integration is deferred."
+    ],
+    "verification": [
+      {
+        "method": "source-inspection",
+        "evidenceIds": ["control", "decisions"],
+        "date": "2026-10-27"
+      }
+    ],
+    "group": "personalize"
+  },
+  {
+    "id": "appearance",
+    "title": "Themes and configuration",
+    "summary": "Choose Dark, Light or Auto for the application, adjust scaling and reduced motion, and keep settings in TOML or use Control Center.",
+    "implementation": "implemented",
+    "since": "0.1.1",
+    "constraints": [
+      "The website’s Light/Dark/System preference is independent of the application. Auto detection follows desktop settings; system fonts affect non-Latin text and widget containers remain LTR."
+    ],
+    "verification": [
+      {
+        "method": "source-inspection",
+        "evidenceIds": ["config", "control"],
+        "date": "2026-10-27"
+      }
+    ],
+    "group": "personalize"
+  }
+]

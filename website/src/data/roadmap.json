@@ -1,0 +1,78 @@
+[
+  {
+    "id": "release-0-1-0",
+    "title": "The first branch",
+    "summary": "Branching wheel, drag/Invoke workflows, custom actions and read-only text preview.",
+    "status": "shipped",
+    "evidenceIds": ["release-live", "release-report"],
+    "lastReviewed": "2026-10-27",
+    "shippedVersion": "0.1.0",
+    "releasedOn": "2026-10-23",
+    "releaseUrl": "https://github.com/marawan6569/Radivine/releases/tag/v0.1.0"
+  },
+  {
+    "id": "release-0-1-1",
+    "title": "A home for your settings",
+    "summary": "Native Control Center, daemon lifecycle and persistent settings.",
+    "status": "shipped",
+    "evidenceIds": ["release-live", "release-report"],
+    "lastReviewed": "2026-10-27",
+    "shippedVersion": "0.1.1",
+    "releasedOn": "2026-10-23",
+    "releaseUrl": "https://github.com/marawan6569/Radivine/releases/tag/v0.1.1"
+  },
+  {
+    "id": "release-0-2-0",
+    "title": "Images, converted",
+    "summary": "PNG/JPEG/WebP conversion, Advanced Convert and durable background Jobs.",
+    "status": "shipped",
+    "evidenceIds": ["release-live", "release-report"],
+    "lastReviewed": "2026-10-27",
+    "shippedVersion": "0.2.0",
+    "releasedOn": "2026-10-25",
+    "releaseUrl": "https://github.com/marawan6569/Radivine/releases/tag/v0.2.0"
+  },
+  {
+    "id": "release-0-3-0",
+    "title": "Another way to branch",
+    "summary": "Optional Concentric Rings, layout fallback and hardened non-actionable drop handling. Branching remains the default.",
+    "status": "shipped",
+    "evidenceIds": ["release-live", "release-report"],
+    "lastReviewed": "2026-10-27",
+    "shippedVersion": "0.3.0",
+    "releasedOn": "2026-10-26",
+    "releaseUrl": "https://github.com/marawan6569/Radivine/releases/tag/v0.3.0"
+  },
+  {
+    "id": "wayland",
+    "title": "Native Wayland research",
+    "summary": "Portal, layer-shell and desktop-specific integration ideas need investigation. There is no shipping native wheel backend.",
+    "status": "exploring",
+    "evidenceIds": ["decisions", "platform"],
+    "lastReviewed": "2026-10-27"
+  },
+  {
+    "id": "contexts",
+    "title": "More contexts and Open With",
+    "summary": "Text, URLs, clipboard contexts and dynamic application providers appear in design notes. They are not current product capabilities.",
+    "status": "exploring",
+    "evidenceIds": ["vision"],
+    "lastReviewed": "2026-10-27"
+  },
+  {
+    "id": "tray",
+    "title": "System tray integration",
+    "summary": "Deferred while lifecycle remains available in Control Center and the user service.",
+    "status": "deferred",
+    "evidenceIds": ["decisions"],
+    "lastReviewed": "2026-10-27"
+  },
+  {
+    "id": "vips",
+    "title": "Additional conversion backends",
+    "summary": "The discovery/routing framework exists, but the external vips adapter is deferred. Historical version suggestions are not current commitments.",
+    "status": "deferred",
+    "evidenceIds": ["decisions"],
+    "lastReviewed": "2026-10-27"
+  }
+]

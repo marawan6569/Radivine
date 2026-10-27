@@ -1,0 +1,240 @@
+[
+  {
+    "id": "platform",
+    "kind": "source",
+    "path": "crates/radivine-platform/src/lib.rs",
+    "revision": "35a5e5fff816ed968d833e8922e10b03e500cdc1",
+    "url": "https://github.com/marawan6569/Radivine/blob/35a5e5fff816ed968d833e8922e10b03e500cdc1/crates/radivine-platform/src/lib.rs",
+    "observedOn": "2026-10-27",
+    "productVersion": "0.3.0",
+    "scope": "connect_with_config: shipping wheel uses X11"
+  },
+  {
+    "id": "doctor",
+    "kind": "source",
+    "path": "crates/radivine-platform/src/x11/doctor.rs",
+    "revision": "35a5e5fff816ed968d833e8922e10b03e500cdc1",
+    "url": "https://github.com/marawan6569/Radivine/blob/35a5e5fff816ed968d833e8922e10b03e500cdc1/crates/radivine-platform/src/x11/doctor.rs",
+    "observedOn": "2026-10-27",
+    "productVersion": "0.3.0",
+    "scope": "X11 capability probing and Wayland degradation"
+  },
+  {
+    "id": "config",
+    "kind": "source",
+    "path": "apps/radivine/src/config.rs",
+    "revision": "35a5e5fff816ed968d833e8922e10b03e500cdc1",
+    "url": "https://github.com/marawan6569/Radivine/blob/35a5e5fff816ed968d833e8922e10b03e500cdc1/apps/radivine/src/config.rs",
+    "observedOn": "2026-10-27",
+    "productVersion": "0.3.0",
+    "scope": "Application defaults, strict validation and layout mapping"
+  },
+  {
+    "id": "wheel",
+    "kind": "source",
+    "path": "crates/radivine-wheel/src/session.rs",
+    "revision": "35a5e5fff816ed968d833e8922e10b03e500cdc1",
+    "url": "https://github.com/marawan6569/Radivine/blob/35a5e5fff816ed968d833e8922e10b03e500cdc1/crates/radivine-wheel/src/session.rs",
+    "observedOn": "2026-10-27",
+    "productVersion": "0.3.0",
+    "scope": "Pointer and keyboard wheel state machine"
+  },
+  {
+    "id": "actions",
+    "kind": "source",
+    "path": "crates/radivine-actions/src/lib.rs",
+    "revision": "35a5e5fff816ed968d833e8922e10b03e500cdc1",
+    "url": "https://github.com/marawan6569/Radivine/blob/35a5e5fff816ed968d833e8922e10b03e500cdc1/crates/radivine-actions/src/lib.rs",
+    "observedOn": "2026-10-27",
+    "productVersion": "0.3.0",
+    "scope": "Built-ins, context menus and logging-only defaults"
+  },
+  {
+    "id": "custom",
+    "kind": "source",
+    "path": "crates/radivine-actions/src/custom.rs",
+    "revision": "35a5e5fff816ed968d833e8922e10b03e500cdc1",
+    "url": "https://github.com/marawan6569/Radivine/blob/35a5e5fff816ed968d833e8922e10b03e500cdc1/crates/radivine-actions/src/custom.rs",
+    "observedOn": "2026-10-27",
+    "productVersion": "0.3.0",
+    "scope": "Shell-free argv parsing and whole-token placeholders"
+  },
+  {
+    "id": "convert",
+    "kind": "source",
+    "path": "crates/radivine-convert/src/settings.rs",
+    "revision": "35a5e5fff816ed968d833e8922e10b03e500cdc1",
+    "url": "https://github.com/marawan6569/Radivine/blob/35a5e5fff816ed968d833e8922e10b03e500cdc1/crates/radivine-convert/src/settings.rs",
+    "observedOn": "2026-10-27",
+    "productVersion": "0.3.0",
+    "scope": "Conversion settings and resource limits"
+  },
+  {
+    "id": "worker",
+    "kind": "test",
+    "path": "apps/radivine-worker/tests/c2_acceptance.rs",
+    "revision": "35a5e5fff816ed968d833e8922e10b03e500cdc1",
+    "url": "https://github.com/marawan6569/Radivine/blob/35a5e5fff816ed968d833e8922e10b03e500cdc1/apps/radivine-worker/tests/c2_acceptance.rs",
+    "observedOn": "2026-10-27",
+    "productVersion": "0.3.0",
+    "scope": "Durable jobs, cancellation, retries and recovery"
+  },
+  {
+    "id": "control",
+    "kind": "test",
+    "path": "apps/radivine-control/tests/c4_acceptance.rs",
+    "revision": "35a5e5fff816ed968d833e8922e10b03e500cdc1",
+    "url": "https://github.com/marawan6569/Radivine/blob/35a5e5fff816ed968d833e8922e10b03e500cdc1/apps/radivine-control/tests/c4_acceptance.rs",
+    "observedOn": "2026-10-27",
+    "productVersion": "0.3.0",
+    "scope": "Control Center and Advanced Convert acceptance"
+  },
+  {
+    "id": "preview",
+    "kind": "test",
+    "path": "apps/radivine/tests/m5_preview_acceptance.rs",
+    "revision": "35a5e5fff816ed968d833e8922e10b03e500cdc1",
+    "url": "https://github.com/marawan6569/Radivine/blob/35a5e5fff816ed968d833e8922e10b03e500cdc1/apps/radivine/tests/m5_preview_acceptance.rs",
+    "observedOn": "2026-10-27",
+    "productVersion": "0.3.0",
+    "scope": "Read-only Full, Head, Tail and search"
+  },
+  {
+    "id": "action-tests",
+    "kind": "test",
+    "path": "crates/radivine-actions/tests/actions_tests.rs",
+    "revision": "35a5e5fff816ed968d833e8922e10b03e500cdc1",
+    "url": "https://github.com/marawan6569/Radivine/blob/35a5e5fff816ed968d833e8922e10b03e500cdc1/crates/radivine-actions/tests/actions_tests.rs",
+    "observedOn": "2026-10-27",
+    "productVersion": "0.3.0",
+    "scope": "Action enablement and custom argv validation"
+  },
+  {
+    "id": "x11-tests",
+    "kind": "test",
+    "path": "crates/radivine-platform/tests/x11_tests.rs",
+    "revision": "35a5e5fff816ed968d833e8922e10b03e500cdc1",
+    "url": "https://github.com/marawan6569/Radivine/blob/35a5e5fff816ed968d833e8922e10b03e500cdc1/crates/radivine-platform/tests/x11_tests.rs",
+    "observedOn": "2026-10-27",
+    "productVersion": "0.3.0",
+    "scope": "Guarded isolated X11 protocol checks"
+  },
+  {
+    "id": "n5",
+    "kind": "manual-report",
+    "path": "docs/test-reports/N5.md",
+    "revision": "35a5e5fff816ed968d833e8922e10b03e500cdc1",
+    "url": "https://github.com/marawan6569/Radivine/blob/35a5e5fff816ed968d833e8922e10b03e500cdc1/docs/test-reports/N5.md",
+    "observedOn": "2026-10-27",
+    "productVersion": "0.3.0",
+    "scope": "Owner sign-off and explicitly outstanding manual subcases"
+  },
+  {
+    "id": "release-report",
+    "kind": "manual-report",
+    "path": "docs/test-reports/RELEASE_v0.3.0.md",
+    "revision": "35a5e5fff816ed968d833e8922e10b03e500cdc1",
+    "url": "https://github.com/marawan6569/Radivine/blob/35a5e5fff816ed968d833e8922e10b03e500cdc1/docs/test-reports/RELEASE_v0.3.0.md",
+    "observedOn": "2026-10-27",
+    "productVersion": "0.3.0",
+    "scope": "RC owner sign-off; stable Ubuntu container install, upgrade and removal"
+  },
+  {
+    "id": "packaging",
+    "kind": "source",
+    "path": "packaging/debian/control",
+    "revision": "35a5e5fff816ed968d833e8922e10b03e500cdc1",
+    "url": "https://github.com/marawan6569/Radivine/blob/35a5e5fff816ed968d833e8922e10b03e500cdc1/packaging/debian/control",
+    "observedOn": "2026-10-27",
+    "productVersion": "0.3.0",
+    "scope": "Published package architecture and declared dependencies"
+  },
+  {
+    "id": "cli",
+    "kind": "source",
+    "path": "apps/radivine/src/main.rs",
+    "revision": "35a5e5fff816ed968d833e8922e10b03e500cdc1",
+    "url": "https://github.com/marawan6569/Radivine/blob/35a5e5fff816ed968d833e8922e10b03e500cdc1/apps/radivine/src/main.rs",
+    "observedOn": "2026-10-27",
+    "productVersion": "0.3.0",
+    "scope": "Daemon, invoke, status, reload, quit and doctor commands"
+  },
+  {
+    "id": "decisions",
+    "kind": "documentation",
+    "path": "docs/DECISIONS.md",
+    "revision": "35a5e5fff816ed968d833e8922e10b03e500cdc1",
+    "url": "https://github.com/marawan6569/Radivine/blob/35a5e5fff816ed968d833e8922e10b03e500cdc1/docs/DECISIONS.md",
+    "observedOn": "2026-10-27",
+    "productVersion": "0.3.0",
+    "scope": "ADR-015 Wayland research, ADR-025 tray deferral, ADR-042 vips deferral"
+  },
+  {
+    "id": "vision",
+    "kind": "documentation",
+    "path": "docs/PRODUCT_VISION.md",
+    "revision": "35a5e5fff816ed968d833e8922e10b03e500cdc1",
+    "url": "https://github.com/marawan6569/Radivine/blob/35a5e5fff816ed968d833e8922e10b03e500cdc1/docs/PRODUCT_VISION.md",
+    "observedOn": "2026-10-27",
+    "productVersion": "0.3.0",
+    "scope": "Exploratory contexts and menu providers; historical shipped-feature statements superseded"
+  },
+  {
+    "id": "readme",
+    "kind": "documentation",
+    "path": "README.md",
+    "revision": "35a5e5fff816ed968d833e8922e10b03e500cdc1",
+    "url": "https://github.com/marawan6569/Radivine/blob/35a5e5fff816ed968d833e8922e10b03e500cdc1/README.md",
+    "observedOn": "2026-10-27",
+    "productVersion": "0.3.0",
+    "scope": "Usage and source build guidance; toolchain minimum claim unverified"
+  },
+  {
+    "id": "contributing",
+    "kind": "documentation",
+    "path": "CONTRIBUTING.md",
+    "revision": "35a5e5fff816ed968d833e8922e10b03e500cdc1",
+    "url": "https://github.com/marawan6569/Radivine/blob/35a5e5fff816ed968d833e8922e10b03e500cdc1/CONTRIBUTING.md",
+    "observedOn": "2026-10-27",
+    "productVersion": "0.3.0",
+    "scope": "Contributions, isolated X11 testing and licensing"
+  },
+  {
+    "id": "security",
+    "kind": "documentation",
+    "path": "SECURITY.md",
+    "revision": "35a5e5fff816ed968d833e8922e10b03e500cdc1",
+    "url": "https://github.com/marawan6569/Radivine/blob/35a5e5fff816ed968d833e8922e10b03e500cdc1/SECURITY.md",
+    "observedOn": "2026-10-27",
+    "productVersion": "0.3.0",
+    "scope": "Private vulnerability reporting; version support table is historical"
+  },
+  {
+    "id": "notices",
+    "kind": "documentation",
+    "path": "THIRD_PARTY_NOTICES.md",
+    "revision": "35a5e5fff816ed968d833e8922e10b03e500cdc1",
+    "url": "https://github.com/marawan6569/Radivine/blob/35a5e5fff816ed968d833e8922e10b03e500cdc1/THIRD_PARTY_NOTICES.md",
+    "observedOn": "2026-10-27",
+    "productVersion": "0.3.0",
+    "scope": "Project asset and third-party attribution"
+  },
+  {
+    "id": "examples",
+    "kind": "source",
+    "path": "packaging/config.example.toml",
+    "revision": "35a5e5fff816ed968d833e8922e10b03e500cdc1",
+    "url": "https://github.com/marawan6569/Radivine/blob/35a5e5fff816ed968d833e8922e10b03e500cdc1/packaging/config.example.toml",
+    "observedOn": "2026-10-27",
+    "productVersion": "0.3.0",
+    "scope": "Configuration fields and safe input default"
+  },
+  {
+    "id": "release-live",
+    "kind": "release",
+    "url": "https://github.com/marawan6569/Radivine/releases/tag/v0.3.0",
+    "observedOn": "2026-10-27",
+    "productVersion": "0.3.0",
+    "scope": "Public stable metadata, SHA256SUMS and downloaded package bytes verified; no desktop install performed"
+  }
+]

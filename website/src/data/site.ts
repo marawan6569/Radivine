@@ -1,10 +1,11 @@
+import { stable } from "./catalog";
 export const site = {
   name: "Radivine",
-  version: "0.3.0",
+  version: stable.version,
   description:
     "A context-aware radial action wheel for Linux files. Preview text, convert images, and run your own configured commands. Built for X11.",
   github: "https://github.com/marawan6569/Radivine",
-  release: "https://github.com/marawan6569/Radivine/releases/tag/v0.3.0",
+  release: stable.releaseUrl,
   source: "https://github.com/marawan6569/Radivine/tree/v0.3.0",
   guide: "https://github.com/marawan6569/Radivine/blob/v0.3.0/README.md",
   contribute:
