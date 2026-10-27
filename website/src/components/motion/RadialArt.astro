@@ -1,0 +1,123 @@
+---
+import { getImage } from "astro:assets";
+import logo from "../../../../assets/branding/logo-icon.png";
+const symbol = await getImage({
+  src: logo,
+  width: 160,
+  height: 160,
+  format: "webp",
+});
+interface Props {
+  variant?: "hero" | "story";
+}
+const { variant = "hero" } = Astro.props;
+// Annular sectors echo the wheel's polar geometry. This is an editorial
+// illustration, deliberately without application labels or simulated controls.
+function sector(
+  cx: number,
+  cy: number,
+  outer: number,
+  inner: number,
+  start: number,
+  end: number,
+) {
+  const point = (r: number, a: number) =>
+    `${cx + r * Math.cos((a * Math.PI) / 180)},${cy + r * Math.sin((a * Math.PI) / 180)}`;
+  return `M${point(outer, start)} A${outer},${outer} 0 0 1 ${point(outer, end)} L${point(inner, end)} A${inner},${inner} 0 0 0 ${point(inner, start)} Z`;
+}
+---
+
+<svg
+  class:list={["radial-art", `radial-${variant}`]}
+  viewBox="0 0 640 600"
+  fill="none"
+  aria-hidden="true"
+  focusable="false"
+>
+  <g class="art-guides">
+    <circle cx="270" cy="340" r="236" />
+    <circle cx="270" cy="340" r="204" stroke-dasharray="2 9" />
+    <path d="M8 340H544 M270 80V592 M435 32V278 M312 155H612" />
+    <path d="M28 84H44M36 76V92 M584 475H600M592 467V483" />
+  </g>
+  <g class="root-wheel">
+    {Array.from({ length: 8 }, (_, i) => (
+      <path
+        class:list={["radial-sector", { "sector-selected": i === 1 }]}
+        style={`--i:${i}`}
+        d={sector(
+          270,
+          340,
+          175,
+          88,
+          -112.5 + i * 45 + 1.5,
+          -67.5 + i * 45 - 1.5,
+        )}
+      />
+    ))}
+    <circle class="art-core" cx="270" cy="340" r="72" />
+    <image href={symbol.src} x="218" y="288" width="104" height="104" />
+    <g class="sector-marks">
+      <path d="M263 207h14m-7-7v14 M130 333h14m-7-7v14 M263 473h14m-7-7v14 M396 333h14m-7-7v14" />
+      <circle cx="176" cy="246" r="4" />
+      <circle cx="176" cy="434" r="4" />
+      <circle cx="364" cy="434" r="4" />
+    </g>
+  </g>
+  <path
+    class="branch-path draw-path"
+    pathLength="1"
+    d="M333 277L382 228Q435 175 488 122"
+  />
+  <g class="child-wheel">
+    {Array.from({ length: 5 }, (_, i) => (
+      <path
+        class:list={["child-sector", { "child-selected": i === 0 }]}
+        style={`--i:${i}`}
+        d={sector(455, 155, 108, 57, -70 + i * 58, -15 + i * 58)}
+      />
+    ))}
+    <circle class="child-core" cx="455" cy="155" r="43" />
+    <path class="direction-arrow" d="M443 167l24-24m-24 0h24v24" />
+  </g>
+  <g class="art-labels">
+    <text x="34" y="570">
+      01 — A SINGLE POINT
+    </text>
+    <text x="459" y="306">
+      02 — NEW DIRECTIONS
+    </text>
+    <path d="M455 274v16h128 M34 550h62l20-20" />
+  </g>
+  {variant === "story" && (
+    <>
+      <g class="story-files">
+        <rect
+          x="170"
+          y="300"
+          width="83"
+          height="108"
+          rx="7"
+          transform="rotate(-12 170 300)"
+        />
+        <rect
+          x="200"
+          y="288"
+          width="83"
+          height="108"
+          rx="7"
+          transform="rotate(6 200 288)"
+        />
+        <rect x="220" y="277" width="83" height="108" rx="7" />
+        <path d="M241 307h40m-40 12h28m-28 12h40" />
+        <text x="235" y="363">
+          FILES
+        </text>
+      </g>
+      <g class="story-done">
+        <circle cx="520" cy="78" r="28" />
+        <path d="M508 78l8 8 16-17" />
+      </g>
+    </>
+  )}
+</svg>

@@ -20,6 +20,8 @@
   --page-width: 77.5rem;
   --space-section: clamp(4rem, 8vw, 7rem);
   --radius: 1.25rem;
+  --art-lime: #d8ed9a;
+  --art-lime-edge: #819a43;
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
