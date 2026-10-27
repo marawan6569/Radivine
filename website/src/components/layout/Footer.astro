@@ -13,7 +13,8 @@ import { withBase } from "../../lib/urls";
     <nav aria-label="Footer navigation">
       <a href={site.github}>Source code ↗</a>
       <a href={site.release}>Releases ↗</a>
-      <a href={site.contribute}>Contribute ↗</a>
+      <a href={withBase("contribute/")}>Contribute</a>
+      <a href={withBase("licenses/")}>Licenses & privacy</a>
     </nav>
   </div>
   <div class="footer-bottom">

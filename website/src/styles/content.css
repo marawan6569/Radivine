@@ -61,6 +61,8 @@
 }
 .prose a {
   color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
 }
 .prose li {
   margin-bottom: 0.65rem;

@@ -1,0 +1,70 @@
+---
+import { catalog } from "../../data/catalog";
+import EvidenceLinks from "./EvidenceLinks.astro";
+interface Props {
+  id: string;
+}
+const feature = catalog.features.find((f) => f.id === Astro.props.id);
+if (!feature) throw new Error(`Unknown feature ${Astro.props.id}`);
+---
+
+<details class="feature-detail" id={`feature-${feature.id}`}>
+  <summary>
+    <span>{feature.title}</span>
+    <span class="feature-since">
+      Since v{feature.since} <span aria-hidden="true">+</span>
+    </span>
+  </summary>
+  <p>{feature.summary}</p>
+  <ul>
+    {feature.constraints.map((limit) => (
+      <li>{limit}</li>
+    ))}
+  </ul>
+  <EvidenceLinks ids={feature.verification.flatMap((v) => v.evidenceIds)} />
+</details>
+<style>
+  .feature-detail {
+    border-top: 1px solid var(--border);
+    padding: 0.5rem 0;
+  }
+  summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    min-height: 60px;
+    cursor: pointer;
+    font-weight: 550;
+  }
+  .feature-since {
+    font:
+      0.65rem ui-monospace,
+      monospace;
+    white-space: nowrap;
+    color: var(--text-muted);
+  }
+  .feature-since span {
+    margin-left: 1rem;
+    color: var(--accent);
+    font-size: 1.1rem;
+  }
+  p,
+  li {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+  }
+  ul {
+    padding-left: 1.2rem;
+  }
+  li {
+    margin-bottom: 0.6rem;
+  }
+  @media (max-width: 24rem) {
+    summary {
+      flex-wrap: wrap;
+      gap: 0.2rem;
+      padding-block: 0.5rem;
+    }
+  }
+</style>

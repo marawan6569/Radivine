@@ -1,0 +1,111 @@
+---
+import ContentLayout from "../layouts/ContentLayout.astro";
+import CommandBlock from "../components/data/CommandBlock.astro";
+import EvidenceLinks from "../components/data/EvidenceLinks.astro";
+import { site } from "../data/site";
+import { withBase } from "../lib/urls";
+---
+
+<ContentLayout
+  title="Help the next branch grow."
+  eyebrow="Open source / Code, words and evidence"
+  description="Useful contributions begin with a real problem, a reproducible observation, or a clearer explanation. There is room for more than code."
+>
+  <div class="content-split">
+    <article class="prose">
+      <h2>Report what you can reproduce.</h2>
+      <p>
+        Search <a href={`${site.github}/issues`}>existing issues</a>, then
+        describe the problem, expected behavior and exact reproduction steps.
+        Include Radivine version, OS, desktop/window manager, X11/Wayland
+        session, file manager, architecture and scale. Use disposable sample
+        files and redact diagnostics.
+      </p>
+      <p>
+        <a href={`${site.github}/issues/new`}>Open a non-security issue</a>. A
+        useful compatibility report tests Drag + Shift, Invoke, Properties,
+        clipboard and startup separately. Missing evidence is not proof of
+        incompatibility.
+      </p>
+      <h2>Code and desktop testing.</h2>
+      <p>
+        Read the <a href={site.contribute}>contribution guidelines</a> and{" "}
+        <a href={`${site.source}/docs/TESTING_STRATEGY.md`}>testing strategy</a>
+        . Keep changes focused and use Conventional Commits. Preserve protected
+        branding and the platform-independent wheel/renderer boundaries.
+      </p>
+      <p>
+        The release CI reference is Rust 1.95.0; the older guide’s lower
+        compiler minimum has not been independently established. Use an isolated
+        Xvfb display for GUI automation, never your active desktop.
+      </p>
+      <CommandBlock
+        title="Headless Rust checks"
+        code={
+          'DISPLAY="" cargo fmt --all --check\nDISPLAY="" cargo clippy --workspace --all-targets -- -D warnings\nDISPLAY="" cargo test --workspace'
+        }
+      />
+      <p>
+        Headless success alone does not certify a live compositor, file manager,
+        or screen reader. Check the contribution guide before running isolated
+        X11 tests.
+      </p>
+    </article>
+    <aside class="prose">
+      <h2>Words and website work.</h2>
+      <p>
+        Improve installation steps, explain a limitation, or supply a dated
+        compatibility report. Product claims need pinned source, tests, a
+        recorded environment, or a published release.
+      </p>
+      <p>
+        For a checkout containing this website, use the pinned Node 24.22.1
+        environment:
+      </p>
+      <CommandBlock
+        title="Website checks"
+        code={
+          "cd website\nnpm ci\nnpm run check\nnpm run test:content\nnpm run format:check\nnpm run build\nnpm run check:links\nnpm test"
+        }
+      />
+      <p>
+        Browser tests need Playwright Chromium and its OS libraries. Keep
+        website work separate from Rust release workflows. Read the repository’s
+        AGENTS.md before agent-assisted contributions.
+      </p>
+      <h2>Real product media.</h2>
+      <p>
+        Current Mint desktop captures are welcome: record version, date,
+        session, monitor scale, configuration, sample files and whether the
+        image is live UI or a renderer export. Remove personal material by
+        preparing the scene; never relabel an old screenshot.
+      </p>
+    </aside>
+  </div>
+  <section class="prose content-section">
+    <h2>Security reports belong in private.</h2>
+    <p>
+      Use{" "}
+      <a href={`${site.github}/security/advisories/new`}>
+        GitHub private vulnerability reporting
+      </a>
+      , or contact{" "}
+      <a href="mailto:marawan6569@gmail.com?subject=%5BSECURITY%5D%20Radivine">
+        the maintainer by email
+      </a>{" "}
+      with the subject “[SECURITY] Radivine”. Include affected
+      component/version, reproduction and impact. Do not post private inputs or
+      exploit details in a public issue.
+    </p>
+    <p>
+      The repository security policy’s supported-version table is historical.
+      This page makes no support-lifetime promise for the current release.
+    </p>
+    <EvidenceLinks ids={["contributing", "security"]} />
+  </section>
+  <nav class="page-links" aria-label="Community resources">
+    <a href={`${site.source}/CODE_OF_CONDUCT.md`}>Code of conduct ↗</a>
+    <a href={withBase("licenses/")}>Licenses and notices →</a>
+    <a href={withBase("roadmap/")}>Project direction →</a>
+  </nav>
+</ContentLayout>

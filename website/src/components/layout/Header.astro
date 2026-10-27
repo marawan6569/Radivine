@@ -5,8 +5,10 @@ import { site } from "../../data/site";
 import { withBase } from "../../lib/urls";
 const links = [
   { label: "Product", href: withBase("#product") },
-  { label: "Compatibility", href: withBase("#compatibility") },
+  { label: "Download", href: withBase("download/") },
+  { label: "Compatibility", href: withBase("compatibility/") },
   { label: "Guide", href: site.guide },
+  { label: "Roadmap", href: withBase("roadmap/") },
   { label: "GitHub ↗", href: site.github },
 ];
 ---
@@ -100,7 +102,7 @@ const links = [
       gap: 1rem;
     }
   }
-  @media (max-width: 52rem) {
+  @media (max-width: 64rem) {
     .site-header {
       min-height: 5.5rem;
       position: relative;

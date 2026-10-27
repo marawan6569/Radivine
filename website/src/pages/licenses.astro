@@ -1,0 +1,88 @@
+---
+import ContentLayout from "../layouts/ContentLayout.astro";
+import EvidenceLinks from "../components/data/EvidenceLinks.astro";
+import { site } from "../data/site";
+import { withBase } from "../lib/urls";
+---
+
+<ContentLayout
+  title="Open by design."
+  eyebrow="Licenses / Notices / Privacy"
+  description="The project’s licenses, the origins of its visual assets, and what this static website stores in your browser."
+>
+  <div class="content-split">
+    <article class="prose">
+      <h2>Radivine.</h2>
+      <p>
+        Radivine is dual-licensed under <strong>MIT OR Apache-2.0</strong>. Read
+        the complete{" "}
+        <a href={withBase("notices/LICENSE-MIT.txt")}>MIT license</a> and{" "}
+        <a href={withBase("notices/LICENSE-APACHE.txt")}>Apache-2.0 license</a>.
+        Contributions follow the terms in the repository contribution
+        guidelines.
+      </p>
+      <p>
+        The vine branding and application icon assets are original project
+        assets under the project license. The website uses the existing symbol
+        without recoloring or regenerating it. New website diagram paths are
+        illustrations, not native application screenshots.
+      </p>
+      <h2>Fonts, icons and dependencies.</h2>
+      <p>
+        The website serves a Latin WOFF2 subset of Inter by Rasmus Andersson
+        locally under{" "}
+        <a href={withBase("notices/OFL-Inter.txt")}>
+          SIL Open Font License 1.1
+        </a>
+        . The original font remains unchanged.
+      </p>
+      <p>
+        The native application’s bundled Lucide icon subset is documented as
+        ISC/MIT in the{" "}
+        <a href={`${site.source}/THIRD_PARTY_NOTICES.md`}>
+          third-party notices
+        </a>
+        . This website’s radial and feature diagrams are authored SVG; it does
+        not redistribute a new Lucide icon package.
+      </p>
+      <p>
+        Website build-tool notices:{" "}
+        <a href={withBase("notices/LICENSE-Astro.txt")}>Astro (MIT)</a> and{" "}
+        <a href={withBase("notices/LICENSE-Tailwind.txt")}>
+          Tailwind CSS (MIT)
+        </a>
+        . Full native application dependencies and bundled library attributions
+        remain in the repository notices.
+      </p>
+      <EvidenceLinks ids={["notices", "contributing"]} />
+    </article>
+    <aside class="prose">
+      <h2>A static site, a local preference.</h2>
+      <p>
+        The website adds no analytics, tracking embeds, account system or
+        third-party font requests. With JavaScript enabled, it stores your
+        chosen theme under <code>radivine:theme</code> in localStorage. Clearing
+        that browser entry restores System behavior.
+      </p>
+      <p>
+        Copy buttons write the displayed text to your clipboard only after you
+        activate them. If permission is denied or JavaScript is disabled, the
+        commands remain selectable. No code here installs Radivine or executes a
+        custom action.
+      </p>
+      <p>
+        Downloads and repository links go to GitHub. GitHub handles requests
+        under its own policies; the website’s lack of analytics is not a claim
+        that a hosting or download provider collects no request data. Hosting
+        deployment is a separate project step.
+      </p>
+      <h2>Media is labeled.</h2>
+      <p>
+        Current website visuals are conceptual illustrations. Historical
+        screenshots and sandbox exports have not been represented as current
+        stable desktop captures. Future media must retain source, version,
+        environment, kind, caption and license provenance.
+      </p>
+    </aside>
+  </div>
+</ContentLayout>

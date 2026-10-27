@@ -6,6 +6,7 @@ import Features from "../components/product/Features.astro";
 import SectionHeading from "../components/ui/SectionHeading.astro";
 import Button from "../components/ui/Button.astro";
 import { site } from "../data/site";
+import { withBase } from "../lib/urls";
 ---
 
 <SiteLayout>
@@ -28,44 +29,51 @@ import { site } from "../data/site";
           downloading.
         </p>
       </SectionHeading>
-      <dl class="support-list">
-        <div>
-          <dt>
-            <span class="support-mark" aria-hidden="true">
-              ✓
-            </span>
-            Primary tested setup
-          </dt>
-          <dd>
-            Linux Mint 22.3, Cinnamon X11, Nemo, amd64. This is the reference
-            desktop for Radivine.
-          </dd>
-        </div>
-        <div>
-          <dt>
-            <span class="support-mark" aria-hidden="true">
-              ↗
-            </span>
-            Other X11 desktops
-          </dt>
-          <dd>
-            Desktop and file-manager integration require verification on your
-            specific environment.
-          </dd>
-        </div>
-        <div>
-          <dt>
-            <span class="support-mark" aria-hidden="true">
-              —
-            </span>
-            Native Wayland unsupported
-          </dt>
-          <dd>
-            The wheel requires X11. XWayland Invoke is experimental and
-            conditional; Drag + Shift is unavailable on Wayland.
-          </dd>
-        </div>
-      </dl>
+      <div>
+        <dl class="support-list">
+          <div>
+            <dt>
+              <span class="support-mark" aria-hidden="true">
+                ✓
+              </span>
+              Primary tested setup
+            </dt>
+            <dd>
+              Linux Mint 22.3, Cinnamon X11, Nemo, amd64. This is the reference
+              desktop for Radivine.
+            </dd>
+          </div>
+          <div>
+            <dt>
+              <span class="support-mark" aria-hidden="true">
+                ↗
+              </span>
+              Other X11 desktops
+            </dt>
+            <dd>
+              Desktop and file-manager integration require verification on your
+              specific environment.
+            </dd>
+          </div>
+          <div>
+            <dt>
+              <span class="support-mark" aria-hidden="true">
+                —
+              </span>
+              Native Wayland unsupported
+            </dt>
+            <dd>
+              The wheel requires X11. XWayland Invoke is experimental and
+              conditional; Drag + Shift is unavailable on Wayland.
+            </dd>
+          </div>
+        </dl>
+        <p style="margin-top:1.5rem">
+          <a class="text-link" href={withBase("compatibility/")}>
+            Read the full compatibility matrix →
+          </a>
+        </p>
+      </div>
     </div>
   </section>
   <section
@@ -101,8 +109,8 @@ import { site } from "../data/site";
     </div>
     <div class="actions">
       <Button href={site.release}>View v{site.version} release</Button>
-      <Button href={site.contribute} variant="secondary">
-        Contribute on GitHub
+      <Button href={withBase("contribute/")} variant="secondary">
+        Ways to contribute
       </Button>
     </div>
   </section>

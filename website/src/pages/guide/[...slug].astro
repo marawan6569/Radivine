@@ -1,5 +1,8 @@
 ---
 import { getCollection, render } from "astro:content";
+import FeatureDetail from "../../components/data/FeatureDetail.astro";
+import ScreenshotFigure from "../../components/product/ScreenshotFigure.astro";
+import RadialArt from "../../components/motion/RadialArt.astro";
 import ContentLayout from "../../layouts/ContentLayout.astro";
 import DocumentationNav from "../../components/data/DocumentationNav.astro";
 import EvidenceLinks from "../../components/data/EvidenceLinks.astro";
@@ -60,6 +63,20 @@ const { Content } = await render(entry);
             parsers. The custom action was parsed, not executed.
           </p>
         </>
+      )}
+      {entry.data.slug === "start" && (
+        <section aria-labelledby="capabilities">
+          <h2 id="capabilities">Capabilities, with their boundaries.</h2>
+          <p>
+            Open a feature for its scope, limitations and repository evidence.
+          </p>
+          {catalog.features.map((feature) => (
+            <FeatureDetail id={feature.id} />
+          ))}
+          <ScreenshotFigure mediaId="radial-study">
+            <RadialArt />
+          </ScreenshotFigure>
+        </section>
       )}
       <EvidenceLinks ids={entry.data.evidenceIds} />
       <nav class="page-links" aria-label="Guide resources">
