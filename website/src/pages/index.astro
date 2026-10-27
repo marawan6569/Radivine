@@ -1,19 +1,389 @@
 ---
-import { withBase } from "../lib/urls";
+import SiteLayout from "../layouts/SiteLayout.astro";
+import Hero from "../components/product/Hero.astro";
+import SectionHeading from "../components/ui/SectionHeading.astro";
+import Button from "../components/ui/Button.astro";
+import { site } from "../data/site";
 ---
 
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width" />
-    <title>Radivine — Branch into action.</title>
-  </head>
-  <body>
-    <main>
-      <h1>Radivine</h1>
-      <p>Branch into action.</p>
-      <a href={withBase()}>Home</a>
-    </main>
-  </body>
-</html>
+<SiteLayout>
+  <Hero />
+  <section
+    id="product"
+    class="container section"
+    aria-labelledby="product-title"
+  >
+    <div class="intro-row">
+      <SectionHeading
+        eyebrow="Less distance. More flow."
+        title="Your files. A fresh direction."
+        id="product-title"
+      >
+        <p class="muted">
+          Keep the next action close. Radivine brings a context-aware wheel to
+          your file workflow, with Branching as the default and optional
+          Concentric Rings.
+        </p>
+      </SectionHeading>
+      <span class="section-number" aria-hidden="true">
+        01—03
+      </span>
+    </div>
+    <ol class="gesture-steps">
+      <li>
+        <span class="step-number">01</span>
+        <h3>Start with your files.</h3>
+        <p>
+          Drag a selection in Nemo on the primary tested Cinnamon X11 setup.
+        </p>
+      </li>
+      <li>
+        <span class="step-number">02</span>
+        <h3>A little Shift in direction.</h3>
+        <p>
+          Tap <kbd>Shift</kbd> during the drag to bring the wheel to your
+          cursor.
+        </p>
+      </li>
+      <li>
+        <span class="step-number">03</span>
+        <h3>Choose your next action.</h3>
+        <p>
+          Navigate to an enabled action and release. With default settings,
+          release outside the wheel to cancel.
+        </p>
+      </li>
+    </ol>
+    <p class="invoke-note muted">
+      Prefer a click or the keyboard? Use Nemo’s{" "}
+      <strong>Open in Radivine</strong> action.
+    </p>
+    <aside class="practice-placeholder" aria-labelledby="practice-title">
+      <div>
+        <p class="eyebrow">A space to explore</p>
+        <h3 id="practice-title">A closer look at the wheel, soon.</h3>
+        <p class="muted">
+          An interactive browser practice area is planned here. For now, explore
+          the real application and its usage guide.
+        </p>
+      </div>
+      <a class="text-link" href={site.guide}>
+        Read the application guide <span aria-hidden="true">↗</span>
+      </a>
+    </aside>
+  </section>
+  <section
+    id="compatibility"
+    class="compatibility-section"
+    aria-labelledby="compatibility-title"
+  >
+    <div class="container compatibility-grid">
+      <SectionHeading
+        eyebrow="Know your desktop"
+        title="Built for Linux. Rooted in X11."
+        id="compatibility-title"
+      >
+        <p class="muted">
+          A good fit starts with the right setup. Check your session before
+          downloading.
+        </p>
+      </SectionHeading>
+      <dl class="support-list">
+        <div>
+          <dt>
+            <span class="support-mark" aria-hidden="true">
+              ✓
+            </span>
+            Primary tested setup
+          </dt>
+          <dd>
+            Linux Mint 22.3, Cinnamon X11, Nemo, amd64. This is the reference
+            desktop for Radivine.
+          </dd>
+        </div>
+        <div>
+          <dt>
+            <span class="support-mark" aria-hidden="true">
+              ↗
+            </span>
+            Other X11 desktops
+          </dt>
+          <dd>
+            Desktop and file-manager integration require verification on your
+            specific environment.
+          </dd>
+        </div>
+        <div>
+          <dt>
+            <span class="support-mark" aria-hidden="true">
+              —
+            </span>
+            Native Wayland unsupported
+          </dt>
+          <dd>
+            The wheel requires X11. XWayland Invoke is experimental and
+            conditional; Drag + Shift is unavailable on Wayland.
+          </dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+  <section class="container section next-section" aria-labelledby="next-title">
+    <SectionHeading
+      eyebrow="Small gestures. Useful tools."
+      title="A wheel is just the beginning."
+      id="next-title"
+    >
+      <p class="muted">
+        Read-only text preview, static PNG/JPEG/WebP conversion, and a native
+        Control Center are already part of Radivine.
+      </p>
+    </SectionHeading>
+    <div class="next-copy">
+      <p>
+        Product walkthroughs and fresh desktop captures are being prepared for
+        this site. The application guide covers the available tools today.
+      </p>
+      <p class="muted small-note">
+        Custom commands need configuration and installed programs. Default
+        terminal, checksum, and executable examples only log; they do not
+        perform those commands.
+      </p>
+      <a class="text-link" href={site.guide}>
+        Explore the available tools <span aria-hidden="true">↗</span>
+      </a>
+    </div>
+  </section>
+  <section class="container closing" aria-labelledby="closing-title">
+    <div>
+      <p class="eyebrow">Open source. Open possibilities.</p>
+      <h2 id="closing-title">
+        Make it part of
+        <br />
+        your workflow.
+      </h2>
+      <p class="muted">
+        Get v{site.version} for Linux X11, or help shape what grows next.
+      </p>
+    </div>
+    <div class="actions">
+      <Button href={site.release}>View v{site.version} release</Button>
+      <Button href={site.contribute} variant="secondary">
+        Contribute on GitHub
+      </Button>
+    </div>
+  </section>
+</SiteLayout>
+<style>
+  .intro-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 2rem;
+  }
+  .section-number {
+    color: var(--text-muted);
+    font-family: ui-monospace, monospace;
+    font-size: 0.75rem;
+    white-space: nowrap;
+    padding-top: 0.25rem;
+  }
+  .gesture-steps {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2.5rem;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .gesture-steps li {
+    border-top: 1px solid var(--border);
+    padding-top: 1.25rem;
+  }
+  .step-number {
+    color: var(--accent);
+    font-family: ui-monospace, monospace;
+    font-size: 0.7rem;
+    display: inline-block;
+    margin-bottom: 1.75rem;
+  }
+  .gesture-steps p {
+    font-size: 0.88rem;
+    color: var(--text-muted);
+    margin-bottom: 0;
+  }
+  kbd {
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 0.25rem;
+    padding: 0.1rem 0.35rem;
+    font-family: inherit;
+    font-size: 0.8rem;
+    color: var(--text);
+  }
+  .invoke-note {
+    font-size: 0.8rem;
+    margin-top: 2rem;
+  }
+  .invoke-note strong {
+    color: var(--text);
+    font-weight: 500;
+  }
+  .practice-placeholder {
+    margin-top: 3.5rem;
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+    justify-content: space-between;
+    border-left: 2px solid var(--accent);
+    background: var(--surface-muted);
+    padding: 1.75rem 2rem;
+  }
+  .practice-placeholder .eyebrow {
+    font-size: 0.6rem;
+    margin-bottom: 0.7rem;
+  }
+  .practice-placeholder h3 {
+    margin-bottom: 0.5rem;
+  }
+  .practice-placeholder p:last-child {
+    margin-bottom: 0;
+    max-width: 52ch;
+    font-size: 0.85rem;
+  }
+  .practice-placeholder a {
+    font-size: 0.8rem;
+    flex-shrink: 0;
+  }
+  .compatibility-section {
+    background: var(--surface);
+    padding-block: var(--space-section);
+    border-block: 1px solid var(--border);
+  }
+  .compatibility-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5rem;
+  }
+  .compatibility-grid :global(.section-heading) {
+    margin-bottom: 0;
+  }
+  .support-list {
+    margin: 0;
+  }
+  .support-list div {
+    padding-block: 1.2rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .support-list div:first-child {
+    padding-top: 0;
+  }
+  .support-list div:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+  }
+  dt {
+    font-weight: 550;
+    font-size: 0.9rem;
+  }
+  dd {
+    margin: 0.5rem 0 0 1.8rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+  }
+  .support-mark {
+    color: var(--accent);
+    display: inline-block;
+    width: 1.8rem;
+  }
+  .next-section {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5rem;
+  }
+  .next-section :global(.section-heading) {
+    margin-bottom: 0;
+  }
+  .next-copy {
+    align-self: center;
+    font-size: 0.95rem;
+  }
+  .small-note {
+    font-size: 0.8rem;
+    border-left: 1px solid var(--border);
+    padding-left: 1rem;
+    margin-block: 1.5rem;
+  }
+  .closing {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 2rem;
+    padding: 3rem;
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: var(--space-section);
+  }
+  .closing h2 {
+    font-size: clamp(2rem, 4vw, 3.5rem);
+    margin-bottom: 1rem;
+  }
+  .closing p:last-child {
+    font-size: 0.85rem;
+    margin-bottom: 0;
+  }
+  .closing .actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  @media (max-width: 52rem) {
+    .compatibility-grid,
+    .next-section {
+      grid-template-columns: 1fr;
+      gap: 2.5rem;
+    }
+    .practice-placeholder {
+      align-items: start;
+      flex-direction: column;
+    }
+    .gesture-steps {
+      gap: 1.5rem;
+    }
+    .closing {
+      padding: 2rem;
+    }
+  }
+  @media (max-width: 40rem) {
+    .gesture-steps {
+      grid-template-columns: 1fr;
+    }
+    .gesture-steps li {
+      display: grid;
+      grid-template-columns: 2rem 1fr;
+      gap: 0.35rem 1rem;
+    }
+    .gesture-steps h3 {
+      margin-bottom: 0.5rem;
+    }
+    .gesture-steps p {
+      grid-column: 2;
+    }
+    .step-number {
+      margin: 0;
+      padding-top: 0.2rem;
+    }
+    .section-number {
+      display: none;
+    }
+    .practice-placeholder {
+      padding: 1.5rem;
+    }
+    .closing {
+      padding: 1.5rem;
+    }
+    .closing .actions {
+      width: 100%;
+    }
+  }
+</style>

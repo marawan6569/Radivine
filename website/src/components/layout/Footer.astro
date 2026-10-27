@@ -1,0 +1,69 @@
+---
+import Brand from "./Brand.astro";
+import { site } from "../../data/site";
+import { withBase } from "../../lib/urls";
+---
+
+<footer class="container">
+  <div class="footer-top">
+    <div>
+      <Brand />
+      <p class="muted">A little closer to your files.</p>
+    </div>
+    <nav aria-label="Footer navigation">
+      <a href={site.github}>Source code ↗</a>
+      <a href={site.release}>Releases ↗</a>
+      <a href={site.contribute}>Contribute ↗</a>
+    </nav>
+  </div>
+  <div class="footer-bottom">
+    <p>
+      Open source. <a href={withBase("notices/LICENSE-MIT.txt")}>MIT</a> or{" "}
+      <a href={withBase("notices/LICENSE-APACHE.txt")}>Apache-2.0</a>.
+    </p>
+    <p>
+      Set in <a href={withBase("notices/OFL-Inter.txt")}>Inter</a>. No
+      analytics. Theme preference stays in your browser.
+    </p>
+  </div>
+</footer>
+<style>
+  footer {
+    padding-block: 2.5rem 1.5rem;
+    border-top: 1px solid var(--border);
+  }
+  .footer-top,
+  .footer-bottom {
+    display: flex;
+    justify-content: space-between;
+    gap: 2rem;
+    flex-wrap: wrap;
+  }
+  .footer-top p {
+    margin-top: 0.75rem;
+    font-size: 0.8rem;
+  }
+  nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+  }
+  nav a {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.85rem;
+    text-decoration: none;
+  }
+  nav a:hover {
+    text-decoration: underline;
+  }
+  .footer-bottom {
+    margin-top: 2rem;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+  }
+  .footer-bottom p {
+    margin-bottom: 0.5rem;
+  }
+</style>

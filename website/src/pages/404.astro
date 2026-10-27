@@ -1,0 +1,32 @@
+---
+import SiteLayout from "../layouts/SiteLayout.astro";
+import Button from "../components/ui/Button.astro";
+import { withBase } from "../lib/urls";
+import { site } from "../data/site";
+---
+
+<SiteLayout title="Page not found — Radivine" noindex>
+  <section class="container section">
+    <p class="eyebrow">404 / A different branch</p>
+    <h1>Let’s find your way back.</h1>
+    <p class="muted">
+      This page is unavailable. Head home to explore Radivine, or read the
+      application guide.
+    </p>
+    <div class="actions">
+      <Button href={withBase()}>Back to Radivine</Button>
+      <Button href={site.guide} variant="secondary">
+        Application guide
+      </Button>
+    </div>
+  </section>
+</SiteLayout>
+<style>
+  h1 {
+    max-width: 12ch;
+    font-size: clamp(3rem, 7vw, 6rem);
+  }
+  section {
+    min-height: 65vh;
+  }
+</style>

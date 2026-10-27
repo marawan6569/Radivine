@@ -1,0 +1,303 @@
+---
+import { Image } from "astro:assets";
+import logo from "../../../../assets/branding/logo-icon.png";
+import Button from "../ui/Button.astro";
+import { site } from "../../data/site";
+import { withBase } from "../../lib/urls";
+---
+
+<section class="hero container" aria-labelledby="hero-title">
+  <div class="hero-copy">
+    <a class="release-label" href={site.release}>
+      <span class="release-dot" aria-hidden="true"></span>v{site.version}
+      <span class="muted"> / Concentric Rings</span>
+      <span aria-hidden="true">↗</span>
+    </a>
+    <h1 id="hero-title">
+      Branch into
+      <br />
+      <em>action.</em>
+    </h1>
+    <p class="descriptor">
+      A context-aware radial action wheel
+      <br class="desktop-break" /> for Linux files.
+    </p>
+    <p class="hero-description muted">
+      Bring actions to your cursor. Preview text, convert images, and run your
+      own configured commands from a wheel that branches with you.
+    </p>
+    <div class="actions">
+      <Button href={site.release}>Get Radivine</Button>
+      <Button href={withBase("#product")} variant="secondary">
+        Explore the product
+      </Button>
+    </div>
+    <p class="requirements muted">
+      Linux .deb <span aria-hidden="true">·</span> amd64{" "}
+      <span aria-hidden="true">·</span> X11 required
+    </p>
+  </div>
+  <figure class="brand-stage">
+    <div class="stage-top">
+      <span class="stage-index">01 / RADIVINE</span>
+      <span class="stage-type">THE FILE-ACTION WHEEL</span>
+    </div>
+    <div class="brand-art" aria-hidden="true">
+      <div class="guide guide-one"></div>
+      <div class="guide guide-two"></div>
+      <div class="guide guide-three"></div>
+      <span class="crosshair c-one">+</span>
+      <span class="crosshair c-two">+</span>
+      <Image
+        src={logo}
+        alt=""
+        widths={[320, 480, 640]}
+        sizes="(max-width: 640px) 75vw, 400px"
+        width={480}
+        height={480}
+        format="webp"
+        loading="eager"
+        fetchpriority="high"
+      />
+    </div>
+    <div class="stage-bottom">
+      <span>
+        Rooted in your workflow.
+        <br />
+        <strong>Ready to branch out.</strong>
+      </span>
+      <span class="stage-mark" aria-hidden="true">
+        ↗
+      </span>
+    </div>
+    <figcaption>
+      <strong>Current desktop capture pending</strong>
+      <span>Brand artwork · not application UI</span>
+    </figcaption>
+  </figure>
+</section>
+<div class="compatibility-strip container">
+  <span class="strip-label">THE PRIMARY TESTED SETUP</span>
+  <p>
+    Linux Mint 22.3 <span aria-hidden="true">/</span> Cinnamon X11{" "}
+    <span aria-hidden="true">/</span> Nemo
+  </p>
+  <a href={withBase("#compatibility")}>
+    Check your setup <span aria-hidden="true">↘</span>
+  </a>
+</div>
+<style>
+  .hero {
+    padding-block: 4.5rem 4rem;
+    display: grid;
+    grid-template-columns: 1.06fr 1fr;
+    gap: clamp(2rem, 6vw, 6rem);
+    align-items: center;
+  }
+  .release-label {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.65rem;
+    font-family: ui-monospace, monospace;
+    font-size: 0.7rem;
+    text-decoration: none;
+    margin-bottom: 2rem;
+  }
+  .release-label:hover {
+    text-decoration: underline;
+  }
+  .release-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  h1 {
+    font-size: clamp(3.6rem, 7.4vw, 6.45rem);
+    margin-bottom: 1.75rem;
+  }
+  h1 em {
+    color: var(--accent);
+    font-style: normal;
+  }
+  .descriptor {
+    font-size: clamp(1.15rem, 1.8vw, 1.4rem);
+    line-height: 1.45;
+    font-weight: 500;
+    letter-spacing: -0.03em;
+    margin-bottom: 0.85rem;
+  }
+  .hero-description {
+    font-size: 0.95rem;
+    max-width: 43ch;
+    margin-bottom: 2rem;
+  }
+  .requirements {
+    font-size: 0.7rem;
+    margin: 1rem 0 0;
+  }
+  .requirements span {
+    padding-inline: 0.5rem;
+  }
+  .brand-stage {
+    margin: 0;
+    position: relative;
+    padding: 1.5rem 1.5rem 0;
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .stage-top {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-family: ui-monospace, monospace;
+    font-size: 0.55rem;
+    letter-spacing: 0.09em;
+    color: var(--text-muted);
+  }
+  .brand-art {
+    position: relative;
+    aspect-ratio: 1.1;
+    display: grid;
+    place-items: center;
+  }
+  .brand-art img {
+    width: 78%;
+    position: relative;
+    z-index: 1;
+  }
+  .guide {
+    border: 1px solid var(--border);
+    position: absolute;
+    width: 93%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+  }
+  .guide-two {
+    width: 70%;
+  }
+  .guide-three {
+    width: 46%;
+  }
+  .crosshair {
+    position: absolute;
+    color: var(--text-muted);
+    font-size: 1rem;
+  }
+  .c-one {
+    left: 5%;
+    top: 22%;
+  }
+  .c-two {
+    right: 5%;
+    bottom: 22%;
+  }
+  .stage-bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: end;
+    padding-bottom: 1.5rem;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    letter-spacing: -0.02em;
+  }
+  .stage-bottom strong {
+    font-weight: 550;
+  }
+  .stage-mark {
+    font-size: 2rem;
+    line-height: 1;
+    color: var(--accent);
+  }
+  figcaption {
+    border-top: 1px solid var(--border);
+    padding: 0.9rem 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.25rem 0.75rem;
+    font-size: 0.6rem;
+    color: var(--text-muted);
+  }
+  figcaption strong {
+    font-weight: 500;
+  }
+  .compatibility-strip {
+    padding-block: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    border-block: 1px solid var(--border);
+  }
+  .strip-label {
+    font-family: ui-monospace, monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+  }
+  .compatibility-strip p {
+    margin: 0;
+    font-size: 0.8rem;
+  }
+  .compatibility-strip p span {
+    margin-inline: 0.6rem;
+    color: var(--text-muted);
+  }
+  .compatibility-strip a {
+    font-size: 0.75rem;
+    text-decoration: none;
+    color: var(--accent);
+  }
+  .compatibility-strip a:hover {
+    text-decoration: underline;
+  }
+  @media (max-width: 52rem) {
+    .hero {
+      grid-template-columns: 1fr;
+      padding-top: 3rem;
+      gap: 3rem;
+    }
+    h1 {
+      font-size: clamp(3.4rem, 12vw, 6rem);
+    }
+    .hero-description {
+      max-width: 48ch;
+    }
+    .brand-stage {
+      width: 100%;
+      max-width: 35rem;
+      justify-self: center;
+    }
+    .compatibility-strip {
+      flex-wrap: wrap;
+      justify-content: start;
+      gap: 0.75rem 1.5rem;
+    }
+    .strip-label {
+      width: 100%;
+    }
+  }
+  @media (max-width: 24rem) {
+    .desktop-break {
+      display: none;
+    }
+    .stage-type {
+      display: none;
+    }
+    .hero .actions {
+      align-items: stretch;
+      flex-direction: column;
+    }
+    .brand-stage {
+      padding-inline: 1rem;
+    }
+    .compatibility-strip p span {
+      margin-inline: 0.2rem;
+    }
+  }
+</style>
