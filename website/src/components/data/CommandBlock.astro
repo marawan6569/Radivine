@@ -1,0 +1,88 @@
+---
+interface Props {
+  title: string;
+  code: string;
+}
+const { title, code } = Astro.props;
+---
+
+<div class="command-block">
+  <div class="command-heading">
+    <span>{title}</span>
+    <button type="button" hidden aria-label={`Copy ${title}`}>
+      Copy
+    </button>
+  </div>
+  <pre tabindex="0" aria-label={title}><code>{code}</code></pre>
+  <p class="copy-status" role="status" aria-live="polite"></p>
+</div>
+<script>
+  document.querySelectorAll<HTMLElement>(".command-block").forEach((block) => {
+    const button = block.querySelector<HTMLButtonElement>("button")!;
+    const status = block.querySelector<HTMLElement>(".copy-status")!;
+    if (!navigator.clipboard?.writeText) return;
+    button.hidden = false;
+    button.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(
+          block.querySelector("code")!.textContent!,
+        );
+        status.textContent = "Copied to clipboard.";
+      } catch {
+        status.textContent =
+          "Copy unavailable. Select and copy the command text manually.";
+      }
+    });
+  });
+</script>
+<style>
+  .command-block {
+    border: 1px solid var(--border);
+    border-radius: 0.6rem;
+    background: var(--surface);
+    margin-block: 1.5rem;
+    overflow: hidden;
+    min-width: 0;
+  }
+  .command-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--border);
+    font:
+      0.7rem ui-monospace,
+      monospace;
+    color: var(--text-muted);
+  }
+  button {
+    min-height: 44px;
+    padding: 0.4rem 0.8rem;
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: 0.3rem;
+    color: var(--text);
+    font-size: 0.75rem;
+  }
+  pre {
+    margin: 0;
+    padding: 1.25rem;
+    overflow-x: auto;
+    max-width: 100%;
+    font:
+      0.8rem/1.8 ui-monospace,
+      monospace;
+    white-space: pre;
+  }
+  pre code {
+    overflow-wrap: normal;
+  }
+  .copy-status {
+    min-height: 1.5rem;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin: 0;
+    padding: 0 1rem 0.5rem;
+  }
+</style>

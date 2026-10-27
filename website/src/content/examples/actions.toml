@@ -1,0 +1,8 @@
+[[action]]
+id = "custom.open_selected"
+label = "Open with default application"
+exec = ["/usr/bin/xdg-open", "{path}"]
+per_item = false
+wait = false
+notify = "on-error"
+when = { count = "1" }

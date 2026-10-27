@@ -1,0 +1,60 @@
+---
+import { withBase } from "../../lib/urls";
+const links = [
+  ["guide/", "Getting started"],
+  ["guide/configuration/", "Configuration"],
+  ["guide/troubleshooting/", "Troubleshooting"],
+  ["download/", "Installation"],
+  ["compatibility/", "Compatibility"],
+];
+---
+
+<nav class="documentation-nav" aria-label="Documentation">
+  <p class="eyebrow">Field guide</p>
+  {links.map(([path, label]) => (
+    <a
+      href={withBase(path)}
+      aria-current={Astro.url.pathname === withBase(path) ? "page" : undefined}
+    >
+      {label}
+      <span aria-hidden="true">↗</span>
+    </a>
+  ))}
+</nav>
+<style>
+  .documentation-nav {
+    position: sticky;
+    top: 2rem;
+  }
+  a {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    min-height: 44px;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    text-decoration: none;
+  }
+  a[aria-current] {
+    color: var(--accent);
+    font-weight: 650;
+  }
+  @media (max-width: 52rem) {
+    .documentation-nav {
+      position: static;
+      display: flex;
+      gap: 0.5rem 1rem;
+      flex-wrap: wrap;
+    }
+    .eyebrow {
+      width: 100%;
+      margin: 0;
+    }
+    a {
+      font-size: 0.75rem;
+    }
+  }
+</style>
