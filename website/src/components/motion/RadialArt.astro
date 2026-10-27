@@ -69,12 +69,13 @@ function sector(
     pathLength="1"
     d="M333 277L382 228Q435 175 488 122"
   />
+  <!-- The open bridge faces the parent, echoing Branching’s neutral sector. -->
   <g class="child-wheel">
     {Array.from({ length: 5 }, (_, i) => (
       <path
-        class:list={["child-sector", { "child-selected": i === 0 }]}
+        class:list={["child-sector", { "child-selected": i === 2 }]}
         style={`--i:${i}`}
-        d={sector(455, 155, 108, 57, -70 + i * 58, -15 + i * 58)}
+        d={sector(455, 155, 108, 57, 170 + i * 58, 225 + i * 58)}
       />
     ))}
     <circle class="child-core" cx="455" cy="155" r="43" />

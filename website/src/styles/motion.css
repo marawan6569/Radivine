@@ -150,14 +150,16 @@
   fill: none;
   stroke: var(--border);
 }
-/* Only surfaces crossfade. Text switches immediately to preserve contrast. */
+/* Text-bearing surfaces switch atomically for contrast. Only decorative
+   geometry interpolates between palettes; initial theme resolution stays early. */
 @media (prefers-reduced-motion: no-preference) {
-  body,
-  .compatibility-section,
-  .closing,
-  .feature-visual,
-  .story-stage {
-    transition: background-color var(--duration-fast) ease;
+  .radial-sector,
+  .child-sector,
+  .art-guides,
+  .branch-path {
+    transition:
+      fill var(--duration-fast) ease,
+      stroke var(--duration-fast) ease;
   }
   .button span {
     transition: transform var(--duration-fast) var(--ease-out);

@@ -151,9 +151,7 @@ p {
   text-decoration: none;
   font-weight: 570;
   font-size: 0.9rem;
-  transition:
-    transform 180ms ease,
-    background-color 180ms ease;
+  transition: transform var(--duration-fast) var(--ease-out);
 }
 .button.secondary {
   background: transparent;
