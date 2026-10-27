@@ -1,0 +1,41 @@
+---
+interface Props {
+  status: string;
+  label?: string;
+}
+const names: Record<string, string> = {
+  verified: "Recorded desktop testing",
+  conditional: "Conditional",
+  unverified: "Manual verification needed",
+  unsupported: "Unsupported",
+  available: "Available",
+  unavailable: "Unavailable",
+  unknown: "Not verified",
+  shipped: "Shipped",
+  exploring: "Exploring",
+  deferred: "Deferred",
+};
+const { status, label = names[Astro.props.status] } = Astro.props;
+---
+
+<span class="support-label" data-support={status}>
+  {label}
+</span>
+<style>
+  .support-label {
+    display: inline-block;
+    border: 1px solid var(--border);
+    border-radius: 2rem;
+    padding: 0.25rem 0.65rem;
+    color: var(--text);
+    font:
+      0.65rem/1.5 ui-monospace,
+      monospace;
+    background: var(--surface);
+  }
+  [data-support="verified"],
+  [data-support="shipped"] {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+</style>

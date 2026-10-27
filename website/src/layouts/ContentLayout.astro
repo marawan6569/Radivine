@@ -1,0 +1,36 @@
+---
+import SiteLayout from "./SiteLayout.astro";
+import { withBase } from "../lib/urls";
+import "../styles/content.css";
+interface Props {
+  title: string;
+  description: string;
+  eyebrow: string;
+}
+const { title, description, eyebrow } = Astro.props;
+---
+
+<SiteLayout title={`${title} — Radivine`} description={description}>
+  <div class="container content-page">
+    <header class="content-heading">
+      <a class="back-link" href={withBase()}>
+        ← Radivine
+      </a>
+      <p class="eyebrow">{eyebrow}</p>
+      <h1>{title}</h1>
+      <p class="page-description">{description}</p>
+      <svg
+        class="page-orbit"
+        viewBox="0 0 220 220"
+        fill="none"
+        aria-hidden="true"
+      >
+        <circle cx="110" cy="110" r="90" />
+        <circle cx="110" cy="110" r="58" />
+        <path d="M110 110L195 25M175 25h20v20" />
+        <circle cx="110" cy="110" r="8" />
+      </svg>
+    </header>
+    <slot />
+  </div>
+</SiteLayout>
