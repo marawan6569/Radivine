@@ -1,6 +1,6 @@
 # Radivine website
 
-Local-only website through W4 release candidate validation, preserving the W1 foundation, W1.5 motion, W2 content and W3 interactive practice. The isolated website workflow is prepared with publication disabled. See the [W4 report](../docs/test-reports/W4.md) and [deployment runbook](../docs/website/W4-deployment.md) for measured results and outstanding gates. W5 requires separate authorization. Earlier contracts remain available: [W0](../docs/website/W0-contract.md), [W1.5](../docs/website/W1.5-motion.md), [W2](../docs/test-reports/W2.md), [W3](../docs/website/W3-demo.md).
+The W5 initial launch is authorized under the owner’s CONDITIONAL GO at **https://marawan6569.github.io/Radivine/**. See the [W5 report](../docs/test-reports/W5.md) for publication state and accepted manual risks, and the [current deployment runbook](../docs/website/W5-deployment.md) for exact-SHA approval, hosting checks and rollback. The site preserves the W1 foundation, W1.5 motion, W2 content and W3 interactive practice. Earlier contracts remain available: [W0](../docs/website/W0-contract.md), [W1.5](../docs/website/W1.5-motion.md), [W2](../docs/test-reports/W2.md), [W3](../docs/website/W3-demo.md).
 
 Use Node **24.22.1** (`nvm use` with `.nvmrc`), npm, and:
 
@@ -17,7 +17,7 @@ npm run check:links
 npm run preview
 ```
 
-The static artifact is `dist/`. Default origin `https://marawan6569.github.io` and base `/Radivine/` are candidate hosting configuration, not a live-site claim. To test root hosting:
+The static artifact is `dist/`. Default origin `https://marawan6569.github.io` and base `/Radivine/` are the approved initial production configuration; the W5 report records live verification. To test root hosting:
 
 ```sh
 SITE_BASE=/ npm run build
@@ -39,7 +39,7 @@ Playwright starts its own loopback static server against the production artifact
 
 Astro static HTML, strict TypeScript, Tailwind 4 Vite integration; no framework, backend, visitor API calls, analytics or client router. `src/styles/tokens.css` owns semantic theme variables. `SiteLayout` owns metadata, no-flash theme initialization and the shell. Native disclosure navigation works without JavaScript. Theme preference is the only browser-local persisted state, under `radivine:theme`; blocked storage is tolerated. The website theme does not change application settings.
 
-W1.5 home sections provide the motion-driven introduction. W2 adds `/download/`, `/compatibility/`, `/guide/`, `/guide/configuration/`, `/guide/troubleshooting/`, `/roadmap/`, `/contribute/` and `/licenses/`. Every route produces static HTML; native disclosures, tables, commands and links remain useful without JavaScript. Copy buttons are optional enhancements. The interactive demo is W3. W4 adds an isolated validation workflow and release audits. Publication remains disabled pending separate W5 authorization.
+W1.5 home sections provide the motion-driven introduction. W2 adds `/download/`, `/compatibility/`, `/guide/`, `/guide/configuration/`, `/guide/troubleshooting/`, `/roadmap/`, `/contribute/` and `/licenses/`. Every route produces static HTML; native disclosures, tables, commands and links remain useful without JavaScript. Copy buttons are optional enhancements. The interactive demo is W3. W4 adds an isolated validation workflow and release audits. W5 enables guarded publication of the exact approved main SHA.
 
 `src/lib/schemas.mjs` provides strict Zod structures and semantic checks shared by Astro content collections and validation scripts. JSON catalogs in `src/data/` separate implementation, evidence, compatibility and roadmap status. Markdown guides in `src/content/guides/` have validated frontmatter and cross-references. Repository evidence is pinned to audited commits. New desktop verification needs a dated report and named environment; source inspection is not manual testing.
 
@@ -134,9 +134,9 @@ The native reference emitter never creates a window or executes an action. Revie
 
 For screenshot/video review, build and serve the default base on 4332, then run `node scripts/capture-demo-review.mjs`. `REVIEW_URL` and `REVIEW_OUTPUT` override defaults. The script replaces its named W3 captures and emits measurements; recordings show browser practice, never native application UI. The root/project-base builds and tests must remain sequential because they share `dist/`.
 
-## W4 release validation and held deployment
+## Release validation and guarded deployment
 
-The isolated [website workflow](../.github/workflows/website.yml) and [deployment/rollback runbook](../docs/website/W4-deployment.md) are review material. Pages upload and deployment have literal disabled guards. Publication requires separate W5 authorization; no repository setting has been changed.
+The isolated [website workflow](../.github/workflows/website.yml) validates both bases and only publishes the project artifact. Follow the [W5 deployment/rollback runbook](../docs/website/W5-deployment.md): canonical repository, main, push/manual event and exact `WEBSITE_APPROVED_SHA` are required. Pages uses GitHub Actions, HTTPS and no custom domain. The `github-pages` environment admits only main. A future custom-domain migration requires a separate owner decision.
 
 Workflow path filters cover `website/**`, `.github/workflows/website.yml`, protected `assets/branding/**` and `assets/icons/**`, consumed `assets/fonts/**`, `assets/wheel-icons/**` and `assets/third_party/**`, `docs/**` (evidence and media), `apps/**` and `crates/**` (fixture/evidence sources), `packaging/**`, `scripts/build-deb.sh`, `scripts/check-dep-graph.sh`, `Cargo.toml`, `Cargo.lock`, root `*.md`, `LICENSE-*` and `.github/workflows/ci.yml` (toolchain evidence). These filters trigger website validation when consumed inputs drift; they do not authorize edits to those inputs. Existing Rust CI remains independent and unchanged.
 
@@ -145,3 +145,5 @@ Workflow path filters cover `website/**`, `.github/workflows/website.yml`, prote
 `npm run check:artifact` validates static artifact contents and JS gzip budgets. `npm run audit:performance` records three mobile Lighthouse runs and controlled mobile/desktop metrics against `REVIEW_URL`; raw output is ignored by default. `node scripts/audit-accessibility.mjs` records all-route Light/Dark WCAG 2.2 rule checks, representative demo states, token contrast and remaining automated review items. Both use `REVIEW_OUTPUT` for curated evidence. Do not run performance sampling concurrently with other browser or build work.
 
 See the [W4 report](../docs/test-reports/W4.md) for measured results, local browser limitations and outstanding manual release gates. To capture fresh website screenshots/recordings, reuse `capture-demo-review.mjs` with a W4 `REVIEW_OUTPUT`; never relabel browser captures as native Radivine UI.
+
+After an approved deployment, restore the project build and run `node scripts/smoke-production.mjs` to check the public site against the local artifact, then `npm run check:release` to verify published application downloads. `REVIEW_URL` can target a local project-path server to exercise the smoke harness. This does not replace native, assistive-technology or manual cross-browser acceptance.
