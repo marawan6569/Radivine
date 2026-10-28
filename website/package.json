@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "astro dev",
     "check": "astro check",
-    "build": "npm run check:content && astro build",
+    "build": "npm run check:content && npm run check:demo && astro build",
     "preview": "astro preview",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -17,7 +17,9 @@
     "check:links": "node scripts/check-links.mjs",
     "check:content": "node scripts/check-content.mjs",
     "test:content": "node --test tests/content.test.mjs",
-    "check:release": "node scripts/check-release.mjs"
+    "check:release": "node scripts/check-release.mjs",
+    "test:demo": "node --test tests/demo.test.ts",
+    "check:demo": "node scripts/check-demo.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "4.3.3",

@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "productVersion": "0.3.0",
+  "sourceRevision": "1aa009a08bab66646898016f1ba953051eac46f3",
+  "viewport": {
+    "width": 900,
+    "height": 800
+  },
+  "sourceHashes": {
+    "apps/radivine/src/config.rs": "0f6032b59b1383b3a58bc24f59a997cc0d1d0a2d618b414e16c82dd0093e3c36",
+    "crates/radivine-wheel/src/config.rs": "72681dfb99d9ea2cd4bdd35bb3c834fb0dbedc2fd6bf754d603fde1dfca55fa2",
+    "crates/radivine-wheel/src/geometry.rs": "449de5f1b88d564d3149e918f50d9af80afc85b59d44ec3f1ec3705140e8da63",
+    "crates/radivine-wheel/src/layout.rs": "da87d8e50ed3f6bc166451a0d0e8c3de299cb070ff17dc3d888955e0648538d6",
+    "crates/radivine-wheel/src/hit.rs": "458654d840a07a841e09baab7ca339074a558923be2123d32cbc04a5e8397dc4",
+    "crates/radivine-wheel/src/concentric.rs": "2010d17ce7e37e6a0a2112b229fb44c6e4cd99f723f4e66eba0270ab74abfb71",
+    "crates/radivine-wheel/src/concentric_nav.rs": "72dcb43f7ea1aed4e35e9b5a3cadc538a1f1c3a116f70a68834a88b19f8eba6d",
+    "crates/radivine-wheel/src/session.rs": "aa92bd09b9458b73ac0f509e8a168e6df48a522ab206ca1234699ffc298ee692",
+    "crates/radivine-actions/src/lib.rs": "4f97e4764852fc49683678183a112ed4a7a9b7e003690ae664743ff32f3c7341",
+    "crates/radivine-actions/src/builtins.rs": "8a89455a4dd5a416a5ec5eb7d0a1afb773daa5362021bff80a43aa447878a600",
+    "crates/radivine-actions/src/convert.rs": "4eb066a7b6bc45ed333ab5740a0b738f8432bd72e05b1358cd3f39ab7b8234d1",
+    "crates/radivine-core/src/registry.rs": "856cd5a94b9c218f876cb48b61f17b5f3e9e056b97e4f766980694d9a75b6447",
+    "crates/radivine-wheel/tests/scenarios.rs": "8c84f6392259076687d4fab125f4408d22c7ca8f2c25562ab07f9fb66ad43c88",
+    "crates/radivine-wheel/tests/concentric_scenarios.rs": "57080d4698ea099a057f36641928cbdb2360461b45a252be0e661c06b2fbf397",
+    "crates/radivine-actions/tests/actions_tests.rs": "d45c4b3bfb249568c56c17db310a10bf9518e555ac0c06634325fa63b5b81ca9"
+  },
+  "references": [
+    "scenario_01_dwell_band_and_click_modes",
+    "scenario_02_intent_triangle_diagonal_travel_and_grace_expiry",
+    "scenario_03_hub_entry_closes_children_after_timeout",
+    "scenario_09_keyboard_navigation_complete",
+    "t_nav_normative_concrete_deterministic_trace",
+    "t_nav3_radial_gap_diagonal_crossings_preserve_child_and_reject_drop",
+    "t_nav4_ancestor_sibling_pending_grace_jitter_two_sample_shortcut_and_stale_timers",
+    "t_nav7_menu_installation_exposure_guard_and_single_transition_per_input",
+    "t_nav9_invoke_keyboard_navigation_pointer_takeover_and_invoke_select_modes",
+    "t_safe1_to_t_safe5_strict_zone_rejection_enablement_default_child_generation_and_layout_parity",
+    "test_preview_visibility_and_enablement_matrix_ac_4_1",
+    "test_ac_c3_1_menu_structure_for_image_and_text_snapshot_parity",
+    "test_ac_c3_2_visibility_and_progressive_enablement_matrix"
+  ]
+}
