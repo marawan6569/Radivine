@@ -1,4 +1,4 @@
-name: Website release candidate
+name: Website validation and Pages
 
 on:
   pull_request:
@@ -99,10 +99,10 @@ jobs:
             website/playwright-report/
             website/test-results/
           retention-days: 14
-      # W4 publication hold: changing this literal requires separate W5 approval.
+      # W5: only this exact approved main commit may publish the project build.
       - name: Upload approved static Pages artifact only
         if: >-
-          ${{ false && matrix.hosting == 'project' &&
+          ${{ matrix.hosting == 'project' &&
               github.repository == 'marawan6569/Radivine' &&
               github.ref == 'refs/heads/main' &&
               (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
@@ -113,11 +113,11 @@ jobs:
           path: website/dist
 
   deploy:
-    name: Publish approved website (held for W5)
+    name: Publish approved website
     needs: verify
-    # W4 publication hold. A branch choice or variable alone cannot enable this.
+    # PRs, forks, other branches and unapproved main commits cannot deploy.
     if: >-
-      ${{ false && github.repository == 'marawan6569/Radivine' &&
+      ${{ github.repository == 'marawan6569/Radivine' &&
           github.ref == 'refs/heads/main' &&
           (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
           vars.WEBSITE_APPROVED_SHA == github.sha }}
@@ -133,6 +133,13 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Verify project hosting settings
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/marawan6569/Radivine/pages --jq \
+            'select(.build_type == "workflow" and .cname == null and .https_enforced == true and .html_url == "https://marawan6569.github.io/Radivine/") | .html_url' \
+            | grep -Fx 'https://marawan6569.github.io/Radivine/'
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
         with:
           enablement: false
