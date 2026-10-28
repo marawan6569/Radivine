@@ -232,6 +232,13 @@ import "../../styles/demo.css";
 <script>
   const root = document.querySelector<HTMLElement>("[data-wheel-demo]");
   if (root) {
+    // Reject native drops even before the lazy controller is ready. Do not read
+    // their contents or intercept dragging elsewhere on the page.
+    for (const type of ["dragover", "drop"] as const)
+      root.addEventListener(type, (event) => {
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = "none";
+      });
     let loading = false;
     const load = async () => {
       if (loading) return;

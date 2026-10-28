@@ -24,6 +24,14 @@ export function createView(root: HTMLElement) {
     root.dataset.phase = s.phase;
     const active = s.phase === "active",
       context = contexts.find((c) => c.id === s.context)!;
+    // Browsers can retain form values across history restoration. The reducer
+    // remains authoritative when a fresh controller mounts from the bfcache.
+    get<HTMLSelectElement>("[data-context]").value = s.context;
+    get<HTMLSelectElement>("[data-environment]").value = s.environment;
+    for (const radio of root.querySelectorAll<HTMLInputElement>(
+      '[name="wheel-layout"]',
+    ))
+      radio.checked = radio.value === s.requested;
     get("[data-file-name]").textContent = context.file;
     get("[data-panel-file]").textContent = context.file;
     get("[data-context-detail]").textContent = context.detail;
@@ -70,11 +78,11 @@ export function createView(root: HTMLElement) {
       : s.phase === "result"
         ? "A direction chosen. See the simulated outcome →"
         : "Choose a sample. Follow a direction.";
-    if (s.keyboard && hovered) {
+    if (active && s.keyboard && hovered) {
       const spoken = `${hovered.label}. ${hovered.reason ?? (hovered.children ? "Submenu." : "Ready to choose.")}`;
       if (get("[data-key-status]").textContent !== spoken)
         get("[data-key-status]").textContent = spoken;
-    }
+    } else if (!active) get("[data-key-status]").textContent = "";
     // Reconcile each open wheel by path; hover never rebuilds geometry or restarts animation.
     const session = `${s.context}:${s.effective}:${active}`;
     if (session !== previousSession) {
