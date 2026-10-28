@@ -13,7 +13,7 @@ const { title, code } = Astro.props;
       Copy
     </button>
   </div>
-  <pre tabindex="0" aria-label={title}><code>{code}</code></pre>
+  <pre role="region" tabindex="0" aria-label={title}><code>{code}</code></pre>
   <p class="copy-status" role="status" aria-live="polite"></p>
 </div>
 <script>
