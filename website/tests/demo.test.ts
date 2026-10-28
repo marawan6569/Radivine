@@ -5,6 +5,7 @@ import {
   reduce,
   geometry,
   nextDeadline,
+  canSelect,
   type State,
 } from "../src/demo/model.ts";
 import { menuFor, itemsAt } from "../src/demo/contexts.ts";
@@ -288,4 +289,83 @@ test("conversion and custom outcomes never claim native execution", () => {
   assert.match(s.result, /no file was converted/);
   s = key(key(start(), "4"), "1");
   assert.match(s.result, /logging-only/);
+});
+
+// These expectations were emitted by the unmodified Rust WheelSession, not this reducer.
+import nativeTraces from "./fixtures/demo-native-traces.json" with { type: "json" };
+import type { Event } from "../src/demo/model.ts";
+import { angleDiff } from "../src/demo/geometry.ts";
+for (const fixture of nativeTraces.cases) {
+  test(`Rust differential trace: ${fixture.layout} / ${fixture.context} / ${fixture.name}`, () => {
+    let s = start(
+      fixture.layout as Layout,
+      fixture.context as State["context"],
+    );
+    for (const step of fixture.trace) {
+      s = reduce(s, step.input as Event, step.at);
+      assert.deepEqual(s.path, step.path, `path at ${step.at}`);
+      assert.deepEqual(s.hover, step.hover, `hover at ${step.at}`);
+      if (step.commit) assert.equal(s.phase, "result");
+      const wheels = geometry(s);
+      assert.equal(wheels.length, step.wheels.length);
+      for (const [i, expected] of step.wheels.entries()) {
+        const actual = wheels[i];
+        assert(
+          distance(actual.center, expected.center) < 0.002,
+          `center ${i} at ${step.at}`,
+        );
+        assert(Math.abs(actual.inner - expected.inner) < 0.002);
+        assert(Math.abs(actual.outer - expected.outer) < 0.002);
+        for (const [j, span] of expected.spans.entries()) {
+          assert(
+            Math.abs(angleDiff(actual.spans[j].center, span.center)) < 0.00001,
+          );
+          assert(
+            Math.abs(actual.spans[j].end - actual.spans[j].start - span.width) <
+              0.00001,
+          );
+        }
+      }
+    }
+  });
+}
+
+test("Branching: angular hysteresis absorbs boundary jitter without accepting a separator release", () => {
+  let s = move(start("branching", "text", "drag"), 0, 1, 0);
+  s = reduce(
+    s,
+    { type: "move", point: polar(anchor, 85, -Math.PI / 4 - 0.02) },
+    10,
+  );
+  assert.deepEqual(s.hover, [1]);
+  assert.equal(
+    reduce(s, { type: "release", point: polar(anchor, 85, -Math.PI / 4) }, 11)
+      .phase,
+    "cancelled",
+  );
+});
+test("Branching: tangent intent protects diagonal travel only until the 180ms deadline", () => {
+  let s = tick(move(start(), 0, 0, 0, 70), 110);
+  s = reduce(
+    s,
+    { type: "move", point: polar(anchor, 45, (-55 * Math.PI) / 180) },
+    120,
+  );
+  s = reduce(
+    s,
+    { type: "move", point: polar(anchor, 132, (-41 * Math.PI) / 180) },
+    130,
+  );
+  assert.equal(s.timer?.kind, "intent");
+  assert.deepEqual(s.hover, [0]);
+  assert.deepEqual(tick(s, 309).path, [0]);
+  assert.deepEqual(tick(s, 310).path, []);
+});
+
+test("retained hover never advertises a neutral zone as ready to select", () => {
+  let s = move(start("concentric"), 0, 1, 0);
+  assert.equal(canSelect(s), true);
+  s = reduce(s, { type: "move", point: polar(anchor, 85, -Math.PI / 4) }, 10);
+  assert.deepEqual(s.hover, [1]);
+  assert.equal(canSelect(s), false);
 });

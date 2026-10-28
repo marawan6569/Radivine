@@ -299,13 +299,13 @@ export function mount(root: HTMLElement) {
     { once: true },
   );
   // bfcache restoration receives a fresh controller and a clean practice session.
-  window.addEventListener(
-    "pageshow",
-    (e) => {
-      if (e.persisted) mount(root);
-    },
-    { once: true },
-  );
+  const restore = (event: PageTransitionEvent) => {
+    if (event.persisted) {
+      window.removeEventListener("pageshow", restore);
+      mount(root);
+    }
+  };
+  window.addEventListener("pageshow", restore);
   get("[data-demo-interactive]").hidden = false;
   get("[data-demo-static]").hidden = true;
   render(state);

@@ -627,6 +627,16 @@
     transition: none !important;
   }
 }
+.is-retained .practice-sector,
+.is-hovered.is-disabled .practice-sector {
+  fill: var(--surface-muted);
+  stroke: var(--accent);
+  stroke-dasharray: 3 3;
+}
+.practice-stage .is-retained text,
+.practice-stage .is-hovered.is-disabled text {
+  fill: var(--text);
+}
 @media (forced-colors: active) {
   .practice-sector,
   .practice-hub {

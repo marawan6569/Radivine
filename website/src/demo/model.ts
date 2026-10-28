@@ -186,11 +186,37 @@ function eligible(s: State, path: number[] | null) {
     actionAt(s.menu, path)?.state === "enabled"
   );
 }
+function navigationHit(s: State, p: Point): Hit {
+  const wheels = geometry(s),
+    strict = hitTest(p, wheels, s.effective);
+  if (
+    s.effective !== "branching" ||
+    !s.hover ||
+    strict.kind === "hub" ||
+    strict.kind === "outside"
+  )
+    return strict;
+  const level = s.hover.length - 1,
+    w = wheels[level],
+    index = s.hover.at(-1)!;
+  const span = w?.spans[index];
+  if (
+    w &&
+    span &&
+    strict.level === level &&
+    distance(p, w.center) >= w.inner &&
+    distance(p, w.center) <= w.outer + config.margin &&
+    Math.abs(angleDiff(angle(w.center, p), span.center)) <=
+      (span.end - span.start) / 2 + radians(config.hysteresis)
+  )
+    return { kind: "item", level, index };
+  return strict;
+}
 function move(s: State, p: Point, now: number) {
   if (s.keyboard && distance(p, s.keyboard) < config.fresh) return;
   s.keyboard = null;
   const prev = s.pointer,
-    oldHit = hitTest(prev, geometry(s), s.effective);
+    oldHit = navigationHit(s, prev);
   s.pointer = p;
   if (!s.moved && distance(p, s.summon) < config.slop) return;
   s.moved = true;
@@ -203,7 +229,7 @@ function move(s: State, p: Point, now: number) {
     return;
   }
   const wheels = geometry(s),
-    h = hitTest(p, wheels, s.effective),
+    h = navigationHit(s, p),
     path = hitPath(s, h);
   if (h.kind === "hub") {
     s.hover = null;
@@ -499,4 +525,19 @@ export function nextDeadline(s: State): number | null {
   return s.phase === "active" && deadlines.length
     ? Math.min(...deadlines)
     : null;
+}
+
+/** Selection feedback follows strict eligibility, independently of retained hover. */
+export function canSelect(s: State): boolean {
+  const node = s.hover && actionAt(s.menu, s.hover);
+  if (
+    s.phase !== "active" ||
+    !node ||
+    node.children ||
+    node.state !== "enabled"
+  )
+    return false;
+  if (s.keyboard) return true;
+  const strict = hitPath(s, hitTest(s.pointer, geometry(s), s.effective));
+  return same(strict, s.hover) && eligible(s, strict);
 }

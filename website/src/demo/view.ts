@@ -1,5 +1,5 @@
 import { actionAt, contexts, itemsAt } from "./contexts.ts";
-import { geometry, type State } from "./model.ts";
+import { canSelect, geometry, type State } from "./model.ts";
 import { angle, itemPoint, polar, sectorPath } from "./geometry.ts";
 const ns = "http://www.w3.org/2000/svg";
 function svg<K extends keyof SVGElementTagNameMap>(
@@ -60,11 +60,12 @@ export function createView(root: HTMLElement) {
     );
     get("[data-path]").textContent = ["Files", ...crumbs].join(" / ");
     const hovered = s.hover && actionAt(s.menu, s.hover);
+    const armed = canSelect(s);
     get("[data-caption]").textContent = active
       ? s.approach
         ? "Enter the center hub to arm the wheel"
         : hovered
-          ? `${hovered.label}${hovered.state !== "enabled" ? ` · ${hovered.reason}` : hovered.children ? " · follow this branch" : s.timer?.kind === "sibling" ? " · waiting for intent" : " · ready to choose"}`
+          ? `${hovered.label}${hovered.state !== "enabled" ? ` · ${hovered.reason}` : hovered.children ? " · follow this branch" : s.timer?.kind === "sibling" ? " · waiting for intent" : armed ? " · ready to choose" : " · move inside this action to choose"}`
           : "Hub, gaps and outside areas do not select an action."
       : s.phase === "result"
         ? "A direction chosen. See the simulated outcome →"
@@ -194,6 +195,14 @@ export function createView(root: HTMLElement) {
             level < s.path.length,
         );
         segment.classList.toggle("is-disabled", node.state !== "enabled");
+        segment.classList.toggle(
+          "is-retained",
+          active &&
+            path === s.hover?.join(".") &&
+            !armed &&
+            !node.children &&
+            node.state === "enabled",
+        );
         segment.querySelector(".practice-state-label")!.textContent =
           node.state === "pending"
             ? "Checking…"

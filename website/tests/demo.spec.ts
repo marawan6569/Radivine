@@ -14,6 +14,8 @@ async function open(page: Page) {
   await page.locator("[data-open]").click();
 }
 async function coords(page: Page, p: Point) {
+  await page.locator("[data-stage]").scrollIntoViewIfNeeded();
+  await page.evaluate(() => document.fonts.ready);
   return page.locator("[data-wheel-svg]").evaluate((svg, p) => {
     const q = new DOMPoint(p.x, p.y).matrixTransform(
       (svg as SVGSVGElement).getScreenCTM()!,
@@ -106,13 +108,12 @@ test("pointer dwell opens Branching; click commits only matching leaf", async ({
 }) => {
   await load(page);
   await open(page);
-  let state = reduce(initial(), { type: "start" }, 0);
+  const state = reduce(initial(), { type: "start" }, 0);
   await move(page, itemPoint(geometry(state)[0], 0, 70));
   await expect(page.locator('[data-wheel="0"]')).toBeVisible();
-  state = reduce(state, { type: "key", key: "1" }, 110);
-  await move(page, itemPoint(geometry(state)[1], 1));
-  await page.mouse.down();
-  await page.mouse.up();
+  // Wait for the painted child to settle and scroll its target into view before
+  // clicking; raw viewport coordinates can otherwise land above a short viewport.
+  await page.locator('[data-segment="0.1"] .practice-sector').click();
   await expect(page.locator("[data-outcome]")).toContainText(
     "Head (first 50 lines)",
   );
@@ -338,4 +339,25 @@ test("no-JavaScript leaves useful paths, guide and CTA without pretend controls"
     page.getByRole("link", { name: "usage guide", exact: true }),
   ).toHaveAttribute("href", `${home}guide/`);
   await context.close();
+});
+
+test("forced colors and keyboard announcements; browser back starts a clean usable session", async ({
+  page,
+}) => {
+  await page.emulateMedia({ forcedColors: "active", reducedMotion: "reduce" });
+  await load(page);
+  await open(page);
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator("[data-key-status]")).toContainText("File Preview");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("[data-key-status]")).toContainText("Full Preview");
+  await page.goto(`${home}guide/`);
+  await page.goBack();
+  await page.locator("#try").scrollIntoViewIfNeeded();
+  await expect(page.locator("[data-open]")).toBeVisible();
+  await open(page);
+  await page.keyboard.press("1");
+  await expect(page.locator("[data-path]")).toHaveText("Files / File Preview");
+  await page.keyboard.press("2");
+  await expect(page.locator("[data-outcome]")).toContainText("Head");
 });

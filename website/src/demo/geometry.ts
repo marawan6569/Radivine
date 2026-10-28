@@ -266,6 +266,14 @@ export function itemPoint(wheel: Wheel, index: number, radius?: number) {
   );
 }
 export function sectorPath(w: Wheel, s: Span, layout: Layout): string {
+  if (layout === "concentric" && w.spans.length === 1) {
+    // Separate closed contours avoid a painted radial seam in a full annulus.
+    const { x, y } = w.center,
+      outer = w.outer,
+      inner = w.inner;
+    return `M${x},${y - outer} A${outer},${outer} 0 1 1 ${x},${y + outer} A${outer},${outer} 0 1 1 ${x},${y - outer} Z M${x},${y - inner} A${inner},${inner} 0 1 0 ${x},${y + inner} A${inner},${inner} 0 1 0 ${x},${y - inner} Z`;
+  }
+
   const di =
     layout === "concentric"
       ? w.spans.length === 1
