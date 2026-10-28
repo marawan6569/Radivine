@@ -1,6 +1,6 @@
 # Radivine website
 
-Local-only W2 product content and installation site, preserving the W1 foundation and W1.5 motion homepage. No deployment workflow or hosting registration is included. W0 decisions: [contract](../docs/website/W0-contract.md). W1.5 direction: [radial motion](../docs/website/W1.5-motion.md). W2 validation: [report](../docs/test-reports/W2.md). W3–W5 require separate authorization.
+Local-only website through W4 release candidate validation, preserving the W1 foundation, W1.5 motion, W2 content and W3 interactive practice. The isolated website workflow is prepared with publication disabled. See the [W4 report](../docs/test-reports/W4.md) and [deployment runbook](../docs/website/W4-deployment.md) for measured results and outstanding gates. W5 requires separate authorization. Earlier contracts remain available: [W0](../docs/website/W0-contract.md), [W1.5](../docs/website/W1.5-motion.md), [W2](../docs/test-reports/W2.md), [W3](../docs/website/W3-demo.md).
 
 Use Node **24.22.1** (`nvm use` with `.nvmrc`), npm, and:
 
@@ -33,13 +33,13 @@ npx playwright install chromium
 npm test
 ```
 
-Playwright starts its own production preview server after a default-base build. Routine test artifacts are ignored. Curated W1.5 visual review media is versioned with the report. Browser checks require the browser's OS libraries; automated checks do not replace a manual screen-reader or Safari review.
+Playwright starts its own loopback static server against the production artifact after a matching-base build. Routine test artifacts are ignored. Curated W1.5 visual review media is versioned with the report. Browser checks require the browser's OS libraries; automated checks do not replace a manual screen-reader or Safari review.
 
 ## Architecture and boundaries
 
 Astro static HTML, strict TypeScript, Tailwind 4 Vite integration; no framework, backend, visitor API calls, analytics or client router. `src/styles/tokens.css` owns semantic theme variables. `SiteLayout` owns metadata, no-flash theme initialization and the shell. Native disclosure navigation works without JavaScript. Theme preference is the only browser-local persisted state, under `radivine:theme`; blocked storage is tolerated. The website theme does not change application settings.
 
-W1.5 home sections provide the motion-driven introduction. W2 adds `/download/`, `/compatibility/`, `/guide/`, `/guide/configuration/`, `/guide/troubleshooting/`, `/roadmap/`, `/contribute/` and `/licenses/`. Every route produces static HTML; native disclosures, tables, commands and links remain useful without JavaScript. Copy buttons are optional enhancements. The interactive demo is W3. Validation workflows and publication remain W4/W5; no CI files are added here.
+W1.5 home sections provide the motion-driven introduction. W2 adds `/download/`, `/compatibility/`, `/guide/`, `/guide/configuration/`, `/guide/troubleshooting/`, `/roadmap/`, `/contribute/` and `/licenses/`. Every route produces static HTML; native disclosures, tables, commands and links remain useful without JavaScript. Copy buttons are optional enhancements. The interactive demo is W3. W4 adds an isolated validation workflow and release audits. Publication remains disabled pending separate W5 authorization.
 
 `src/lib/schemas.mjs` provides strict Zod structures and semantic checks shared by Astro content collections and validation scripts. JSON catalogs in `src/data/` separate implementation, evidence, compatibility and roadmap status. Markdown guides in `src/content/guides/` have validated frontmatter and cross-references. Repository evidence is pinned to audited commits. New desktop verification needs a dated report and named environment; source inspection is not manual testing.
 
@@ -51,7 +51,7 @@ W1.5 home sections provide the motion-driven introduction. W2 adds `/download/`,
 
 `src/data/assets.json` records consumed original hashes and licenses. The original logo is imported directly from `../assets/branding/logo-icon.png` and optimized by Astro into build output. Originals are never modified. `src/assets/inter-latin.woff2` is a website-only Latin subset of the repository's Inter variable font, generated with FontTools `pyftsubset --flavor=woff2` (Latin, punctuation, common symbols, full layout features). It retains weight variation; OFL license is in `public/notices/`. No external font requests. No old screenshot is represented as current. The hero and workflow use clearly captioned radial illustrations; feature studies are illustrations too, not native application UI.
 
-Inputs outside website: `assets/branding/logo-icon.png`, `assets/fonts/Inter-Variable.ttf`, `assets/third_party/OFL-Inter.txt`, `LICENSE-MIT`, `LICENSE-APACHE`; product copy derives from `docs/website-plan.md` / W0. A future website workflow must track consumed asset inputs without modifying Rust CI or releases.
+Inputs outside website: `assets/branding/logo-icon.png`, `assets/fonts/Inter-Variable.ttf`, `assets/third_party/OFL-Inter.txt`, `LICENSE-MIT`, `LICENSE-APACHE`; product copy derives from `docs/website-plan.md` / W0. The website workflow tracks consumed inputs without modifying Rust CI or releases.
 
 Before changing copied/derived assets, verify provenance and license and update the hash registry. The capture checklist in W0 is the gate for replacing the media placeholder. Do not regenerate any protected logo/icon or invent application UI.
 
@@ -86,7 +86,7 @@ website/
   scripts/capture-content-review.mjs  W2 full-page screenshots and layout metrics
 ```
 
-Tests also run against root-hosted output with `SITE_BASE=/ npm test` after a root build. Keep build and tests sequential. Astro 7 can auto-background its server in agent environments; the Playwright command uses `--ignore-lock` so the runner owns and stops the foreground process. For an ordinary manually started background server, `npx astro preview stop` stops it.
+Tests also run against root-hosted output with `SITE_BASE=/ npm test` after a root build. Keep build and tests sequential. The test runner owns its static-server process and stops it afterward. For separately started Astro previews, use `--ignore-lock` to keep the process in the foreground; `npx astro preview stop` stops an Astro-managed background preview.
 
 ## W1.5 visual review
 
@@ -133,3 +133,15 @@ npm run test:demo
 The native reference emitter never creates a window or executes an action. Review its JSON diff before committing. It verifies bounded engine paths, not live X11/desktop integration.
 
 For screenshot/video review, build and serve the default base on 4332, then run `node scripts/capture-demo-review.mjs`. `REVIEW_URL` and `REVIEW_OUTPUT` override defaults. The script replaces its named W3 captures and emits measurements; recordings show browser practice, never native application UI. The root/project-base builds and tests must remain sequential because they share `dist/`.
+
+## W4 release validation and held deployment
+
+The isolated [website workflow](../.github/workflows/website.yml) and [deployment/rollback runbook](../docs/website/W4-deployment.md) are review material. Pages upload and deployment have literal disabled guards. Publication requires separate W5 authorization; no repository setting has been changed.
+
+Workflow path filters cover `website/**`, `.github/workflows/website.yml`, protected `assets/branding/**` and `assets/icons/**`, consumed `assets/fonts/**`, `assets/wheel-icons/**` and `assets/third_party/**`, `docs/**` (evidence and media), `apps/**` and `crates/**` (fixture/evidence sources), `packaging/**`, `scripts/build-deb.sh`, `scripts/check-dep-graph.sh`, `Cargo.toml`, `Cargo.lock`, root `*.md`, `LICENSE-*` and `.github/workflows/ci.yml` (toolchain evidence). These filters trigger website validation when consumed inputs drift; they do not authorize edits to those inputs. Existing Rust CI remains independent and unchanged.
+
+`npm test` now uses the production-only `scripts/serve-static.mjs` fixture with gzip and HTTP 404 handling. It defaults to Chromium; `SITE_BROWSERS=chromium,firefox,webkit` selects all three projects. Firefox uses touch plus a narrow viewport because Playwright does not support its `isMobile` flag. Clipboard success/denial uses a portable adapter, with an additional real Chromium clipboard check. No missing-browser result is silently skipped.
+
+`npm run check:artifact` validates static artifact contents and JS gzip budgets. `npm run audit:performance` records three mobile Lighthouse runs and controlled mobile/desktop metrics against `REVIEW_URL`; raw output is ignored by default. `node scripts/audit-accessibility.mjs` records all-route Light/Dark WCAG 2.2 rule checks, representative demo states, token contrast and remaining automated review items. Both use `REVIEW_OUTPUT` for curated evidence. Do not run performance sampling concurrently with other browser or build work.
+
+See the [W4 report](../docs/test-reports/W4.md) for measured results, local browser limitations and outstanding manual release gates. To capture fresh website screenshots/recordings, reuse `capture-demo-review.mjs` with a W4 `REVIEW_OUTPUT`; never relabel browser captures as native Radivine UI.
