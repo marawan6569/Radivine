@@ -149,7 +149,9 @@ test("blocked motion script leaves every workflow and feature readable", async (
   const page = await context.newPage();
   await page.goto(home);
   await expect(page.locator("[data-story-step] h3")).toHaveCount(4);
-  for (const heading of await page.locator("main h2, main h3").all())
+  for (const heading of await page
+    .locator("main h2, main h3:not(.practice-list-title)")
+    .all())
     await expect(heading).toBeVisible();
   await expect(
     page.getByText("Workflow illustration", { exact: false }),

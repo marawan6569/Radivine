@@ -127,7 +127,7 @@ test("no-JavaScript mobile disclosure and system theme remain usable", async ({
   });
   const page = await context.newPage();
   await page.goto(home);
-  await page.locator("summary").click();
+  await page.locator(".mobile-nav > summary").click();
   await expect(
     page
       .getByRole("navigation", { name: "Mobile navigation" })
@@ -158,19 +158,19 @@ test("keyboard skip, focus visibility, mobile Escape and 200% equivalent layout"
   ).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page.locator("#main")).toBeFocused();
-  await page.locator("summary").click();
+  await page.locator(".mobile-nav > summary").click();
   const navigation = page.getByRole("navigation", {
     name: "Mobile navigation",
   });
   await page.keyboard.press("Tab");
-  await expect(navigation.getByText("Product")).toBeFocused();
+  await expect(navigation.getByText("Try it", { exact: true })).toBeFocused();
   expect(
     await navigation
-      .getByText("Product")
+      .getByText("Try it", { exact: true })
       .evaluate((element) => getComputedStyle(element).outlineStyle),
   ).toBe("solid");
   await page.keyboard.press("Escape");
-  await expect(page.locator("summary")).toBeFocused();
+  await expect(page.locator(".mobile-nav > summary")).toBeFocused();
   await expect(navigation).toBeHidden();
   expect(
     await page.evaluate(
