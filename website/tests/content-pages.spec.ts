@@ -186,9 +186,24 @@ test("themes persist across nested pages and new navigation works by keyboard", 
   ).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page.locator("#main")).toBeFocused();
-  await page
+  const troubleshooting = page
     .getByRole("navigation", { name: "Documentation" })
-    .getByRole("link", { name: /Troubleshooting/ })
-    .click();
+    .getByRole("link", { name: /Troubleshooting/ });
+  // Keep this a keyboard path. A pointer click immediately after the skip
+  // link can race Firefox's still-running native smooth anchor scroll.
+  for (let tab = 0; tab < 10; tab++) {
+    await page.keyboard.press("Tab");
+    if (
+      await troubleshooting.evaluate((link) => link === document.activeElement)
+    )
+      break;
+  }
+  await expect(troubleshooting).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(new RegExp(`${base}guide/troubleshooting/$`));
+
+  // Independently retain real pointer navigation, without a preceding scroll.
+  await page.goto(base + "guide/configuration/");
+  await troubleshooting.click();
   await expect(page).toHaveURL(new RegExp(`${base}guide/troubleshooting/$`));
 });
