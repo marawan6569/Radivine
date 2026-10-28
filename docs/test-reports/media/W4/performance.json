@@ -1,0 +1,415 @@
+{
+  "url": "http://127.0.0.1:4345/Radivine/",
+  "measuredOn": "2026-10-28T11:58:21.150Z",
+  "lighthouse": [
+    {
+      "version": "13.6.0",
+      "settings": {
+        "output": "json",
+        "maxWaitForFcp": 30000,
+        "maxWaitForLoad": 45000,
+        "pauseAfterFcpMs": 1000,
+        "pauseAfterLoadMs": 1000,
+        "networkQuietThresholdMs": 1000,
+        "cpuQuietThresholdMs": 1000,
+        "formFactor": "mobile",
+        "throttling": {
+          "rttMs": 150,
+          "throughputKbps": 1638.4,
+          "requestLatencyMs": 562.5,
+          "downloadThroughputKbps": 1474.5600000000002,
+          "uploadThroughputKbps": 675,
+          "cpuSlowdownMultiplier": 4
+        },
+        "throttlingMethod": "simulate",
+        "screenEmulation": {
+          "mobile": true,
+          "width": 412,
+          "height": 823,
+          "deviceScaleFactor": 1.75,
+          "disabled": false
+        },
+        "emulatedUserAgent": "Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36",
+        "auditMode": false,
+        "gatherMode": false,
+        "clearStorageTypes": [
+          "file_systems",
+          "shader_cache",
+          "service_workers",
+          "cache_storage"
+        ],
+        "disableStorageReset": false,
+        "debugNavigation": false,
+        "channel": "node",
+        "usePassiveGathering": false,
+        "disableFullPageScreenshot": false,
+        "skipAboutBlank": false,
+        "blankPage": "about:blank",
+        "ignoreStatusCode": false,
+        "locale": "en-US",
+        "blockedUrlPatterns": null,
+        "additionalTraceCategories": null,
+        "extraHeaders": null,
+        "precomputedLanternData": null,
+        "onlyAudits": null,
+        "onlyCategories": [
+          "performance",
+          "accessibility",
+          "best-practices",
+          "seo"
+        ],
+        "skipAudits": null
+      },
+      "scores": {
+        "performance": 100,
+        "accessibility": 100,
+        "best-practices": 100,
+        "seo": 100
+      },
+      "lcp": 908.2239999999999,
+      "cls": 0,
+      "tbt": 0,
+      "transfer": 137871,
+      "failed": [
+        {
+          "id": "network-dependency-tree-insight",
+          "title": "Network dependency tree",
+          "score": 0
+        },
+        {
+          "id": "render-blocking-insight",
+          "title": "Render-blocking requests",
+          "score": 0,
+          "displayValue": "Est savings of 260 ms"
+        }
+      ]
+    },
+    {
+      "version": "13.6.0",
+      "settings": {
+        "output": "json",
+        "maxWaitForFcp": 30000,
+        "maxWaitForLoad": 45000,
+        "pauseAfterFcpMs": 1000,
+        "pauseAfterLoadMs": 1000,
+        "networkQuietThresholdMs": 1000,
+        "cpuQuietThresholdMs": 1000,
+        "formFactor": "mobile",
+        "throttling": {
+          "rttMs": 150,
+          "throughputKbps": 1638.4,
+          "requestLatencyMs": 562.5,
+          "downloadThroughputKbps": 1474.5600000000002,
+          "uploadThroughputKbps": 675,
+          "cpuSlowdownMultiplier": 4
+        },
+        "throttlingMethod": "simulate",
+        "screenEmulation": {
+          "mobile": true,
+          "width": 412,
+          "height": 823,
+          "deviceScaleFactor": 1.75,
+          "disabled": false
+        },
+        "emulatedUserAgent": "Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36",
+        "auditMode": false,
+        "gatherMode": false,
+        "clearStorageTypes": [
+          "file_systems",
+          "shader_cache",
+          "service_workers",
+          "cache_storage"
+        ],
+        "disableStorageReset": false,
+        "debugNavigation": false,
+        "channel": "node",
+        "usePassiveGathering": false,
+        "disableFullPageScreenshot": false,
+        "skipAboutBlank": false,
+        "blankPage": "about:blank",
+        "ignoreStatusCode": false,
+        "locale": "en-US",
+        "blockedUrlPatterns": null,
+        "additionalTraceCategories": null,
+        "extraHeaders": null,
+        "precomputedLanternData": null,
+        "onlyAudits": null,
+        "onlyCategories": [
+          "performance",
+          "accessibility",
+          "best-practices",
+          "seo"
+        ],
+        "skipAudits": null
+      },
+      "scores": {
+        "performance": 100,
+        "accessibility": 100,
+        "best-practices": 100,
+        "seo": 100
+      },
+      "lcp": 907.1020000000001,
+      "cls": 0,
+      "tbt": 86.5,
+      "transfer": 137871,
+      "failed": [
+        {
+          "id": "total-blocking-time",
+          "title": "Total Blocking Time",
+          "score": 0.99,
+          "displayValue": "90 ms"
+        },
+        {
+          "id": "max-potential-fid",
+          "title": "Max Potential First Input Delay",
+          "score": 0.87,
+          "displayValue": "140 ms"
+        },
+        {
+          "id": "network-dependency-tree-insight",
+          "title": "Network dependency tree",
+          "score": 0
+        },
+        {
+          "id": "render-blocking-insight",
+          "title": "Render-blocking requests",
+          "score": 0,
+          "displayValue": "Est savings of 300 ms"
+        }
+      ]
+    },
+    {
+      "version": "13.6.0",
+      "settings": {
+        "output": "json",
+        "maxWaitForFcp": 30000,
+        "maxWaitForLoad": 45000,
+        "pauseAfterFcpMs": 1000,
+        "pauseAfterLoadMs": 1000,
+        "networkQuietThresholdMs": 1000,
+        "cpuQuietThresholdMs": 1000,
+        "formFactor": "mobile",
+        "throttling": {
+          "rttMs": 150,
+          "throughputKbps": 1638.4,
+          "requestLatencyMs": 562.5,
+          "downloadThroughputKbps": 1474.5600000000002,
+          "uploadThroughputKbps": 675,
+          "cpuSlowdownMultiplier": 4
+        },
+        "throttlingMethod": "simulate",
+        "screenEmulation": {
+          "mobile": true,
+          "width": 412,
+          "height": 823,
+          "deviceScaleFactor": 1.75,
+          "disabled": false
+        },
+        "emulatedUserAgent": "Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36",
+        "auditMode": false,
+        "gatherMode": false,
+        "clearStorageTypes": [
+          "file_systems",
+          "shader_cache",
+          "service_workers",
+          "cache_storage"
+        ],
+        "disableStorageReset": false,
+        "debugNavigation": false,
+        "channel": "node",
+        "usePassiveGathering": false,
+        "disableFullPageScreenshot": false,
+        "skipAboutBlank": false,
+        "blankPage": "about:blank",
+        "ignoreStatusCode": false,
+        "locale": "en-US",
+        "blockedUrlPatterns": null,
+        "additionalTraceCategories": null,
+        "extraHeaders": null,
+        "precomputedLanternData": null,
+        "onlyAudits": null,
+        "onlyCategories": [
+          "performance",
+          "accessibility",
+          "best-practices",
+          "seo"
+        ],
+        "skipAudits": null
+      },
+      "scores": {
+        "performance": 100,
+        "accessibility": 100,
+        "best-practices": 100,
+        "seo": 100
+      },
+      "lcp": 907.2339999999999,
+      "cls": 0.005829561554725948,
+      "tbt": 0,
+      "transfer": 137871,
+      "failed": [
+        {
+          "id": "network-dependency-tree-insight",
+          "title": "Network dependency tree",
+          "score": 0
+        },
+        {
+          "id": "render-blocking-insight",
+          "title": "Render-blocking requests",
+          "score": 0,
+          "displayValue": "Est savings of 300 ms"
+        }
+      ]
+    }
+  ],
+  "controlled": [
+    {
+      "name": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "cpuSlowdown": 4,
+      "latencyMs": 150,
+      "downloadBitsPerSecond": 1600000,
+      "initial": {
+        "lcp": 1508,
+        "cls": 0.0008749392361111111,
+        "shifts": [
+          {
+            "value": 0.0008749392361111111,
+            "nodes": [
+              "desktop-nav"
+            ]
+          }
+        ],
+        "transfer": 136009,
+        "resources": [
+          {
+            "name": "SiteLayout.fuVO0zUJ.css",
+            "transfer": 5284,
+            "encoded": 4984
+          },
+          {
+            "name": "index.DKT7_LE5.css",
+            "transfer": 5789,
+            "encoded": 5489
+          },
+          {
+            "name": "logo-icon.B9PE8Z7G_1HA9KM.webp",
+            "transfer": 10036,
+            "encoded": 9736
+          },
+          {
+            "name": "WheelDemo.astro_astro_type_script_index_0_lang.B3jlENmI.js",
+            "transfer": 1461,
+            "encoded": 1161
+          },
+          {
+            "name": "inter-latin.DWSxN9ft.woff2",
+            "transfer": 100080,
+            "encoded": 99780
+          },
+          {
+            "name": "logo-icon.B9PE8Z7G_zwiko.webp",
+            "transfer": 1992,
+            "encoded": 1692
+          }
+        ]
+      },
+      "timing": {
+        "dispatchMs": {
+          "median": 2.4000000059604645,
+          "p95": 3.0999999940395355,
+          "max": 4.800000011920929
+        },
+        "twoFrameMs": {
+          "median": 33.30000001192093,
+          "p95": 35.69999998807907,
+          "max": 49.099999994039536
+        },
+        "note": "Synthetic key dispatch and two animation frames, not field INP or a paint guarantee."
+      },
+      "end": {
+        "lcp": 1508,
+        "cls": 0.0008749392361111111,
+        "shifts": [
+          {
+            "value": 0.0008749392361111111,
+            "nodes": [
+              "desktop-nav"
+            ]
+          }
+        ],
+        "runningAnimations": 0
+      }
+    },
+    {
+      "name": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "cpuSlowdown": 4,
+      "latencyMs": 150,
+      "downloadBitsPerSecond": 1600000,
+      "initial": {
+        "lcp": 1512,
+        "cls": 0,
+        "shifts": [],
+        "transfer": 136009,
+        "resources": [
+          {
+            "name": "SiteLayout.fuVO0zUJ.css",
+            "transfer": 5284,
+            "encoded": 4984
+          },
+          {
+            "name": "index.DKT7_LE5.css",
+            "transfer": 5789,
+            "encoded": 5489
+          },
+          {
+            "name": "logo-icon.B9PE8Z7G_1HA9KM.webp",
+            "transfer": 10036,
+            "encoded": 9736
+          },
+          {
+            "name": "WheelDemo.astro_astro_type_script_index_0_lang.B3jlENmI.js",
+            "transfer": 1461,
+            "encoded": 1161
+          },
+          {
+            "name": "inter-latin.DWSxN9ft.woff2",
+            "transfer": 100080,
+            "encoded": 99780
+          },
+          {
+            "name": "logo-icon.B9PE8Z7G_zwiko.webp",
+            "transfer": 1992,
+            "encoded": 1692
+          }
+        ]
+      },
+      "timing": {
+        "dispatchMs": {
+          "median": 2.199999988079071,
+          "p95": 3.300000011920929,
+          "max": 5.199999988079071
+        },
+        "twoFrameMs": {
+          "median": 33.20000001788139,
+          "p95": 34.400000005960464,
+          "max": 40.79999998211861
+        },
+        "note": "Synthetic key dispatch and two animation frames, not field INP or a paint guarantee."
+      },
+      "end": {
+        "lcp": 1512,
+        "cls": 0,
+        "shifts": [],
+        "runningAnimations": 0
+      }
+    }
+  ],
+  "medianPerformance": 100
+}

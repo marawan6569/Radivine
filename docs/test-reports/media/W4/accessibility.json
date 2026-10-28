@@ -1,0 +1,2181 @@
+{
+  "checkedOn": "2026-10-28T12:01:45.473Z",
+  "engine": "Chromium",
+  "tags": [
+    "wcag2a",
+    "wcag2aa",
+    "wcag21a",
+    "wcag21aa",
+    "wcag22aa",
+    "best-practice"
+  ],
+  "results": [
+    {
+      "theme": "light",
+      "label": "home",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".radial-hero > .art-labels > text[x=\"34\"][y=\"570\"]"
+            ],
+            [
+              ".radial-hero > .art-labels > text[x=\"459\"][y=\"306\"]"
+            ],
+            [
+              "a[href$=\"Radivine/#product\"] > span[data-astro-cid-uyvqhsom=\"\"][aria-hidden=\"true\"]"
+            ],
+            [
+              "text[x=\"235\"]"
+            ],
+            [
+              "text[y=\"76\"]"
+            ],
+            [
+              "text[y=\"186\"]"
+            ],
+            [
+              "text[y=\"296\"]"
+            ],
+            [
+              ".practice-disclosure > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "div[data-astro-cid-lcdefpme=\"\"]:nth-child(1) > dt > .support-mark[data-astro-cid-lcdefpme=\"\"][aria-hidden=\"true\"]"
+            ],
+            [
+              ".actions[data-astro-cid-lcdefpme=\"\"] > .button:nth-child(1)"
+            ],
+            [
+              ".secondary.button[href$=\"contribute/\"]"
+            ]
+          ]
+        }
+      ],
+      "passes": 46
+    },
+    {
+      "theme": "light",
+      "label": "download/",
+      "violations": [],
+      "incomplete": [],
+      "passes": 49
+    },
+    {
+      "theme": "light",
+      "label": "compatibility/",
+      "violations": [],
+      "incomplete": [],
+      "passes": 51
+    },
+    {
+      "theme": "light",
+      "label": "guide/",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "text[x=\"34\"]"
+            ],
+            [
+              "text[x=\"459\"]"
+            ]
+          ]
+        }
+      ],
+      "passes": 47
+    },
+    {
+      "theme": "light",
+      "label": "guide/configuration/",
+      "violations": [],
+      "incomplete": [],
+      "passes": 49
+    },
+    {
+      "theme": "light",
+      "label": "guide/troubleshooting/",
+      "violations": [],
+      "incomplete": [],
+      "passes": 42
+    },
+    {
+      "theme": "light",
+      "label": "roadmap/",
+      "violations": [],
+      "incomplete": [],
+      "passes": 44
+    },
+    {
+      "theme": "light",
+      "label": "contribute/",
+      "violations": [],
+      "incomplete": [],
+      "passes": 47
+    },
+    {
+      "theme": "light",
+      "label": "licenses/",
+      "violations": [],
+      "incomplete": [],
+      "passes": 42
+    },
+    {
+      "theme": "light",
+      "label": "404.html",
+      "violations": [],
+      "incomplete": [],
+      "passes": 41
+    },
+    {
+      "theme": "light",
+      "label": "branching/text/nested",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".practice-disclosure > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "text[y=\"254.60000000000002\"]"
+            ],
+            [
+              "text[y=\"273.6\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"538.4\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"538.4\"]"
+            ],
+            [
+              "text[y=\"431.4\"]"
+            ],
+            [
+              "text[y=\"450.4\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"361.6\"]"
+            ],
+            [
+              "text[y=\"356\"]"
+            ],
+            [
+              "text[y=\"59.14830654848744\"]"
+            ],
+            [
+              "text[y=\"78.14830654848744\"]"
+            ],
+            [
+              "text[y=\"40.8905171575919\"]"
+            ],
+            [
+              "text[y=\"59.8905171575919\"]"
+            ],
+            [
+              "text[y=\"116.94063904958792\"]"
+            ],
+            [
+              "text[y=\"135.9406390495879\"]"
+            ],
+            [
+              "text[x=\"554.1245806274048\"]"
+            ],
+            [
+              ".practice-caption"
+            ],
+            [
+              ".practice-stage-tag"
+            ],
+            [
+              "button[data-back=\"\"]"
+            ],
+            [
+              ".is-current > span[aria-hidden=\"true\"]:nth-child(3)"
+            ],
+            [
+              "button[data-action=\"1\"] > span[aria-hidden=\"true\"]:nth-child(3)"
+            ],
+            [
+              "button[data-action=\"2\"] > span[aria-hidden=\"true\"]:nth-child(3)"
+            ]
+          ]
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "targets": [
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        }
+      ],
+      "passes": 26
+    },
+    {
+      "theme": "light",
+      "label": "branching/multiple/nested",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".practice-disclosure > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "text[y=\"254.60000000000002\"]"
+            ],
+            [
+              "text[y=\"273.6\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"538.4\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"538.4\"]"
+            ],
+            [
+              "text[y=\"431.4\"]"
+            ],
+            [
+              "text[y=\"450.4\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"361.6\"]"
+            ],
+            [
+              "text[y=\"356\"]"
+            ],
+            [
+              "text[y=\"59.14830654848744\"]"
+            ],
+            [
+              "text[y=\"78.14830654848744\"]"
+            ],
+            [
+              "text[y=\"95.14830654848744\"]"
+            ],
+            [
+              "text[y=\"40.8905171575919\"]"
+            ],
+            [
+              "text[y=\"59.8905171575919\"]"
+            ],
+            [
+              "text[y=\"76.8905171575919\"]"
+            ],
+            [
+              "text[y=\"116.94063904958792\"]"
+            ],
+            [
+              "text[y=\"135.9406390495879\"]"
+            ],
+            [
+              "text[y=\"152.9406390495879\"]"
+            ],
+            [
+              "text[x=\"554.1245806274048\"]"
+            ],
+            [
+              ".practice-caption"
+            ],
+            [
+              ".practice-stage-tag"
+            ],
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "targets": [
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        }
+      ],
+      "passes": 26
+    },
+    {
+      "theme": "light",
+      "label": "branching/checking/nested",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".practice-disclosure > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "text[y=\"254.60000000000002\"]"
+            ],
+            [
+              "text[y=\"273.6\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"538.4\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"538.4\"]"
+            ],
+            [
+              "text[y=\"431.4\"]"
+            ],
+            [
+              "text[y=\"450.4\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"361.6\"]"
+            ],
+            [
+              "text[y=\"356\"]"
+            ],
+            [
+              "text[y=\"59.14830654848744\"]"
+            ],
+            [
+              "text[y=\"78.14830654848744\"]"
+            ],
+            [
+              "text[y=\"95.14830654848744\"]"
+            ],
+            [
+              "text[y=\"40.8905171575919\"]"
+            ],
+            [
+              "text[y=\"59.8905171575919\"]"
+            ],
+            [
+              "text[y=\"76.8905171575919\"]"
+            ],
+            [
+              "text[y=\"116.94063904958792\"]"
+            ],
+            [
+              "text[y=\"135.9406390495879\"]"
+            ],
+            [
+              "text[y=\"152.9406390495879\"]"
+            ],
+            [
+              "text[x=\"554.1245806274048\"]"
+            ],
+            [
+              ".practice-caption"
+            ],
+            [
+              ".practice-stage-tag"
+            ],
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "targets": [
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        }
+      ],
+      "passes": 26
+    },
+    {
+      "theme": "light",
+      "label": "branching/image/nested",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".practice-disclosure > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "text[y=\"254.60000000000002\"]"
+            ],
+            [
+              "text[y=\"273.6\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"538.4\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"538.4\"]"
+            ],
+            [
+              "text[y=\"431.4\"]"
+            ],
+            [
+              "text[y=\"450.4\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"361.6\"]"
+            ],
+            [
+              "text[y=\"356\"]"
+            ],
+            [
+              "text[y=\"40.8905171575919\"]"
+            ],
+            [
+              "text[y=\"59.8905171575919\"]"
+            ],
+            [
+              "text[x=\"554.1245806274048\"]"
+            ],
+            [
+              "text[y=\"30.337582548264315\"]"
+            ],
+            [
+              "text[y=\"49.337582548264315\"]"
+            ],
+            [
+              "text[y=\"80.92013060755453\"]"
+            ],
+            [
+              "text[y=\"99.92013060755453\"]"
+            ],
+            [
+              "text[y=\"139.86661062825826\"]"
+            ],
+            [
+              "text[y=\"158.86661062825826\"]"
+            ],
+            [
+              "text[x=\"764.9632224454788\"]"
+            ],
+            [
+              ".practice-caption"
+            ],
+            [
+              ".practice-stage-tag"
+            ],
+            [
+              "button[data-back=\"\"]"
+            ],
+            [
+              ".is-current > span[aria-hidden=\"true\"]:nth-child(3)"
+            ],
+            [
+              "button[data-action=\"1\"] > span[aria-hidden=\"true\"]:nth-child(3)"
+            ],
+            [
+              "button[data-action=\"2\"] > span[aria-hidden=\"true\"]:nth-child(3)"
+            ]
+          ]
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "targets": [
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        }
+      ],
+      "passes": 26
+    },
+    {
+      "theme": "light",
+      "label": "branching/result",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".practice-disclosure > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "text[y=\"254.60000000000002\"]"
+            ],
+            [
+              "text[y=\"273.6\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"538.4\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"538.4\"]"
+            ],
+            [
+              "text[y=\"431.4\"]"
+            ],
+            [
+              "text[y=\"450.4\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"361.6\"]"
+            ],
+            [
+              "text[y=\"356\"]"
+            ],
+            [
+              "text[y=\"40.8905171575919\"]"
+            ],
+            [
+              "text[y=\"59.8905171575919\"]"
+            ],
+            [
+              "text[x=\"554.1245806274048\"]"
+            ],
+            [
+              "text[y=\"30.337582548264315\"]"
+            ],
+            [
+              "text[y=\"49.337582548264315\"]"
+            ],
+            [
+              "text[y=\"80.92013060755453\"]"
+            ],
+            [
+              "text[y=\"99.92013060755453\"]"
+            ],
+            [
+              "text[y=\"139.86661062825826\"]"
+            ],
+            [
+              "text[y=\"158.86661062825826\"]"
+            ],
+            [
+              "text[x=\"764.9632224454788\"]"
+            ],
+            [
+              ".practice-caption"
+            ],
+            [
+              ".practice-stage-tag"
+            ]
+          ]
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "targets": [
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        }
+      ],
+      "passes": 26
+    },
+    {
+      "theme": "light",
+      "label": "concentric/text/nested",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".practice-disclosure > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "text[y=\"254.60000000000002\"]"
+            ],
+            [
+              "text[y=\"273.6\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"538.4\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"538.4\"]"
+            ],
+            [
+              "text[y=\"431.4\"]"
+            ],
+            [
+              "text[y=\"450.4\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-hub-label"
+            ],
+            [
+              "text[y=\"176\"]"
+            ],
+            [
+              "text[y=\"195\"]"
+            ],
+            [
+              "text[y=\"426.5\"]"
+            ],
+            [
+              "text[y=\"445.5\"]"
+            ],
+            [
+              "text[y=\"426.50000000000006\"]"
+            ],
+            [
+              "text[y=\"445.50000000000006\"]"
+            ],
+            [
+              ".practice-caption"
+            ],
+            [
+              ".practice-stage-tag"
+            ],
+            [
+              "button[data-back=\"\"]"
+            ],
+            [
+              ".is-current > span[aria-hidden=\"true\"]:nth-child(3)"
+            ],
+            [
+              "button[data-action=\"1\"] > span[aria-hidden=\"true\"]:nth-child(3)"
+            ],
+            [
+              "button[data-action=\"2\"] > span[aria-hidden=\"true\"]:nth-child(3)"
+            ]
+          ]
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "targets": [
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        }
+      ],
+      "passes": 26
+    },
+    {
+      "theme": "light",
+      "label": "concentric/multiple/nested",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".practice-disclosure > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "text[y=\"254.60000000000002\"]"
+            ],
+            [
+              "text[y=\"273.6\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"538.4\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"538.4\"]"
+            ],
+            [
+              "text[y=\"431.4\"]"
+            ],
+            [
+              "text[y=\"450.4\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-hub-label"
+            ],
+            [
+              "text[y=\"176\"]"
+            ],
+            [
+              "text[y=\"195\"]"
+            ],
+            [
+              "text[y=\"212\"]"
+            ],
+            [
+              "text[y=\"426.5\"]"
+            ],
+            [
+              "text[y=\"445.5\"]"
+            ],
+            [
+              "text[y=\"462.5\"]"
+            ],
+            [
+              "text[y=\"426.50000000000006\"]"
+            ],
+            [
+              "text[y=\"445.50000000000006\"]"
+            ],
+            [
+              "text[y=\"462.50000000000006\"]"
+            ],
+            [
+              ".practice-caption"
+            ],
+            [
+              ".practice-stage-tag"
+            ],
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "targets": [
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        }
+      ],
+      "passes": 26
+    },
+    {
+      "theme": "light",
+      "label": "concentric/checking/nested",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".practice-disclosure > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "text[y=\"254.60000000000002\"]"
+            ],
+            [
+              "text[y=\"273.6\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"538.4\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"538.4\"]"
+            ],
+            [
+              "text[y=\"431.4\"]"
+            ],
+            [
+              "text[y=\"450.4\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-hub-label"
+            ],
+            [
+              "text[y=\"176\"]"
+            ],
+            [
+              "text[y=\"195\"]"
+            ],
+            [
+              "text[y=\"212\"]"
+            ],
+            [
+              "text[y=\"426.5\"]"
+            ],
+            [
+              "text[y=\"445.5\"]"
+            ],
+            [
+              "text[y=\"462.5\"]"
+            ],
+            [
+              "text[y=\"426.50000000000006\"]"
+            ],
+            [
+              "text[y=\"445.50000000000006\"]"
+            ],
+            [
+              "text[y=\"462.50000000000006\"]"
+            ],
+            [
+              ".practice-caption"
+            ],
+            [
+              ".practice-stage-tag"
+            ],
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "targets": [
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        }
+      ],
+      "passes": 26
+    },
+    {
+      "theme": "light",
+      "label": "concentric/image/nested",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".practice-disclosure > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "text[y=\"254.60000000000002\"]"
+            ],
+            [
+              "text[y=\"273.6\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"538.4\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"538.4\"]"
+            ],
+            [
+              "text[y=\"431.4\"]"
+            ],
+            [
+              "text[y=\"450.4\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-hub-label"
+            ],
+            [
+              "text[y=\"176\"]"
+            ],
+            [
+              "text[y=\"195\"]"
+            ],
+            [
+              "text[y=\"110\"]"
+            ],
+            [
+              "text[y=\"129\"]"
+            ],
+            [
+              "text[y=\"459.49999999999994\"]"
+            ],
+            [
+              "text[y=\"478.49999999999994\"]"
+            ],
+            [
+              "text[y=\"459.50000000000006\"]"
+            ],
+            [
+              "text[y=\"478.50000000000006\"]"
+            ],
+            [
+              ".practice-caption"
+            ],
+            [
+              ".practice-stage-tag"
+            ],
+            [
+              "button[data-back=\"\"]"
+            ],
+            [
+              ".is-current > span[aria-hidden=\"true\"]:nth-child(3)"
+            ],
+            [
+              "button[data-action=\"1\"] > span[aria-hidden=\"true\"]:nth-child(3)"
+            ],
+            [
+              "button[data-action=\"2\"] > span[aria-hidden=\"true\"]:nth-child(3)"
+            ]
+          ]
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "targets": [
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        }
+      ],
+      "passes": 26
+    },
+    {
+      "theme": "light",
+      "label": "concentric/result",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".practice-disclosure > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "text[y=\"254.60000000000002\"]"
+            ],
+            [
+              "text[y=\"273.6\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"538.4\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"538.4\"]"
+            ],
+            [
+              "text[y=\"431.4\"]"
+            ],
+            [
+              "text[y=\"450.4\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-hub-label"
+            ],
+            [
+              "text[y=\"176\"]"
+            ],
+            [
+              "text[y=\"195\"]"
+            ],
+            [
+              "text[y=\"110\"]"
+            ],
+            [
+              "text[y=\"129\"]"
+            ],
+            [
+              "text[y=\"459.49999999999994\"]"
+            ],
+            [
+              "text[y=\"478.49999999999994\"]"
+            ],
+            [
+              "text[y=\"459.50000000000006\"]"
+            ],
+            [
+              "text[y=\"478.50000000000006\"]"
+            ],
+            [
+              ".practice-caption"
+            ],
+            [
+              ".practice-stage-tag"
+            ]
+          ]
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "targets": [
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        }
+      ],
+      "passes": 26
+    },
+    {
+      "theme": "dark",
+      "label": "home",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".radial-hero > .art-labels > text[x=\"34\"][y=\"570\"]"
+            ],
+            [
+              ".radial-hero > .art-labels > text[x=\"459\"][y=\"306\"]"
+            ],
+            [
+              "a[href$=\"Radivine/#product\"] > span[data-astro-cid-uyvqhsom=\"\"][aria-hidden=\"true\"]"
+            ],
+            [
+              "text[x=\"235\"]"
+            ],
+            [
+              "text[y=\"76\"]"
+            ],
+            [
+              "text[y=\"186\"]"
+            ],
+            [
+              "text[y=\"296\"]"
+            ],
+            [
+              ".practice-disclosure > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "div[data-astro-cid-lcdefpme=\"\"]:nth-child(1) > dt > .support-mark[data-astro-cid-lcdefpme=\"\"][aria-hidden=\"true\"]"
+            ],
+            [
+              ".actions[data-astro-cid-lcdefpme=\"\"] > .button:nth-child(1)"
+            ],
+            [
+              ".secondary.button[href$=\"contribute/\"]"
+            ]
+          ]
+        }
+      ],
+      "passes": 46
+    },
+    {
+      "theme": "dark",
+      "label": "download/",
+      "violations": [],
+      "incomplete": [],
+      "passes": 49
+    },
+    {
+      "theme": "dark",
+      "label": "compatibility/",
+      "violations": [],
+      "incomplete": [],
+      "passes": 51
+    },
+    {
+      "theme": "dark",
+      "label": "guide/",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "text[x=\"34\"]"
+            ],
+            [
+              "text[x=\"459\"]"
+            ]
+          ]
+        }
+      ],
+      "passes": 47
+    },
+    {
+      "theme": "dark",
+      "label": "guide/configuration/",
+      "violations": [],
+      "incomplete": [],
+      "passes": 49
+    },
+    {
+      "theme": "dark",
+      "label": "guide/troubleshooting/",
+      "violations": [],
+      "incomplete": [],
+      "passes": 42
+    },
+    {
+      "theme": "dark",
+      "label": "roadmap/",
+      "violations": [],
+      "incomplete": [],
+      "passes": 44
+    },
+    {
+      "theme": "dark",
+      "label": "contribute/",
+      "violations": [],
+      "incomplete": [],
+      "passes": 47
+    },
+    {
+      "theme": "dark",
+      "label": "licenses/",
+      "violations": [],
+      "incomplete": [],
+      "passes": 42
+    },
+    {
+      "theme": "dark",
+      "label": "404.html",
+      "violations": [],
+      "incomplete": [],
+      "passes": 41
+    },
+    {
+      "theme": "dark",
+      "label": "branching/text/nested",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".practice-disclosure > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "text[y=\"254.60000000000002\"]"
+            ],
+            [
+              "text[y=\"273.6\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"538.4\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"538.4\"]"
+            ],
+            [
+              "text[y=\"431.4\"]"
+            ],
+            [
+              "text[y=\"450.4\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"361.6\"]"
+            ],
+            [
+              "text[y=\"356\"]"
+            ],
+            [
+              "text[y=\"59.14830654848744\"]"
+            ],
+            [
+              "text[y=\"78.14830654848744\"]"
+            ],
+            [
+              "text[y=\"40.8905171575919\"]"
+            ],
+            [
+              "text[y=\"59.8905171575919\"]"
+            ],
+            [
+              "text[y=\"116.94063904958792\"]"
+            ],
+            [
+              "text[y=\"135.9406390495879\"]"
+            ],
+            [
+              "text[x=\"554.1245806274048\"]"
+            ],
+            [
+              ".practice-caption"
+            ],
+            [
+              ".practice-stage-tag"
+            ],
+            [
+              "button[data-back=\"\"]"
+            ],
+            [
+              ".is-current > span[aria-hidden=\"true\"]:nth-child(3)"
+            ],
+            [
+              "button[data-action=\"1\"] > span[aria-hidden=\"true\"]:nth-child(3)"
+            ],
+            [
+              "button[data-action=\"2\"] > span[aria-hidden=\"true\"]:nth-child(3)"
+            ]
+          ]
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "targets": [
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        }
+      ],
+      "passes": 26
+    },
+    {
+      "theme": "dark",
+      "label": "branching/multiple/nested",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".practice-disclosure > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "text[y=\"254.60000000000002\"]"
+            ],
+            [
+              "text[y=\"273.6\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"538.4\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"538.4\"]"
+            ],
+            [
+              "text[y=\"431.4\"]"
+            ],
+            [
+              "text[y=\"450.4\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"361.6\"]"
+            ],
+            [
+              "text[y=\"356\"]"
+            ],
+            [
+              "text[y=\"59.14830654848744\"]"
+            ],
+            [
+              "text[y=\"78.14830654848744\"]"
+            ],
+            [
+              "text[y=\"95.14830654848744\"]"
+            ],
+            [
+              "text[y=\"40.8905171575919\"]"
+            ],
+            [
+              "text[y=\"59.8905171575919\"]"
+            ],
+            [
+              "text[y=\"76.8905171575919\"]"
+            ],
+            [
+              "text[y=\"116.94063904958792\"]"
+            ],
+            [
+              "text[y=\"135.9406390495879\"]"
+            ],
+            [
+              "text[y=\"152.9406390495879\"]"
+            ],
+            [
+              "text[x=\"554.1245806274048\"]"
+            ],
+            [
+              ".practice-caption"
+            ],
+            [
+              ".practice-stage-tag"
+            ],
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "targets": [
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        }
+      ],
+      "passes": 26
+    },
+    {
+      "theme": "dark",
+      "label": "branching/checking/nested",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".practice-disclosure > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "text[y=\"254.60000000000002\"]"
+            ],
+            [
+              "text[y=\"273.6\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"538.4\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"538.4\"]"
+            ],
+            [
+              "text[y=\"431.4\"]"
+            ],
+            [
+              "text[y=\"450.4\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"361.6\"]"
+            ],
+            [
+              "text[y=\"356\"]"
+            ],
+            [
+              "text[y=\"59.14830654848744\"]"
+            ],
+            [
+              "text[y=\"78.14830654848744\"]"
+            ],
+            [
+              "text[y=\"95.14830654848744\"]"
+            ],
+            [
+              "text[y=\"40.8905171575919\"]"
+            ],
+            [
+              "text[y=\"59.8905171575919\"]"
+            ],
+            [
+              "text[y=\"76.8905171575919\"]"
+            ],
+            [
+              "text[y=\"116.94063904958792\"]"
+            ],
+            [
+              "text[y=\"135.9406390495879\"]"
+            ],
+            [
+              "text[y=\"152.9406390495879\"]"
+            ],
+            [
+              "text[x=\"554.1245806274048\"]"
+            ],
+            [
+              ".practice-caption"
+            ],
+            [
+              ".practice-stage-tag"
+            ],
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "targets": [
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        }
+      ],
+      "passes": 26
+    },
+    {
+      "theme": "dark",
+      "label": "branching/image/nested",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".practice-disclosure > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "text[y=\"254.60000000000002\"]"
+            ],
+            [
+              "text[y=\"273.6\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"538.4\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"538.4\"]"
+            ],
+            [
+              "text[y=\"431.4\"]"
+            ],
+            [
+              "text[y=\"450.4\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"361.6\"]"
+            ],
+            [
+              "text[y=\"356\"]"
+            ],
+            [
+              "text[y=\"40.8905171575919\"]"
+            ],
+            [
+              "text[y=\"59.8905171575919\"]"
+            ],
+            [
+              "text[x=\"554.1245806274048\"]"
+            ],
+            [
+              "text[y=\"30.337582548264315\"]"
+            ],
+            [
+              "text[y=\"49.337582548264315\"]"
+            ],
+            [
+              "text[y=\"80.92013060755453\"]"
+            ],
+            [
+              "text[y=\"99.92013060755453\"]"
+            ],
+            [
+              "text[y=\"139.86661062825826\"]"
+            ],
+            [
+              "text[y=\"158.86661062825826\"]"
+            ],
+            [
+              "text[x=\"764.9632224454788\"]"
+            ],
+            [
+              ".practice-caption"
+            ],
+            [
+              ".practice-stage-tag"
+            ],
+            [
+              "button[data-back=\"\"]"
+            ],
+            [
+              ".is-current > span[aria-hidden=\"true\"]:nth-child(3)"
+            ],
+            [
+              "button[data-action=\"1\"] > span[aria-hidden=\"true\"]:nth-child(3)"
+            ],
+            [
+              "button[data-action=\"2\"] > span[aria-hidden=\"true\"]:nth-child(3)"
+            ]
+          ]
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "targets": [
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        }
+      ],
+      "passes": 26
+    },
+    {
+      "theme": "dark",
+      "label": "branching/result",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".practice-disclosure > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "text[y=\"254.60000000000002\"]"
+            ],
+            [
+              "text[y=\"273.6\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"538.4\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"538.4\"]"
+            ],
+            [
+              "text[y=\"431.4\"]"
+            ],
+            [
+              "text[y=\"450.4\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"361.6\"]"
+            ],
+            [
+              "text[y=\"356\"]"
+            ],
+            [
+              "text[y=\"40.8905171575919\"]"
+            ],
+            [
+              "text[y=\"59.8905171575919\"]"
+            ],
+            [
+              "text[x=\"554.1245806274048\"]"
+            ],
+            [
+              "text[y=\"30.337582548264315\"]"
+            ],
+            [
+              "text[y=\"49.337582548264315\"]"
+            ],
+            [
+              "text[y=\"80.92013060755453\"]"
+            ],
+            [
+              "text[y=\"99.92013060755453\"]"
+            ],
+            [
+              "text[y=\"139.86661062825826\"]"
+            ],
+            [
+              "text[y=\"158.86661062825826\"]"
+            ],
+            [
+              "text[x=\"764.9632224454788\"]"
+            ],
+            [
+              ".practice-caption"
+            ],
+            [
+              ".practice-stage-tag"
+            ]
+          ]
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "targets": [
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        }
+      ],
+      "passes": 26
+    },
+    {
+      "theme": "dark",
+      "label": "concentric/text/nested",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".practice-disclosure > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "text[y=\"254.60000000000002\"]"
+            ],
+            [
+              "text[y=\"273.6\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"538.4\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"538.4\"]"
+            ],
+            [
+              "text[y=\"431.4\"]"
+            ],
+            [
+              "text[y=\"450.4\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-hub-label"
+            ],
+            [
+              "text[y=\"176\"]"
+            ],
+            [
+              "text[y=\"195\"]"
+            ],
+            [
+              "text[y=\"426.5\"]"
+            ],
+            [
+              "text[y=\"445.5\"]"
+            ],
+            [
+              "text[y=\"426.50000000000006\"]"
+            ],
+            [
+              "text[y=\"445.50000000000006\"]"
+            ],
+            [
+              ".practice-caption"
+            ],
+            [
+              ".practice-stage-tag"
+            ],
+            [
+              "button[data-back=\"\"]"
+            ],
+            [
+              ".is-current > span[aria-hidden=\"true\"]:nth-child(3)"
+            ],
+            [
+              "button[data-action=\"1\"] > span[aria-hidden=\"true\"]:nth-child(3)"
+            ],
+            [
+              "button[data-action=\"2\"] > span[aria-hidden=\"true\"]:nth-child(3)"
+            ]
+          ]
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "targets": [
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        }
+      ],
+      "passes": 26
+    },
+    {
+      "theme": "dark",
+      "label": "concentric/multiple/nested",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".practice-disclosure > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "text[y=\"254.60000000000002\"]"
+            ],
+            [
+              "text[y=\"273.6\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"538.4\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"538.4\"]"
+            ],
+            [
+              "text[y=\"431.4\"]"
+            ],
+            [
+              "text[y=\"450.4\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-hub-label"
+            ],
+            [
+              "text[y=\"176\"]"
+            ],
+            [
+              "text[y=\"195\"]"
+            ],
+            [
+              "text[y=\"212\"]"
+            ],
+            [
+              "text[y=\"426.5\"]"
+            ],
+            [
+              "text[y=\"445.5\"]"
+            ],
+            [
+              "text[y=\"462.5\"]"
+            ],
+            [
+              "text[y=\"426.50000000000006\"]"
+            ],
+            [
+              "text[y=\"445.50000000000006\"]"
+            ],
+            [
+              "text[y=\"462.50000000000006\"]"
+            ],
+            [
+              ".practice-caption"
+            ],
+            [
+              ".practice-stage-tag"
+            ],
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "targets": [
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        }
+      ],
+      "passes": 26
+    },
+    {
+      "theme": "dark",
+      "label": "concentric/checking/nested",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".practice-disclosure > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "text[y=\"254.60000000000002\"]"
+            ],
+            [
+              "text[y=\"273.6\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"538.4\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"538.4\"]"
+            ],
+            [
+              "text[y=\"431.4\"]"
+            ],
+            [
+              "text[y=\"450.4\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-hub-label"
+            ],
+            [
+              "text[y=\"176\"]"
+            ],
+            [
+              "text[y=\"195\"]"
+            ],
+            [
+              "text[y=\"212\"]"
+            ],
+            [
+              "text[y=\"426.5\"]"
+            ],
+            [
+              "text[y=\"445.5\"]"
+            ],
+            [
+              "text[y=\"462.5\"]"
+            ],
+            [
+              "text[y=\"426.50000000000006\"]"
+            ],
+            [
+              "text[y=\"445.50000000000006\"]"
+            ],
+            [
+              "text[y=\"462.50000000000006\"]"
+            ],
+            [
+              ".practice-caption"
+            ],
+            [
+              ".practice-stage-tag"
+            ],
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "targets": [
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        }
+      ],
+      "passes": 26
+    },
+    {
+      "theme": "dark",
+      "label": "concentric/image/nested",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".practice-disclosure > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "text[y=\"254.60000000000002\"]"
+            ],
+            [
+              "text[y=\"273.6\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"538.4\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"538.4\"]"
+            ],
+            [
+              "text[y=\"431.4\"]"
+            ],
+            [
+              "text[y=\"450.4\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-hub-label"
+            ],
+            [
+              "text[y=\"176\"]"
+            ],
+            [
+              "text[y=\"195\"]"
+            ],
+            [
+              "text[y=\"110\"]"
+            ],
+            [
+              "text[y=\"129\"]"
+            ],
+            [
+              "text[y=\"459.49999999999994\"]"
+            ],
+            [
+              "text[y=\"478.49999999999994\"]"
+            ],
+            [
+              "text[y=\"459.50000000000006\"]"
+            ],
+            [
+              "text[y=\"478.50000000000006\"]"
+            ],
+            [
+              ".practice-caption"
+            ],
+            [
+              ".practice-stage-tag"
+            ],
+            [
+              "button[data-back=\"\"]"
+            ],
+            [
+              ".is-current > span[aria-hidden=\"true\"]:nth-child(3)"
+            ],
+            [
+              "button[data-action=\"1\"] > span[aria-hidden=\"true\"]:nth-child(3)"
+            ],
+            [
+              "button[data-action=\"2\"] > span[aria-hidden=\"true\"]:nth-child(3)"
+            ]
+          ]
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "targets": [
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        }
+      ],
+      "passes": 26
+    },
+    {
+      "theme": "dark",
+      "label": "concentric/result",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".practice-disclosure > span[aria-hidden=\"true\"]"
+            ],
+            [
+              "text[y=\"254.60000000000002\"]"
+            ],
+            [
+              "text[y=\"273.6\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"538.4\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"538.4\"]"
+            ],
+            [
+              "text[y=\"431.4\"]"
+            ],
+            [
+              "text[y=\"450.4\"]"
+            ],
+            [
+              ".practice-number[y=\"343\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-segment-label[y=\"362\"][x=\"361.6\"]"
+            ],
+            [
+              ".practice-hub-label"
+            ],
+            [
+              "text[y=\"176\"]"
+            ],
+            [
+              "text[y=\"195\"]"
+            ],
+            [
+              "text[y=\"110\"]"
+            ],
+            [
+              "text[y=\"129\"]"
+            ],
+            [
+              "text[y=\"459.49999999999994\"]"
+            ],
+            [
+              "text[y=\"478.49999999999994\"]"
+            ],
+            [
+              "text[y=\"459.50000000000006\"]"
+            ],
+            [
+              "text[y=\"478.50000000000006\"]"
+            ],
+            [
+              ".practice-caption"
+            ],
+            [
+              ".practice-stage-tag"
+            ]
+          ]
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "targets": [
+            [
+              "button[data-back=\"\"]"
+            ]
+          ]
+        }
+      ],
+      "passes": 26
+    }
+  ],
+  "contrast": [
+    {
+      "theme": "light",
+      "pairs": [
+        {
+          "foreground": "--text",
+          "background": "--canvas",
+          "ratio": 13.731015027120169
+        },
+        {
+          "foreground": "--text-muted",
+          "background": "--canvas",
+          "ratio": 6.017624616953755
+        },
+        {
+          "foreground": "--accent",
+          "background": "--canvas",
+          "ratio": 6.213569124413691
+        },
+        {
+          "foreground": "--focus",
+          "background": "--canvas",
+          "ratio": 5.486035745318705
+        },
+        {
+          "foreground": "--text",
+          "background": "--surface",
+          "ratio": 14.416878385112264
+        },
+        {
+          "foreground": "--text-muted",
+          "background": "--surface",
+          "ratio": 6.318204597295196
+        },
+        {
+          "foreground": "--accent",
+          "background": "--surface",
+          "ratio": 6.523936520878495
+        },
+        {
+          "foreground": "--focus",
+          "background": "--surface",
+          "ratio": 5.760062894143267
+        },
+        {
+          "foreground": "--text",
+          "background": "--surface-muted",
+          "ratio": 12.682928002002939
+        },
+        {
+          "foreground": "--text-muted",
+          "background": "--surface-muted",
+          "ratio": 5.558299922413817
+        },
+        {
+          "foreground": "--accent",
+          "background": "--surface-muted",
+          "ratio": 5.739288004911277
+        },
+        {
+          "foreground": "--focus",
+          "background": "--surface-muted",
+          "ratio": 5.067287177012477
+        },
+        {
+          "foreground": "--on-action",
+          "background": "--action",
+          "ratio": 9.9800976975881
+        }
+      ]
+    },
+    {
+      "theme": "dark",
+      "pairs": [
+        {
+          "foreground": "--text",
+          "background": "--canvas",
+          "ratio": 16.357771604340876
+        },
+        {
+          "foreground": "--text-muted",
+          "background": "--canvas",
+          "ratio": 8.980474498103527
+        },
+        {
+          "foreground": "--accent",
+          "background": "--canvas",
+          "ratio": 10.496894382293505
+        },
+        {
+          "foreground": "--focus",
+          "background": "--canvas",
+          "ratio": 12.759766962101702
+        },
+        {
+          "foreground": "--text",
+          "background": "--surface",
+          "ratio": 14.677532448204675
+        },
+        {
+          "foreground": "--text-muted",
+          "background": "--surface",
+          "ratio": 8.058017255309412
+        },
+        {
+          "foreground": "--accent",
+          "background": "--surface",
+          "ratio": 9.418673376060891
+        },
+        {
+          "foreground": "--focus",
+          "background": "--surface",
+          "ratio": 11.449107992685175
+        },
+        {
+          "foreground": "--text",
+          "background": "--surface-muted",
+          "ratio": 12.272153311126718
+        },
+        {
+          "foreground": "--text-muted",
+          "background": "--surface-muted",
+          "ratio": 6.737455596833483
+        },
+        {
+          "foreground": "--accent",
+          "background": "--surface-muted",
+          "ratio": 7.8751250638580705
+        },
+        {
+          "foreground": "--focus",
+          "background": "--surface-muted",
+          "ratio": 9.572808580577524
+        },
+        {
+          "foreground": "--on-action",
+          "background": "--action",
+          "ratio": 9.131449695369543
+        }
+      ]
+    }
+  ],
+  "note": "Automated checks, reflow proxies and browser-emulated forced colors. Not screen-reader, real zoom, physical touch or WCAG certification."
+}
