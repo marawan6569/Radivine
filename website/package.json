@@ -19,7 +19,10 @@
     "test:content": "node --test tests/content.test.mjs",
     "check:release": "node scripts/check-release.mjs",
     "test:demo": "node --test tests/demo.test.ts",
-    "check:demo": "node scripts/check-demo.mjs"
+    "check:demo": "node scripts/check-demo.mjs",
+    "check:artifact": "node scripts/check-artifact.mjs",
+    "audit:performance": "node scripts/audit-performance.mjs",
+    "serve:static": "node scripts/serve-static.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "4.3.3",
@@ -31,6 +34,7 @@
     "@axe-core/playwright": "4.14.0",
     "@playwright/test": "1.64.1",
     "@types/node": "24.19.2",
+    "lighthouse": "13.6.0",
     "prettier": "3.9.10",
     "prettier-plugin-astro": "1.1.2",
     "typescript": "6.0.3"

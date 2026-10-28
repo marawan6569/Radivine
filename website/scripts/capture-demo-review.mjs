@@ -1,4 +1,4 @@
-import { chromium } from "@playwright/test";
+import { chromium, expect } from "@playwright/test";
 import { mkdir, writeFile, readdir, readFile, rm } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { gzipSync } from "node:zlib";
@@ -11,6 +11,8 @@ const browser = await chromium.launch();
 const measurements = [];
 const settle = (page) => page.waitForTimeout(450);
 async function still(page, name) {
+  const phase = name.includes("outcome") ? "result" : "active";
+  await expect(page.locator("#try")).toHaveAttribute("data-phase", phase);
   if (page.viewportSize().width < 600) {
     const selector = /outcome|disabled/.test(name)
       ? ".practice-panel"
@@ -19,12 +21,17 @@ async function still(page, name) {
     // Native viewport captures avoid fixed-element stitching artifacts on mobile.
     await page.screenshot({ path: join(output, name) });
   } else {
-    const section = page.locator("#try");
-    await section.evaluate((el) =>
-      el.scrollIntoView({ block: "start", behavior: "instant" }),
-    );
-    await section.screenshot({ path: join(output, name) });
+    // Element screenshots of the tall section can temporarily resize/scroll the
+    // viewport and trigger the correct offscreen cancellation. Capture the real
+    // viewport instead so review images preserve the interaction being labeled.
+    await page
+      .locator(".practice-workspace")
+      .evaluate((el) =>
+        el.scrollIntoView({ block: "start", behavior: "instant" }),
+      );
+    await page.screenshot({ path: join(output, name) });
   }
+  await expect(page.locator("#try")).toHaveAttribute("data-phase", phase);
 }
 
 try {

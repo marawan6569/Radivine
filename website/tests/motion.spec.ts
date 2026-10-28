@@ -111,7 +111,7 @@ test("mobile touch and short desktop use the complete unpinned illustration", as
 }) => {
   const context = await browser.newContext({
     viewport: { width: 390, height: 844 },
-    isMobile: true,
+    isMobile: browser.browserType().name() !== "firefox",
     hasTouch: true,
   });
   const mobile = await context.newPage();

@@ -297,7 +297,7 @@ test("touch alternative, 320px layout and normal page scrolling", async ({
 }) => {
   const context = await browser.newContext({
     viewport: { width: 320, height: 740 },
-    isMobile: true,
+    isMobile: browser.browserType().name() !== "firefox",
     hasTouch: true,
     reducedMotion: "reduce",
   });

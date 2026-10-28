@@ -80,7 +80,20 @@ test("clipboard success and denial keep commands available", async ({
   page,
   context,
 }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  // Firefox/WebKit do not expose Chromium's clipboard permission override.
+  // Verify the same success/denial UI with a deterministic clipboard adapter.
+  await context.addInitScript(() => {
+    let copied = "";
+    Object.defineProperty(navigator, "clipboard", {
+      value: {
+        writeText: async (text: string) => {
+          copied = text;
+        },
+        readText: async () => copied,
+      },
+      configurable: true,
+    });
+  });
   await page.goto(base + "download/");
   await page
     .getByRole("button", { name: "Copy Install with apt", exact: true })
