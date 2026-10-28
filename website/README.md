@@ -106,3 +106,30 @@ node scripts/capture-review.mjs
 Use `SITE_TEST_PORT=4331 npm test` to avoid an existing preview on the default port. Keep root/project builds and tests sequential. The original W1 shell tests remain in place; motion tests cover both scroll directions, live reduced-motion changes, touch/short viewport fallback, no JavaScript, settled animation state, CLS, and immediate theme contrast.
 
 For W2 screenshots, serve the default-base production build on 4332, then run `node scripts/capture-content-review.mjs` from `website/`. It captures home, download, compatibility, configuration and roadmap at both desktop/mobile sizes and both system color schemes. `REVIEW_URL` and `REVIEW_OUTPUT` override defaults; output defaults to `docs/test-reports/media/W2`. No native desktop application is exercised by this browser capture.
+
+## W3 interactive practice
+
+The homepage `#try` section is a browser-only simulation. Its loader imports the controller near the viewport; no framework, native file access, conversion, clipboard write or visitor API request is involved. The hero and scroll story remain decorative W1.5 components.
+
+- `src/demo/contexts.ts`: versioned sample menus and real availability reasons.
+- `geometry.ts`: application radii, polar sectors, Branching candidate placement/corridors and Concentric annuli.
+- `model.ts`: serializable reducer with injected time, input source, generation, exposure/intent guards and strict release checks.
+- `controller.ts`: scoped keyboard/pointer adapters, pointer capture, one deadline timer and lifecycle cleanup.
+- `view.ts`: keyed SVG layers, native-button action list, focus and announcements.
+- `outcomes.ts`: side-effect-free explanations of desktop actions.
+
+Read [the fidelity contract](../docs/website/W3-demo.md) and [verification/media report](../docs/test-reports/W3.md) before changing behavior. Source hashes in `tests/fixtures/demo-source.json` are a build gate. A product/source change requires review of fixtures and differences, not an automatic hash refresh.
+
+```sh
+npm run test:demo
+npm run check:demo
+# Optional: regenerate expectations from the unchanged Rust wheel crate.
+# Cargo and cached dependencies must be available. Uses and deletes a temporary crate.
+node scripts/capture-native-reference.mjs
+npx prettier --write tests/fixtures/demo-native-traces.json
+npm run test:demo
+```
+
+The native reference emitter never creates a window or executes an action. Review its JSON diff before committing. It verifies bounded engine paths, not live X11/desktop integration.
+
+For screenshot/video review, build and serve the default base on 4332, then run `node scripts/capture-demo-review.mjs`. `REVIEW_URL` and `REVIEW_OUTPUT` override defaults. The script replaces its named W3 captures and emits measurements; recordings show browser practice, never native application UI. The root/project-base builds and tests must remain sequential because they share `dist/`.

@@ -10,7 +10,7 @@ The serializable reducer has idle, active, result and cancelled phases. An activ
 
 Geometry is in `geometry.ts`, independent of DOM/rendering. It ports root spans, child spans with 70° bridge and 72° sector cap, candidate placement (12° rotation steps, decreasing radii, edge and ancestor separation), corridor convex hulls, tangent intent triangles, and concentric annuli. Defaults come from application `to_wheel_config`, not bare engine defaults: root 40/128, child 34/108, deep 26/84, gap 20, dwell 110 ms, grace 180 ms, hysteresis 3.5°, slop 6, outer band 0.65, hub close 150 ms, margin 12. Concentric children are 60 thick with 6 gaps and 2-pixel fresh-motion guards. Center is fixed for the session. Actual `ring_geometry` uses top-centered sectors at every level; it does **not** rotate each child to its parent's sector. That source behavior takes precedence over the plan's “parent-sector alignment” wording.
 
-Source provenance and hashes are in `tests/fixtures/demo-source.json`; every build rejects changed product version, revision or relevant source bytes until fixtures are reviewed. Node tests use deterministic time, without animation or wall-clock sleeps. Source/test correspondence:
+Source provenance and hashes are in `tests/fixtures/demo-source.json`; every build rejects changed product version, revision or relevant source bytes until fixtures are reviewed. Node tests use deterministic time, without animation or wall-clock sleeps. `demo-native-traces.json` adds six traces emitted by the unchanged Rust `WheelSession`; geometry, open paths, hover and commit outputs are compared directly. `scripts/capture-native-reference.mjs` reproduces these in a temporary standalone crate without touching the Rust workspace. Source/test correspondence:
 
 | Browser scenario | Rust evidence |
 | --- | --- |
@@ -35,3 +35,9 @@ Source provenance and hashes are in `tests/fixtures/demo-source.json`; every bui
 ## Fidelity gate
 
 Source/unit/browser evidence is not real-desktop parity. Compare the result with current stable desktop captures before making that claim. The existing N3 image pack is a renderer/sandbox reference, and older Branching screenshots are historical; neither certifies a fresh v0.3.0 Mint/Nemo session. Record actual comparisons, artifacts, accessibility limits and remaining owner review in the W3 test report. W4 and publication require separate authorization.
+
+## Rendering and input lifecycle
+
+The section's loader is separate from its dynamically imported controller. SVG layers are keyed by submenu path, so pointer highlights do not restart opening animation. Newly opened layers use a 240 ms scale/opacity entrance; removed layers fade for 120 ms as non-interactive visual ghosts. Single-item concentric annuli use separate closed contours to avoid a radial seam. Strict selection feedback is separate from retained hover: neutral zones never advertise an eligible leaf. The HTML list and SVG read the same reducer state.
+
+The controller schedules only the earliest model deadline; there is no animation loop. Intersection, page visibility, pointer cancellation/lost capture and drag focus loss invalidate stale interaction. `pagehide` removes listeners via AbortController and disconnects the observer; persisted `pageshow` mounts a fresh session. Keyboard announcements update for keyboard/list selections rather than pointer frames. Reduced-motion changes remove retracting ghosts and disable all practice CSS animations/transitions while preserving dwell/intent time.
