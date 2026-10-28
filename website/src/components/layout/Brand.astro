@@ -5,7 +5,14 @@ import { withBase } from "../../lib/urls";
 ---
 
 <a class="brand" href={withBase()} aria-label="Radivine home">
-  <Image src={logo} alt="" width={40} height={40} format="webp" />
+  <Image
+    src={logo}
+    alt=""
+    width={40}
+    height={40}
+    densities={[1, 2, 3]}
+    format="webp"
+  />
   <span>Radivine</span>
 </a>
 <style>

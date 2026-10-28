@@ -1,7 +1,9 @@
 ---
 import { contexts } from "../../demo/contexts";
+import { initial } from "../../demo/model";
 import { withBase } from "../../lib/urls";
 import "../../styles/demo.css";
+const idle = initial();
 ---
 
 <section
@@ -148,7 +150,7 @@ import "../../styles/demo.css";
         <div class="practice-context">
           <p class="eyebrow">Selected sample</p>
           <strong data-panel-file>field-notes.txt</strong>
-          <p data-context-detail></p>
+          <p data-context-detail>{contexts[0].detail}</p>
         </div>
         <div class="practice-path">
           <button
@@ -175,15 +177,29 @@ import "../../styles/demo.css";
           aria-live="polite"
           aria-atomic="true"
         ></p>
-        <ol class="practice-action-list" data-action-list></ol>
+        <ol class="practice-action-list" data-action-list>
+          {idle.menu.map((action, index) => (
+            <li>
+              <button type="button" data-action={index} aria-disabled="true">
+                <span class="practice-action-number" aria-hidden="true">
+                  {index + 1}
+                </span>
+                <span>
+                  <strong>{action.label}</strong>
+                  <small>
+                    {action.children ? "Open submenu" : "Simulated outcome"}
+                  </small>
+                </span>
+                <span aria-hidden="true">{action.children ? "↗" : "→"}</span>
+              </button>
+            </li>
+          ))}
+        </ol>
         <div class="practice-outcome">
           <p class="eyebrow">What happens next</p>
-          <p
-            data-outcome
-            role="status"
-            aria-live="polite"
-            aria-atomic="true"
-          ></p>
+          <p data-outcome role="status" aria-live="polite" aria-atomic="true">
+            {idle.result}
+          </p>
         </div>
         <button type="button" data-invoke class="practice-invoke">
           Start Invoke practice ↗
@@ -232,6 +248,12 @@ import "../../styles/demo.css";
 <script>
   const root = document.querySelector<HTMLElement>("[data-wheel-demo]");
   if (root) {
+    // Reserve the server-rendered idle shell before approaching the section.
+    // Hidden controls remain unfocusable; no-JS keeps the compact explanation.
+    root.dataset.preparing = "true";
+    const shell = root.querySelector<HTMLElement>("[data-demo-interactive]")!;
+    shell.inert = true;
+    shell.hidden = false;
     // Reject native drops even before the lazy controller is ready. Do not read
     // their contents or intercept dragging elsewhere on the page.
     for (const type of ["dragover", "drop"] as const)
@@ -246,7 +268,11 @@ import "../../styles/demo.css";
       try {
         const { mount } = await import("../../demo/controller");
         mount(root);
+        shell.inert = false;
+        delete root.dataset.preparing;
       } catch {
+        shell.hidden = true;
+        delete root.dataset.preparing;
         loading = false; /* Static explanation remains readable on load failure. */
       }
     };

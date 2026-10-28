@@ -37,6 +37,12 @@
   padding: 2rem;
   border: 1px solid var(--border);
 }
+.practice[data-preparing] [data-demo-static] {
+  display: none;
+}
+.practice[data-preparing] [data-demo-interactive] {
+  visibility: hidden;
+}
 .practice-toolbar {
   display: flex;
   align-items: end;
