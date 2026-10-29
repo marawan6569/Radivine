@@ -1,0 +1,46 @@
+[
+  {
+    "file": "desktop-dark-practice.webm",
+    "duration": 9.52,
+    "width": 1152,
+    "height": 800,
+    "decodedSeekFrames": true,
+    "ffmpegDecodedFramesSeconds": [
+      3,
+      8.52
+    ]
+  },
+  {
+    "file": "desktop-light-practice.webm",
+    "duration": 9.92,
+    "width": 1152,
+    "height": 800,
+    "decodedSeekFrames": true,
+    "ffmpegDecodedFramesSeconds": [
+      3,
+      8.92
+    ]
+  },
+  {
+    "file": "mobile-dark-practice.webm",
+    "duration": 8.52,
+    "width": 390,
+    "height": 844,
+    "decodedSeekFrames": true,
+    "ffmpegDecodedFramesSeconds": [
+      3,
+      7.52
+    ]
+  },
+  {
+    "file": "mobile-light-practice.webm",
+    "duration": 8.52,
+    "width": 390,
+    "height": 844,
+    "decodedSeekFrames": true,
+    "ffmpegDecodedFramesSeconds": [
+      3,
+      7.52
+    ]
+  }
+]

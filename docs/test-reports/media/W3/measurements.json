@@ -1,0 +1,136 @@
+{
+  "method": "Local Chromium production build; videos enabled for captures. Input cost measures synchronous JS/DOM work, excludes paint; not field INP/LCP or native performance.",
+  "measurements": [
+    {
+      "device": "desktop",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "initial": {
+        "requests": [
+          "http://127.0.0.1:4332/Radivine/_astro/SiteLayout.C3FOsklP.css",
+          "http://127.0.0.1:4332/Radivine/_astro/index.8DOrLPIS.css",
+          "http://127.0.0.1:4332/Radivine/_astro/logo-icon.B9PE8Z7G_1HA9KM.webp",
+          "http://127.0.0.1:4332/Radivine/_astro/WheelDemo.astro_astro_type_script_index_0_lang.CzUMXuZV.js",
+          "http://127.0.0.1:4332/Radivine/_astro/inter-latin.DWSxN9ft.woff2",
+          "http://127.0.0.1:4332/Radivine/_astro/logo-icon.B9PE8Z7G_zwiko.webp"
+        ],
+        "transferBytes": 124472
+      },
+      "cls": 0.0016209191743827161,
+      "longTasks": [
+        70
+      ],
+      "overflow": false,
+      "domNodes": 535,
+      "runningDemoAnimations": 0,
+      "errors": [],
+      "externalRequests": []
+    },
+    {
+      "device": "desktop",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "initial": {
+        "requests": [
+          "http://127.0.0.1:4332/Radivine/_astro/SiteLayout.C3FOsklP.css",
+          "http://127.0.0.1:4332/Radivine/_astro/index.8DOrLPIS.css",
+          "http://127.0.0.1:4332/Radivine/_astro/logo-icon.B9PE8Z7G_1HA9KM.webp",
+          "http://127.0.0.1:4332/Radivine/_astro/WheelDemo.astro_astro_type_script_index_0_lang.CzUMXuZV.js",
+          "http://127.0.0.1:4332/Radivine/_astro/inter-latin.DWSxN9ft.woff2",
+          "http://127.0.0.1:4332/Radivine/_astro/logo-icon.B9PE8Z7G_zwiko.webp"
+        ],
+        "transferBytes": 124472
+      },
+      "cls": 0.0016209191743827161,
+      "longTasks": [
+        56
+      ],
+      "overflow": false,
+      "domNodes": 535,
+      "runningDemoAnimations": 0,
+      "errors": [],
+      "externalRequests": []
+    },
+    {
+      "device": "mobile",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "initial": {
+        "requests": [
+          "http://127.0.0.1:4332/Radivine/_astro/SiteLayout.C3FOsklP.css",
+          "http://127.0.0.1:4332/Radivine/_astro/index.8DOrLPIS.css",
+          "http://127.0.0.1:4332/Radivine/_astro/logo-icon.B9PE8Z7G_1HA9KM.webp",
+          "http://127.0.0.1:4332/Radivine/_astro/WheelDemo.astro_astro_type_script_index_0_lang.CzUMXuZV.js",
+          "http://127.0.0.1:4332/Radivine/_astro/inter-latin.DWSxN9ft.woff2",
+          "http://127.0.0.1:4332/Radivine/_astro/logo-icon.B9PE8Z7G_zwiko.webp"
+        ],
+        "transferBytes": 124472
+      },
+      "cls": 0.09444080902976354,
+      "longTasks": [
+        57
+      ],
+      "overflow": false,
+      "domNodes": 535,
+      "runningDemoAnimations": 0,
+      "errors": [],
+      "externalRequests": []
+    },
+    {
+      "device": "mobile",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "initial": {
+        "requests": [
+          "http://127.0.0.1:4332/Radivine/_astro/SiteLayout.C3FOsklP.css",
+          "http://127.0.0.1:4332/Radivine/_astro/index.8DOrLPIS.css",
+          "http://127.0.0.1:4332/Radivine/_astro/logo-icon.B9PE8Z7G_1HA9KM.webp",
+          "http://127.0.0.1:4332/Radivine/_astro/WheelDemo.astro_astro_type_script_index_0_lang.CzUMXuZV.js",
+          "http://127.0.0.1:4332/Radivine/_astro/inter-latin.DWSxN9ft.woff2",
+          "http://127.0.0.1:4332/Radivine/_astro/logo-icon.B9PE8Z7G_zwiko.webp"
+        ],
+        "transferBytes": 124472
+      },
+      "cls": 0.09444080902976354,
+      "longTasks": [
+        51
+      ],
+      "overflow": false,
+      "domNodes": 535,
+      "runningDemoAnimations": 0,
+      "errors": [],
+      "externalRequests": []
+    }
+  ],
+  "input": {
+    "samples": 200,
+    "medianMs": 4.799999982118607,
+    "p95Ms": 6.4000000059604645,
+    "maxMs": 16.799999982118607,
+    "cpuThrottle": 4
+  },
+  "bundles": [
+    {
+      "name": "WheelDemo.astro_astro_type_script_index_0_lang.CzUMXuZV.js",
+      "rawBytes": 2039,
+      "gzipBytes": 1037
+    },
+    {
+      "name": "controller.BDFRnCFb.js",
+      "rawBytes": 24627,
+      "gzipBytes": 8930
+    }
+  ]
+}

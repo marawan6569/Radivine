@@ -1,0 +1,143 @@
+{
+  "initialGzip": 2617,
+  "demoGzip": 8980,
+  "totalRaw": 641876,
+  "inventory": [
+    {
+      "file": "404.html",
+      "bytes": 8155,
+      "gzip": 2373
+    },
+    {
+      "file": "_astro/SiteLayout.fuVO0zUJ.css",
+      "bytes": 18610,
+      "gzip": 4984
+    },
+    {
+      "file": "_astro/WheelDemo.astro_astro_type_script_index_0_lang.B3jlENmI.js",
+      "bytes": 2344,
+      "gzip": 1161
+    },
+    {
+      "file": "_astro/controller.B72zarev.js",
+      "bytes": 24847,
+      "gzip": 8980
+    },
+    {
+      "file": "_astro/index.DKT7_LE5.css",
+      "bytes": 28440,
+      "gzip": 5489
+    },
+    {
+      "file": "_astro/inter-latin.DWSxN9ft.woff2",
+      "bytes": 99780,
+      "gzip": 99819
+    },
+    {
+      "file": "_astro/logo-icon.B9PE8Z7G_1HA9KM.webp",
+      "bytes": 9736,
+      "gzip": 9759
+    },
+    {
+      "file": "_astro/logo-icon.B9PE8Z7G_1UGDBz.png",
+      "bytes": 3253,
+      "gzip": 3276
+    },
+    {
+      "file": "_astro/logo-icon.B9PE8Z7G_2ocAWn.webp",
+      "bytes": 6792,
+      "gzip": 6815
+    },
+    {
+      "file": "_astro/logo-icon.B9PE8Z7G_Z25TYUV.webp",
+      "bytes": 4148,
+      "gzip": 4171
+    },
+    {
+      "file": "_astro/logo-icon.B9PE8Z7G_ZTwtg2.png",
+      "bytes": 154238,
+      "gzip": 153601
+    },
+    {
+      "file": "_astro/logo-icon.B9PE8Z7G_zwiko.webp",
+      "bytes": 1692,
+      "gzip": 1715
+    },
+    {
+      "file": "compatibility/index.html",
+      "bytes": 41422,
+      "gzip": 7747
+    },
+    {
+      "file": "contribute/index.html",
+      "bytes": 17242,
+      "gzip": 5329
+    },
+    {
+      "file": "download/index.html",
+      "bytes": 27416,
+      "gzip": 6947
+    },
+    {
+      "file": "guide/configuration/index.html",
+      "bytes": 22829,
+      "gzip": 6482
+    },
+    {
+      "file": "guide/index.html",
+      "bytes": 46128,
+      "gzip": 10575
+    },
+    {
+      "file": "guide/troubleshooting/index.html",
+      "bytes": 23673,
+      "gzip": 6768
+    },
+    {
+      "file": "index.html",
+      "bytes": 42461,
+      "gzip": 11067
+    },
+    {
+      "file": "licenses/index.html",
+      "bytes": 13775,
+      "gzip": 4416
+    },
+    {
+      "file": "notices/LICENSE-APACHE.txt",
+      "bytes": 11341,
+      "gzip": 3930
+    },
+    {
+      "file": "notices/LICENSE-Astro.txt",
+      "bytes": 3628,
+      "gzip": 908
+    },
+    {
+      "file": "notices/LICENSE-MIT.txt",
+      "bytes": 1068,
+      "gzip": 657
+    },
+    {
+      "file": "notices/LICENSE-Tailwind.txt",
+      "bytes": 1071,
+      "gzip": 651
+    },
+    {
+      "file": "notices/OFL-Inter.txt",
+      "bytes": 4376,
+      "gzip": 1966
+    },
+    {
+      "file": "roadmap/index.html",
+      "bytes": 22656,
+      "gzip": 5020
+    },
+    {
+      "file": "sitemap.xml",
+      "bytes": 755,
+      "gzip": 232
+    }
+  ],
+  "note": "Gzip sizes are estimates; browser transfer measured separately. Pattern scan is not a complete secret detector."
+}

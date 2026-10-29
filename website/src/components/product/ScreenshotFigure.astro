@@ -1,0 +1,75 @@
+---
+import { catalog } from "../../data/catalog";
+interface Props {
+  mediaId: string;
+}
+const record = catalog.media.find((m) => m.id === Astro.props.mediaId);
+if (!record)
+  throw new Error(`Missing media provenance: ${Astro.props.mediaId}`);
+---
+
+<figure class="product-figure">
+  <div class="figure-art" role="img" aria-label={record.alt}>
+    <slot />
+  </div>
+  <figcaption>
+    <strong>{record.caption}</strong>
+    <span>
+      {record.environment} ·{" "}
+      {record.productVersion
+        ? `v${record.productVersion}`
+        : "Not a release-specific capture"}
+    </span>
+    <details>
+      <summary>Media provenance</summary>
+      <p>
+        Source: <code>{record.sourcePath}</code>
+        <br />
+        Kind: {record.kind} · {record.width} × {record.height}
+        <br />
+        License: {record.license}
+        <br />
+        SHA-256: <code>{record.sourceHash}</code>
+      </p>
+    </details>
+  </figcaption>
+</figure>
+<style>
+  .product-figure {
+    margin: 2rem 0;
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    background: var(--surface-muted);
+    overflow: hidden;
+  }
+  .figure-art {
+    max-width: 30rem;
+    margin: auto;
+    padding: 1.5rem;
+  }
+  figcaption {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--border);
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+  strong {
+    font-weight: 550;
+    color: var(--text);
+  }
+  span {
+    display: block;
+    margin-top: 0.5rem;
+  }
+  summary {
+    min-height: 44px;
+    cursor: pointer;
+    padding-top: 0.75rem;
+  }
+  code {
+    overflow-wrap: anywhere;
+  }
+  p {
+    margin-bottom: 0;
+  }
+</style>

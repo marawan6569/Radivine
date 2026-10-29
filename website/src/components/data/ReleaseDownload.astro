@@ -1,0 +1,91 @@
+---
+import { stable } from "../../data/catalog";
+import Button from "../ui/Button.astro";
+const asset = stable.assets[0];
+---
+
+<aside class="release-download" aria-labelledby="stable-title">
+  <p class="eyebrow">Stable / v{stable.version}</p>
+  <h2 id="stable-title">
+    Ready for your
+    <br />
+    next direction.
+  </h2>
+  <p>
+    Linux · amd64 · .deb
+    <br />
+    X11 required for the wheel
+  </p>
+  <Button href={asset.url}>Download v{stable.version}</Button>
+  <p class="asset-name">
+    {asset.name}
+    <br />
+    {(asset.bytes / 1024 / 1024).toFixed(2)} MiB ·{" "}
+    {asset.bytes.toLocaleString("en-US")} bytes
+  </p>
+  <dl>
+    <div>
+      <dt>Published</dt>
+      <dd>
+        <time datetime={stable.publishedOn}>{stable.publishedOn}</time>
+      </dd>
+    </div>
+    <div>
+      <dt>Bytes verified</dt>
+      <dd>
+        <time datetime={stable.verifiedOn}>{stable.verifiedOn}</time>
+      </dd>
+    </div>
+  </dl>
+  <a class="text-link" href={stable.releaseUrl}>
+    Release page & fallback download ↗
+  </a>
+</aside>
+<style>
+  .release-download {
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    padding: 2rem;
+    border-radius: 1rem;
+    position: sticky;
+    top: 2rem;
+    min-width: 0;
+  }
+  h2 {
+    font-size: clamp(2rem, 3vw, 3rem);
+    margin-bottom: 1.5rem;
+  }
+  p {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+  }
+  .asset-name {
+    font:
+      0.7rem/1.8 ui-monospace,
+      monospace;
+    margin-top: 1rem;
+    overflow-wrap: anywhere;
+  }
+  dl {
+    font-size: 0.75rem;
+    margin-block: 1.5rem;
+  }
+  dl div {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  dd {
+    margin: 0;
+  }
+  a.text-link {
+    font-size: 0.75rem;
+  }
+  @media (max-width: 52rem) {
+    .release-download {
+      position: static;
+    }
+  }
+</style>

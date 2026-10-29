@@ -1,0 +1,292 @@
+---
+import { contexts } from "../../demo/contexts";
+import { initial } from "../../demo/model";
+import { withBase } from "../../lib/urls";
+import "../../styles/demo.css";
+const idle = initial();
+---
+
+<section
+  id="try"
+  class="practice container"
+  aria-labelledby="practice-title"
+  data-wheel-demo
+>
+  <div class="practice-intro">
+    <div>
+      <p class="eyebrow">Your turn / Interactive practice</p>
+      <h2 id="practice-title">
+        Find your next
+        <br />
+        <em>direction.</em>
+      </h2>
+    </div>
+    <div class="practice-intro-copy">
+      <p>
+        A file. A gesture. A branch of possibilities. Try the wheel with a
+        sample and get a feel for where it can take you.
+      </p>
+      <p class="practice-disclosure">
+        <span aria-hidden="true">◇</span> Browser simulation · no local files,
+        native commands or real conversions.
+      </p>
+    </div>
+  </div>
+  <div data-demo-static class="practice-static">
+    <p>
+      <strong>Practice path:</strong> a text file → File Preview → Full Preview,
+      Head or Tail. An image → Convert → Image → JPEG, WebP or Advanced.
+    </p>
+    <p>
+      The interactive practice loads as you approach this section with
+      JavaScript enabled. All product guidance remains available in the{" "}
+      <a href={withBase("guide/")}>usage guide</a>.
+    </p>
+  </div>
+  <div data-demo-interactive hidden>
+    <div class="practice-toolbar">
+      <label>
+        01 / Sample context
+        <select data-context>
+          {contexts.map((c) => (
+            <option value={c.id}>{c.label}</option>
+          ))}
+        </select>
+      </label>
+      <fieldset class="practice-layout">
+        <legend>02 / Wheel layout</legend>
+        <div>
+          <label>
+            <input type="radio" name="wheel-layout" value="branching" checked />
+            <span>
+              Branching <small>default</small>
+            </span>
+          </label>
+          <label>
+            <input type="radio" name="wheel-layout" value="concentric" />
+            <span>Concentric Rings</span>
+          </label>
+        </div>
+      </fieldset>
+      <button type="button" class="practice-reset" data-reset>
+        Reset ↺
+      </button>
+    </div>
+    <div class="practice-workspace">
+      <div class="practice-visual">
+        <div class="practice-stage-heading">
+          <span data-layout-label>Branching</span>
+          <span>VIRTUAL DESKTOP · 900 × 800</span>
+        </div>
+        <div
+          class="practice-stage"
+          data-stage
+          tabindex="0"
+          role="group"
+          aria-label="Wheel practice surface"
+          aria-describedby="practice-keys practice-pointer"
+        >
+          <svg
+            viewBox="0 0 900 800"
+            aria-hidden="true"
+            focusable="false"
+            data-wheel-svg
+          >
+            <defs>
+              <pattern
+                id="practice-grid"
+                width="40"
+                height="40"
+                patternUnits="userSpaceOnUse"
+              >
+                <circle cx="1" cy="1" r="1" />
+              </pattern>
+            </defs>
+            <rect
+              width="900"
+              height="800"
+              fill="url(#practice-grid)"
+              class="practice-grid"
+            />
+            <circle cx="450" cy="350" r="326" class="practice-reserve" />
+            <path
+              d="M450 14V34 M450 666V686 M114 350H134 M766 350H786"
+              class="practice-ticks"
+            />
+            <g data-wheel-layers></g>
+          </svg>
+          <div class="practice-launch" data-launch>
+            <span class="practice-file-icon" aria-hidden="true">
+              ↗
+            </span>
+            <strong data-file-name>field-notes.txt</strong>
+            <span>Sample file · safe to explore</span>
+            <button type="button" data-open>
+              Open wheel <span aria-hidden="true">↗</span>
+            </button>
+            <button type="button" data-drag class="practice-drag">
+              Or hold here, move + press Shift
+            </button>
+          </div>
+          <div class="practice-caption" data-caption aria-hidden="true">
+            Choose a sample. Follow a direction.
+          </div>
+          <span class="practice-stage-tag" data-phase>
+            READY WHEN YOU ARE
+          </span>
+        </div>
+        <p id="practice-pointer" class="practice-pointer">
+          <strong>Pointer:</strong> hover briefly or push outward to open a
+          branch. In Invoke mode, click a leaf. For Drag + Shift, hold the
+          sample, move, then press Shift; release over a leaf. Press Shift again
+          to hide.
+        </p>
+        <p class="practice-mobile-note">
+          Tap through the full-size action buttons below. The wheel is a visual
+          reference on smaller screens; touch is a browser-only alternative.
+        </p>
+      </div>
+      <aside class="practice-panel" aria-label="Sample actions and outcome">
+        <div class="practice-context">
+          <p class="eyebrow">Selected sample</p>
+          <strong data-panel-file>field-notes.txt</strong>
+          <p data-context-detail>{contexts[0].detail}</p>
+        </div>
+        <div class="practice-path">
+          <button
+            type="button"
+            data-back
+            aria-label="Back to parent menu"
+            disabled
+          >
+            ←
+          </button>
+          <p data-path>Sample actions</p>
+          <button type="button" data-cancel disabled>
+            Cancel
+          </button>
+        </div>
+        <h3 class="practice-list-title">Choose an action</h3>
+        <p class="practice-list-help">
+          The same wheel, as a list. Buttons work with a keyboard or touch.
+        </p>
+        <p
+          class="sr-only"
+          data-key-status
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        ></p>
+        <ol class="practice-action-list" data-action-list>
+          {idle.menu.map((action, index) => (
+            <li>
+              <button type="button" data-action={index} aria-disabled="true">
+                <span class="practice-action-number" aria-hidden="true">
+                  {index + 1}
+                </span>
+                <span>
+                  <strong>{action.label}</strong>
+                  <small>
+                    {action.children ? "Open submenu" : "Simulated outcome"}
+                  </small>
+                </span>
+                <span aria-hidden="true">{action.children ? "↗" : "→"}</span>
+              </button>
+            </li>
+          ))}
+        </ol>
+        <div class="practice-outcome">
+          <p class="eyebrow">What happens next</p>
+          <p data-outcome role="status" aria-live="polite" aria-atomic="true">
+            {idle.result}
+          </p>
+        </div>
+        <button type="button" data-invoke class="practice-invoke">
+          Start Invoke practice ↗
+        </button>
+      </aside>
+    </div>
+    <div class="practice-footnotes">
+      <p id="practice-keys">
+        <strong>Keyboard:</strong> open the wheel, then focus the practice
+        surface. Arrows cycle; Enter / Space chooses; 1–9 activates; Backspace
+        goes up; Escape cancels. Tab always moves to the next page control.
+      </p>
+      <details class="practice-settings">
+        <summary>Layout fallbacks & simulation details</summary>
+        <label>
+          Virtual desktop scenario
+          <select data-environment>
+            <option value="desktop">
+              Roomy desktop · compositing available
+            </option>
+            <option value="small">Small desktop · below 668 × 742</option>
+            <option value="uncomposited">Desktop without compositing</option>
+            <option value="small-targets">Configured targets too small</option>
+          </select>
+        </label>
+        <p data-fallback>
+          Branching is the desktop application's default layout.
+        </p>
+        <p>
+          The visual uses a scaled virtual desktop with a fixed summon point.
+          Desktop Concentric Rings reserve 668 × 742 logical pixels; the
+          fallback examples illustrate why Branching may be used instead.
+          Changing a sample or layout resets the session.
+        </p>
+        <p>
+          Inspection timing is illustrative. Properties assumes a supported file
+          manager. Default Custom actions only log. The browser uses website
+          styling and rejects visible segment gaps; it does not reproduce every
+          native desktop behavior.{" "}
+          <a href={withBase("guide/")}>Read the desktop guide →</a>
+        </p>
+      </details>
+    </div>
+  </div>
+</section>
+<script>
+  const root = document.querySelector<HTMLElement>("[data-wheel-demo]");
+  if (root) {
+    // Reserve the server-rendered idle shell before approaching the section.
+    // Hidden controls remain unfocusable; no-JS keeps the compact explanation.
+    root.dataset.preparing = "true";
+    const shell = root.querySelector<HTMLElement>("[data-demo-interactive]")!;
+    shell.inert = true;
+    shell.hidden = false;
+    // Reject native drops even before the lazy controller is ready. Do not read
+    // their contents or intercept dragging elsewhere on the page.
+    for (const type of ["dragover", "drop"] as const)
+      root.addEventListener(type, (event) => {
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = "none";
+      });
+    let loading = false;
+    const load = async () => {
+      if (loading) return;
+      loading = true;
+      try {
+        const { mount } = await import("../../demo/controller");
+        mount(root);
+        shell.inert = false;
+        delete root.dataset.preparing;
+      } catch {
+        shell.hidden = true;
+        delete root.dataset.preparing;
+        loading = false; /* Static explanation remains readable on load failure. */
+      }
+    };
+    if ("IntersectionObserver" in window) {
+      const observer = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((e) => e.isIntersecting)) {
+            observer.disconnect();
+            void load();
+          }
+        },
+        { rootMargin: "250px" },
+      );
+      observer.observe(root);
+    } else void load();
+  }
+</script>

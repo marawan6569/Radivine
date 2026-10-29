@@ -1,0 +1,97 @@
+---
+import ContentLayout from "../layouts/ContentLayout.astro";
+import SupportMatrix from "../components/data/SupportMatrix.astro";
+import EvidenceLinks from "../components/data/EvidenceLinks.astro";
+import { withBase } from "../lib/urls";
+---
+
+<ContentLayout
+  title="Rooted in your desktop."
+  eyebrow="Compatibility / Know your environment"
+  description="Linux Mint, Cinnamon, Nemo and X11 are the primary tested combination. Other environments deserve specific answers, not a blanket Linux badge."
+>
+  <div class="content-split">
+    <div class="prose">
+      <h2>Availability isn’t verification.</h2>
+      <p>
+        <strong>Recorded desktop testing</strong> means a named owner test is on
+        record. <strong>Conditional</strong> means an implemented path has
+        requirements or degradation. <strong>Manual verification needed</strong>{" "}
+        means the code exists but the exact desktop was not certified.{" "}
+        <strong>Unsupported</strong> identifies a missing shipping wheel or
+        release target.
+      </p>
+    </div>
+    <aside class="callout">
+      <h3>X11 is required for the wheel.</h3>
+      <p>
+        Native Wayland is unsupported. XWayland Invoke is experimental and
+        conditional; Drag + Shift is unavailable in Wayland sessions. Exploring
+        is a roadmap category, not a support promise.
+      </p>
+      <a class="text-link" href={withBase("roadmap/")}>
+        See what is being explored →
+      </a>
+    </aside>
+  </div>
+  <section class="content-section" aria-labelledby="matrix-title">
+    <h2 id="matrix-title">Find your environment.</h2>
+    <SupportMatrix />
+  </section>
+  <div class="content-split">
+    <section class="prose">
+      <h2>Compositing, monitors and scale.</h2>
+      <p>
+        Without a compositor, X11 uses an opaque/shaped Branching fallback.
+        Concentric also falls back when its workarea or target sizes are
+        insufficient. The default configuration reserves{" "}
+        <strong>668 × 742 logical pixels</strong>; that is not a universal
+        minimum for custom geometry.
+      </p>
+      <p>
+        RandR and Xft scaling paths have automated coverage. Mixed-DPI monitors,
+        hotplugging, negative origins and edge behavior still need
+        environment-specific manual checks. N5’s outstanding cases remain
+        visible despite later owner release sign-off.
+      </p>
+      <EvidenceLinks ids={["config", "n5", "x11-tests"]} />
+    </section>
+    <section class="prose">
+      <h2>Check the feature, too.</h2>
+      <p>
+        Properties requires <code>org.freedesktop.FileManager1</code>. Clipboard
+        Copy publishes X11 file URIs. Keyboard input during a foreign drag is
+        best effort; use Invoke for keyboard-oriented navigation.
+      </p>
+      <p>
+        Conversion supports static PNG/JPEG/WebP, not animation or arbitrary
+        media formats. Runtime font availability affects Arabic/non-Latin text;
+        widget containers remain LTR. Package installation does not prove GUI
+        integration.
+      </p>
+      <EvidenceLinks ids={["actions", "doctor", "convert", "release-report"]} />
+    </section>
+  </div>
+  <section class="prose content-section">
+    <h2>Help verify another desktop.</h2>
+    <p>
+      Report OS/version, desktop and window manager, X11/Wayland session,
+      compositor, file manager/version, architecture, monitor layout and scale,
+      Radivine version, and whether the package or a source build was used.
+    </p>
+    <p>
+      With disposable files, record Drag + Shift and Invoke separately, submenu
+      navigation, outside cancellation, clipboard/Properties, layout fallback
+      and startup. Include expected versus actual behavior and redacted
+      diagnostics. Do not mark an entire distribution supported from a single
+      headless test.
+    </p>
+    <a class="text-link" href={withBase("contribute/")}>
+      Prepare a useful test report →
+    </a>
+  </section>
+  <nav class="page-links" aria-label="Related pages">
+    <a href={withBase("download/")}>Download and installation →</a>
+    <a href={withBase("guide/troubleshooting/")}>Troubleshoot your setup →</a>
+  </nav>
+</ContentLayout>

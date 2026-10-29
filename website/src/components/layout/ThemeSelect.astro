@@ -1,0 +1,39 @@
+<div class="theme-control" hidden>
+  <label for="theme">Theme</label>
+  <select id="theme" name="theme" aria-label="Website theme">
+    <option value="system">System</option>
+    <option value="light">Light</option>
+    <option value="dark">Dark</option>
+  </select>
+</div>
+<noscript>
+  <span class="muted no-js-theme">Theme follows your system</span>
+</noscript>
+<script>
+  import "../../scripts/theme";
+</script>
+<style>
+  .theme-control {
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+  }
+  .theme-control:not([hidden]) {
+    display: flex;
+  }
+  label {
+    color: var(--text-muted);
+  }
+  select {
+    min-height: 44px;
+    padding: 0.5rem 1.7rem 0.5rem 0.65rem;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 0.4rem;
+    font-size: 0.8rem;
+  }
+  .no-js-theme {
+    font-size: 0.75rem;
+  }
+</style>

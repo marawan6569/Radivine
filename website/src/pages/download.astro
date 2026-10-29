@@ -1,0 +1,202 @@
+---
+import ContentLayout from "../layouts/ContentLayout.astro";
+import ReleaseDownload from "../components/data/ReleaseDownload.astro";
+import CommandBlock from "../components/data/CommandBlock.astro";
+import EvidenceLinks from "../components/data/EvidenceLinks.astro";
+import { stable } from "../data/catalog";
+import { installCommands as commands } from "../lib/install";
+import { withBase } from "../lib/urls";
+const asset = stable.assets[0];
+const downloadCanonical = new URL(withBase("download/"), Astro.site).href;
+---
+
+<ContentLayout
+  title="Make it part of your workflow."
+  eyebrow={`Download / Stable v${stable.version}`}
+  description="Get the official Linux amd64 package. Check your environment, verify the download, then choose how Radivine starts."
+>
+  <script
+    type="application/ld+json"
+    set:html={JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      name: "Radivine",
+      applicationCategory: "UtilitiesApplication",
+      operatingSystem: "Linux (X11 wheel)",
+      softwareVersion: stable.version,
+      downloadUrl: asset.url,
+      datePublished: stable.publishedOn,
+      url: downloadCanonical,
+      description:
+        "Context-aware radial file-action wheel and native utility suite. MIT OR Apache-2.0.",
+    }).replaceAll("<", "\\u003c")}
+  />
+  <div class="download-layout">
+    <ReleaseDownload />
+    <article class="prose">
+      <section aria-labelledby="requirements">
+        <h2 id="requirements">Start with the right setup.</h2>
+        <p>
+          The primary tested desktop is{" "}
+          <strong>Linux Mint 22.3 · Cinnamon X11 · Nemo · amd64</strong>. Ubuntu
+          24.04 package installation was verified in a container; that does not
+          certify every Ubuntu desktop.{" "}
+          <a href={withBase("compatibility/")}>
+            Check the full compatibility matrix
+          </a>
+          .
+        </p>
+        <p>
+          The package declares <code>libc6 ≥ 2.34</code>,{" "}
+          <code>libgcc-s1 ≥ 3.0</code>, <code>fonts-dejavu-core</code> and{" "}
+          <code>libfontconfig1</code>. Recommended packages include Nemo,
+          X11/OpenGL libraries, systemd and Noto fonts. A suitable graphical
+          session is still needed.
+        </p>
+        <p>
+          No ARM package, Windows/macOS installer, RPM, AppImage, Flatpak, Snap
+          or hosted apt repository is offered here. Native Wayland wheel support
+          is unavailable.
+        </p>
+      </section>
+      <section aria-labelledby="verify">
+        <h2 id="verify">01 / Download and verify.</h2>
+        <p>
+          Save the package and <a href={stable.checksumsUrl}>SHA256SUMS.txt</a>{" "}
+          in the same directory, or use these commands with <code>curl</code>{" "}
+          installed. Run the following steps from that directory.
+        </p>
+        <CommandBlock title="Download release files" code={commands.download} />
+        <CommandBlock title="Verify SHA-256" code={commands.verify} />
+        <p>
+          Continue only when the package reports <strong>OK</strong>. If
+          verification fails, do not install that file; download both files
+          again from the versioned release page.
+        </p>
+        <CommandBlock title="Expected package SHA-256" code={asset.sha256} />
+        <p>
+          The SHA-256 above matches the published checksum file, GitHub asset
+          digest, and a fresh download checked on {stable.verifiedOn}. It
+          verifies agreement with the published bytes; it is not a signed
+          provenance guarantee.
+        </p>
+      </section>
+      <section aria-labelledby="install">
+        <h2 id="install">02 / Install the package.</h2>
+        <CommandBlock title="Install with apt" code={commands.install} />
+        <p>
+          <code>apt</code> resolves declared dependencies. The package includes
+          the wheel daemon/CLI, Control Center, read-only viewer, conversion
+          worker, user service units, desktop entry and Nemo’s{" "}
+          <strong>Open in Radivine</strong> action.
+        </p>
+      </section>
+      <section aria-labelledby="first-launch">
+        <h2 id="first-launch">03 / Start on your terms.</h2>
+        <p>
+          Open <strong>Radivine Control Center</strong> from your application
+          menu, or run:
+        </p>
+        <CommandBlock title="Open Control Center" code={commands.start} />
+        <p>
+          On Dashboard choose <strong>Start Daemon</strong>. Login startup is
+          opt-in; enable it there if wanted. Closing Control Center leaves the
+          daemon running. The conversion worker starts on demand; it does not
+          need to be enabled as a permanent service.
+        </p>
+        <p>
+          For a systemd user session, this alternative enables the wheel now and
+          at login:
+        </p>
+        <CommandBlock title="Optional login startup" code={commands.service} />
+        <p>
+          Use these commands as your ordinary desktop user, without{" "}
+          <code>sudo</code>. On a non-systemd desktop, Control Center has a
+          fallback path, but that desktop still needs verification.{" "}
+          <a href={withBase("guide/")}>Continue with the usage guide</a>.
+        </p>
+      </section>
+      <section aria-labelledby="upgrade">
+        <h2 id="upgrade">Upgrade or remove.</h2>
+        <p>
+          Finish or cancel active jobs before restarting or removing services.
+          Download and verify the new package first. For an existing
+          systemd-managed installation:
+        </p>
+        <CommandBlock title="Upgrade and restart" code={commands.upgrade} />
+        <p>
+          The recorded v0.2.0 and release-candidate upgrades to v
+          {stable.version} preserved user TOML and job history. Back up
+          important configuration before changes; this is not a guarantee for
+          every future migration. Non-systemd users can restart from Control
+          Center.
+        </p>
+        <CommandBlock
+          title="Remove a systemd-managed installation"
+          code={commands.remove}
+        />
+        <p>
+          For other startup methods, disable login startup and stop the daemon
+          in Control Center before <code>sudo apt remove radivine</code>.
+          Removal leaves user configuration and job history in your home
+          directory. No command here deletes those files.
+        </p>
+      </section>
+      <section aria-labelledby="source">
+        <h2 id="source">Prefer to build from source?</h2>
+        <p>
+          The release CI reference toolchain is Rust <strong>1.95.0</strong>. A
+          lower minimum is not established by the edition or older README
+          wording. Install the C/build, graphical and packaging prerequisites in
+          the{" "}
+          <a
+            href={`https://github.com/marawan6569/Radivine/blob/${stable.sourceRevision}/README.md`}
+          >
+            version-pinned source guide
+          </a>
+          .
+        </p>
+        <CommandBlock title="Build the pinned source" code={commands.source} />
+        <p>
+          A build alone does not install desktop entries, Nemo actions or
+          services. The repository’s <code>./scripts/build-deb.sh</code> handles
+          packaging and additionally needs Debian packaging tools and Python
+          Pillow. This website does not claim to have repeated the full
+          source-build installation on every distribution.
+        </p>
+        <EvidenceLinks
+          ids={["packaging", "release-report", "cli", "release-live"]}
+        />
+      </section>
+    </article>
+  </div>
+  <nav class="page-links" aria-label="Release resources">
+    <a href={stable.releaseUrl}>Release notes ↗</a>
+    <a
+      href={`https://github.com/marawan6569/Radivine/blob/${stable.sourceRevision}/CHANGELOG.md`}
+    >
+      Changelog ↗
+    </a>
+    <a href="https://github.com/marawan6569/Radivine/releases">
+      Historical releases ↗
+    </a>
+    <a href={withBase("guide/troubleshooting/")}>Installation help →</a>
+  </nav>
+</ContentLayout>
+<style>
+  .download-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.4fr);
+    gap: 4rem;
+    align-items: start;
+  }
+  .prose section:first-child h2 {
+    margin-top: 0;
+  }
+  @media (max-width: 52rem) {
+    .download-layout {
+      grid-template-columns: 1fr;
+      gap: 3rem;
+    }
+  }
+</style>

@@ -1,0 +1,31 @@
+---
+import { Image } from "astro:assets";
+import logo from "../../../../assets/branding/logo-icon.png";
+import { withBase } from "../../lib/urls";
+---
+
+<a class="brand" href={withBase()} aria-label="Radivine home">
+  <Image
+    src={logo}
+    alt=""
+    width={40}
+    height={40}
+    densities={[1, 2, 3]}
+    format="webp"
+  />
+  <span>Radivine</span>
+</a>
+<style>
+  .brand {
+    display: inline-flex;
+    gap: 0.65rem;
+    align-items: center;
+    text-decoration: none;
+    font-weight: 650;
+    font-size: 1.3rem;
+    letter-spacing: -0.05em;
+  }
+  img {
+    flex-shrink: 0;
+  }
+</style>

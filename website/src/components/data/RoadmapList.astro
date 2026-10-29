@@ -1,0 +1,87 @@
+---
+import { catalog } from "../../data/catalog";
+import SupportLabel from "./SupportLabel.astro";
+import EvidenceLinks from "./EvidenceLinks.astro";
+interface Props {
+  status: "shipped" | "exploring" | "deferred";
+}
+const items = catalog.roadmap.filter(
+  (item) => item.status === Astro.props.status,
+);
+---
+
+<ol class="milestones">
+  {items.map((item) => (
+    <li>
+      <div class="milestone-marker">
+        <SupportLabel status={item.status} />
+        {item.shippedVersion && (
+          <span>
+            v{item.shippedVersion}
+            <br />
+            <time datetime={item.releasedOn}>{item.releasedOn}</time>
+          </span>
+        )}
+      </div>
+      <div>
+        <h3>{item.title}</h3>
+        <p>{item.summary}</p>
+        {item.releaseUrl && (
+          <a class="text-link" href={item.releaseUrl}>
+            Read v{item.shippedVersion} release notes ↗
+          </a>
+        )}
+        <EvidenceLinks ids={item.evidenceIds} />
+      </div>
+    </li>
+  ))}
+</ol>
+<style>
+  .milestones {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  li {
+    display: grid;
+    grid-template-columns: 12rem 1fr;
+    gap: 2rem;
+    border-top: 1px solid var(--border);
+    padding-block: 2rem;
+  }
+  h3 {
+    font-size: clamp(1.4rem, 3vw, 2rem);
+    font-weight: 540;
+    letter-spacing: -0.04em;
+    margin-bottom: 0.75rem;
+  }
+  p {
+    color: var(--text-muted);
+  }
+  .milestone-marker > span {
+    display: block;
+    margin-top: 1rem;
+    font:
+      0.8rem/1.8 ui-monospace,
+      monospace;
+    color: var(--text-muted);
+  }
+  a {
+    font-size: 0.8rem;
+  }
+  @media (max-width: 40rem) {
+    li {
+      grid-template-columns: 1fr;
+      gap: 1rem;
+    }
+    .milestone-marker {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+    .milestone-marker > span {
+      margin: 0;
+      font-size: 0.65rem;
+    }
+  }
+</style>

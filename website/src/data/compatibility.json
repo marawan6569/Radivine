@@ -1,0 +1,331 @@
+[
+  {
+    "id": "mint",
+    "os": "Linux Mint",
+    "osVersion": "22.3",
+    "architecture": "amd64",
+    "desktop": "Cinnamon / Muffin",
+    "fileManager": "Nemo",
+    "session": "x11",
+    "status": "verified",
+    "publicLabel": "Primary tested setup",
+    "packageStatus": "published",
+    "capabilities": {
+      "drag": {
+        "availability": "available",
+        "qualification": "Drag + Shift is the primary recorded workflow."
+      },
+      "invoke": {
+        "availability": "available",
+        "qualification": "Nemo action and CLI."
+      },
+      "concentric": {
+        "availability": "conditional",
+        "qualification": "Compositor and logical workarea required."
+      },
+      "properties": {
+        "availability": "conditional",
+        "qualification": "Needs FileManager1 service."
+      }
+    },
+    "note": "Owner tested the RC on Mint and approved stable publication. N5 retains uncompleted edge/multi-monitor subcases; this is not an exhaustive stable-desktop certification.",
+    "verification": [
+      {
+        "method": "recorded-manual",
+        "evidenceIds": ["n5", "release-report", "platform"],
+        "date": "2026-10-27",
+        "environment": "Mint 22.3 Cinnamon X11 / Nemo / amd64; RC owner sign-off, stable release approval"
+      }
+    ],
+    "lastReviewed": "2026-10-27",
+    "manualChecks": [
+      "Repeat remaining N5 edge, reject-zone and mixed-DPI cases."
+    ]
+  },
+  {
+    "id": "ubuntu",
+    "os": "Ubuntu",
+    "osVersion": "24.04",
+    "architecture": "amd64",
+    "desktop": "X11 desktop not certified",
+    "fileManager": "Not individually verified",
+    "session": "x11",
+    "status": "unverified",
+    "publicLabel": "Package install verified; desktop unverified",
+    "packageStatus": "install-tested",
+    "capabilities": {
+      "drag": {
+        "availability": "conditional",
+        "qualification": "Depends on X11 and drag source."
+      },
+      "invoke": {
+        "availability": "conditional",
+        "qualification": "X11 backend exists."
+      },
+      "concentric": {
+        "availability": "conditional",
+        "qualification": "Compositor and space required."
+      },
+      "properties": {
+        "availability": "conditional",
+        "qualification": "Provider-dependent."
+      }
+    },
+    "note": "Stable clean install and upgrades were recorded in a container, not a GNOME desktop session.",
+    "verification": [
+      {
+        "method": "source-inspection",
+        "evidenceIds": ["release-report", "platform"],
+        "date": "2026-10-27"
+      }
+    ],
+    "lastReviewed": "2026-10-27",
+    "manualChecks": [
+      "Verify drag, Invoke, clipboard, Properties and startup on the exact desktop."
+    ]
+  },
+  {
+    "id": "debian",
+    "os": "Debian / Ubuntu family",
+    "osVersion": "Exact release unverified",
+    "architecture": "amd64",
+    "desktop": "XFCE, MATE, GNOME Xorg, KDE Plasma X11",
+    "fileManager": "Thunar, Caja, Nautilus, Dolphin: unverified",
+    "session": "x11",
+    "status": "unverified",
+    "publicLabel": "Implemented paths; manual verification needed",
+    "packageStatus": "unknown",
+    "capabilities": {
+      "drag": {
+        "availability": "unknown",
+        "qualification": "XDND implementation is not a per-manager certification."
+      },
+      "invoke": {
+        "availability": "conditional",
+        "qualification": "CLI available; integration is manual."
+      },
+      "concentric": {
+        "availability": "conditional",
+        "qualification": "Requires compositor and sufficient space."
+      },
+      "properties": {
+        "availability": "unknown",
+        "qualification": "Check the desktop service."
+      }
+    },
+    "note": "Check declared package dependencies. No native integration files ship for these file managers. Missing test coverage is not proof of incompatibility.",
+    "verification": [
+      {
+        "method": "source-inspection",
+        "evidenceIds": ["packaging", "platform", "readme"],
+        "date": "2026-10-27"
+      }
+    ],
+    "lastReviewed": "2026-10-27",
+    "manualChecks": [
+      "Record exact OS, WM, file manager and package dependencies."
+    ]
+  },
+  {
+    "id": "other-x11",
+    "os": "Other Linux",
+    "osVersion": "Unverified",
+    "architecture": "Architecture-dependent",
+    "desktop": "Other X11 desktops",
+    "fileManager": "Other XDND sources",
+    "session": "x11",
+    "status": "unverified",
+    "publicLabel": "Community verification needed",
+    "packageStatus": "source-only",
+    "capabilities": {
+      "drag": {
+        "availability": "unknown",
+        "qualification": "Test each source."
+      },
+      "invoke": {
+        "availability": "conditional",
+        "qualification": "Requires a usable X11 display."
+      },
+      "concentric": {
+        "availability": "conditional",
+        "qualification": "Geometry and compositing gates apply."
+      },
+      "properties": {
+        "availability": "unknown",
+        "qualification": "Provider-dependent."
+      }
+    },
+    "note": "A source build is possible work, not a promise of package or desktop support.",
+    "verification": [
+      {
+        "method": "source-inspection",
+        "evidenceIds": ["platform", "packaging"],
+        "date": "2026-10-27"
+      }
+    ],
+    "lastReviewed": "2026-10-27",
+    "manualChecks": ["Build and test on the actual environment."]
+  },
+  {
+    "id": "no-compositor",
+    "os": "Linux X11",
+    "osVersion": "Environment-dependent",
+    "architecture": "amd64",
+    "desktop": "Non-composited window manager",
+    "fileManager": "Source-dependent",
+    "session": "x11",
+    "status": "conditional",
+    "publicLabel": "Implemented fallback; visual review needed",
+    "packageStatus": "published",
+    "capabilities": {
+      "drag": {
+        "availability": "conditional",
+        "qualification": "Opaque/shaped Branching fallback."
+      },
+      "invoke": {
+        "availability": "conditional",
+        "qualification": "Branching fallback."
+      },
+      "concentric": {
+        "availability": "unavailable",
+        "qualification": "Falls back to Branching for this session."
+      },
+      "properties": {
+        "availability": "conditional",
+        "qualification": "Provider-dependent."
+      }
+    },
+    "note": "Fallback has automated coverage; visual quality on each window manager still needs manual review.",
+    "verification": [
+      {
+        "method": "source-inspection",
+        "evidenceIds": ["platform", "x11-tests", "n5"],
+        "date": "2026-10-27"
+      }
+    ],
+    "lastReviewed": "2026-10-27",
+    "manualChecks": ["Check shaped edges and cancellation on the target WM."]
+  },
+  {
+    "id": "xwayland",
+    "os": "Linux Wayland",
+    "osVersion": "Compositor-dependent",
+    "architecture": "amd64",
+    "desktop": "Wayland with XWayland",
+    "fileManager": "Source-dependent",
+    "session": "wayland-xwayland",
+    "status": "conditional",
+    "publicLabel": "Experimental XWayland Invoke",
+    "packageStatus": "published",
+    "capabilities": {
+      "drag": {
+        "availability": "unavailable",
+        "qualification": "Drag + Shift is unavailable on Wayland."
+      },
+      "invoke": {
+        "availability": "conditional",
+        "qualification": "Needs an X11 display; pointer placement may be restricted."
+      },
+      "concentric": {
+        "availability": "unknown",
+        "qualification": "Do not assume X11 layout behavior is verified here."
+      },
+      "properties": {
+        "availability": "unknown",
+        "qualification": "Provider-dependent; unverified."
+      }
+    },
+    "note": "No native Wayland wheel support. Control Center/viewer use separate GUI paths and need their own checks; worker availability does not certify the wheel.",
+    "verification": [
+      {
+        "method": "source-inspection",
+        "evidenceIds": ["platform", "doctor"],
+        "date": "2026-10-27"
+      }
+    ],
+    "lastReviewed": "2026-10-27",
+    "manualChecks": [
+      "Verify compositor, X11 display, positioning and input separately."
+    ]
+  },
+  {
+    "id": "wayland",
+    "os": "Linux Wayland",
+    "osVersion": "No usable X11 display",
+    "architecture": "amd64",
+    "desktop": "Native Wayland only",
+    "fileManager": "Any",
+    "session": "wayland-native",
+    "status": "unsupported",
+    "publicLabel": "Native Wayland wheel unsupported",
+    "packageStatus": "published",
+    "capabilities": {
+      "drag": {
+        "availability": "unavailable",
+        "qualification": "No shipping backend."
+      },
+      "invoke": {
+        "availability": "unavailable",
+        "qualification": "The wheel selects X11."
+      },
+      "concentric": {
+        "availability": "unavailable",
+        "qualification": "No native wheel."
+      },
+      "properties": {
+        "availability": "unavailable",
+        "qualification": "No native wheel action path."
+      }
+    },
+    "note": "Installing a package or launching another tool does not provide native Wayland wheel support.",
+    "verification": [
+      {
+        "method": "source-inspection",
+        "evidenceIds": ["platform", "doctor"],
+        "date": "2026-10-27"
+      }
+    ],
+    "lastReviewed": "2026-10-27",
+    "manualChecks": ["Native integration remains research."]
+  },
+  {
+    "id": "targets",
+    "os": "ARM Linux / Windows / macOS",
+    "osVersion": "No published installer",
+    "architecture": "arm64 / non-Linux",
+    "desktop": "Not established",
+    "fileManager": "Not established",
+    "session": "other",
+    "status": "unsupported",
+    "publicLabel": "Unsupported release targets",
+    "packageStatus": "none",
+    "capabilities": {
+      "drag": {
+        "availability": "unknown",
+        "qualification": "No supported shipping path established."
+      },
+      "invoke": {
+        "availability": "unknown",
+        "qualification": "No supported shipping path established."
+      },
+      "concentric": {
+        "availability": "unknown",
+        "qualification": "Not established."
+      },
+      "properties": {
+        "availability": "unknown",
+        "qualification": "Not established."
+      }
+    },
+    "note": "Only the Linux amd64 .deb is offered. There is no published ARM, RPM, AppImage, Flatpak, Snap or hosted apt repository in the audited release.",
+    "verification": [
+      {
+        "method": "source-inspection",
+        "evidenceIds": ["packaging", "release-live"],
+        "date": "2026-10-27"
+      }
+    ],
+    "lastReviewed": "2026-10-27",
+    "manualChecks": ["Do not infer support from the Rust target ecosystem."]
+  }
+]

@@ -1,0 +1,31 @@
+{
+  "version": "0.3.0",
+  "tag": "v0.3.0",
+  "publishedOn": "2026-10-26",
+  "verifiedOn": "2026-10-27",
+  "sourceRevision": "1aa009a08bab66646898016f1ba953051eac46f3",
+  "channel": "stable",
+  "draft": false,
+  "prerelease": false,
+  "releaseUrl": "https://github.com/marawan6569/Radivine/releases/tag/v0.3.0",
+  "checksumsUrl": "https://github.com/marawan6569/Radivine/releases/download/v0.3.0/SHA256SUMS.txt",
+  "notesUrl": "https://github.com/marawan6569/Radivine/releases/download/v0.3.0/RELEASE_NOTES_v0.3.0.md",
+  "assets": [
+    {
+      "name": "radivine_0.3.0_amd64.deb",
+      "url": "https://github.com/marawan6569/Radivine/releases/download/v0.3.0/radivine_0.3.0_amd64.deb",
+      "bytes": 16149118,
+      "sha256": "4c0b8cc719963dec2f2457588a500a3530dd4aa88b01d0b3954eeb57edb37156",
+      "os": "linux",
+      "architecture": "amd64",
+      "package": "deb"
+    }
+  ],
+  "verification": [
+    {
+      "method": "live-release-metadata",
+      "evidenceIds": ["release-live"],
+      "date": "2026-10-27"
+    }
+  ]
+}

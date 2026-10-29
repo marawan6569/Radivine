@@ -1,0 +1,694 @@
+/* W3 practice has its own finite motion; W1.5 decorative storytelling is untouched. */
+.practice {
+  padding-block: var(--space-section);
+}
+.practice-intro {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4rem;
+  align-items: end;
+  margin-bottom: 2.75rem;
+}
+.practice h2 {
+  font-size: clamp(2.8rem, 5.6vw, 5rem);
+  font-weight: 520;
+  line-height: 1.06;
+  margin: 0;
+}
+.practice h2 em {
+  font-style: normal;
+  color: var(--accent);
+}
+.practice-intro-copy {
+  max-width: 45ch;
+  font-size: 1rem;
+}
+.practice-disclosure {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 0;
+}
+.practice-disclosure span {
+  color: var(--accent);
+  margin-right: 0.4rem;
+}
+.practice-static {
+  background: var(--surface-muted);
+  padding: 2rem;
+  border: 1px solid var(--border);
+}
+.practice[data-preparing] [data-demo-static] {
+  display: none;
+}
+.practice[data-preparing] [data-demo-interactive] {
+  visibility: hidden;
+}
+.practice-toolbar {
+  display: flex;
+  align-items: end;
+  gap: 2rem;
+  flex-wrap: wrap;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.practice-toolbar label,
+.practice-layout legend,
+.practice-settings label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.practice select {
+  display: block;
+  margin-top: 0.55rem;
+  min-height: 44px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 0.55rem 2rem 0.55rem 0.8rem;
+  border: 1px solid var(--text-muted);
+  border-radius: 0.3rem;
+  font: inherit;
+  font-size: 0.85rem;
+  max-width: 100%;
+}
+.practice-layout {
+  padding: 0;
+  margin: 0;
+  border: 0;
+  min-width: 0;
+}
+.practice-layout > div {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.55rem;
+}
+.practice-layout label {
+  position: relative;
+  cursor: pointer;
+}
+.practice-layout input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.practice-layout span {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--text-muted);
+  border-radius: 0.3rem;
+  color: var(--text);
+  font-size: 0.8rem;
+}
+.practice-layout small {
+  font-size: 0.6rem;
+  font-weight: 400;
+}
+.practice-layout input:checked + span {
+  background: var(--action);
+  color: var(--on-action);
+  border-color: var(--action);
+}
+.practice-layout input:focus-visible + span {
+  outline: 3px solid var(--focus);
+  outline-offset: 4px;
+}
+.practice button {
+  min-height: 44px;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  border: 1px solid var(--text-muted);
+  border-radius: 0.3rem;
+  background: var(--surface);
+  color: var(--text);
+  padding: 0.55rem 0.9rem;
+}
+.practice button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.practice button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.practice .practice-reset {
+  margin-left: auto;
+  background: transparent;
+}
+.practice-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 20rem;
+  border: 1px solid var(--border);
+  border-top: 0;
+}
+.practice-visual {
+  min-width: 0;
+  background: var(--surface-muted);
+}
+.practice-stage-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.3rem 1.5rem 0;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+.practice-stage-heading > span:last-child {
+  font:
+    0.55rem ui-monospace,
+    monospace;
+  letter-spacing: 0.07em;
+  align-self: center;
+}
+.practice-stage {
+  position: relative;
+  aspect-ratio: 9/8;
+  isolation: isolate;
+  user-select: none;
+}
+.practice-stage:focus-visible {
+  outline-offset: -4px;
+}
+.practice-stage svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.practice-stage svg text {
+  text-anchor: middle;
+  pointer-events: none;
+  fill: var(--text);
+}
+.practice-grid {
+  color: var(--border);
+}
+#practice-grid circle {
+  fill: var(--border);
+}
+.practice-reserve {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 1;
+  stroke-dasharray: 2 7;
+}
+.practice-ticks {
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 1;
+}
+.practice-wheel {
+  animation: practice-emerge 240ms var(--ease-out) both;
+}
+.practice-sector {
+  fill: var(--surface);
+  stroke: var(--text-muted);
+  stroke-width: 0.8;
+  transition:
+    fill 140ms,
+    stroke 140ms;
+}
+.practice-number {
+  font:
+    500 19px Inter,
+    sans-serif;
+}
+.practice-segment-label {
+  font:
+    500 13px Inter,
+    sans-serif;
+}
+.practice-state-label {
+  font:
+    10px Inter,
+    sans-serif;
+}
+.practice-wheel.is-ancestor .practice-sector {
+  fill: var(--canvas);
+}
+.is-open .practice-sector {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.is-hovered .practice-sector {
+  fill: var(--action);
+  stroke: var(--action);
+  stroke-width: 2;
+}
+.practice-stage .is-hovered text {
+  fill: var(--on-action);
+}
+.is-disabled .practice-sector {
+  stroke-dasharray: 3 3;
+}
+.practice-stem {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.practice-hub {
+  fill: var(--surface-muted);
+  stroke: var(--border);
+}
+.practice-hub-label {
+  font:
+    22px Inter,
+    sans-serif;
+}
+.practice-launch {
+  position: absolute;
+  left: 50%;
+  top: 43.75%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(20rem, 86%);
+  padding: 1.5rem 1rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 0.8rem;
+  box-shadow: 0 10px 32px #0000000a;
+  text-align: center;
+}
+.practice-launch[hidden] {
+  display: none;
+}
+.practice-launch > strong {
+  overflow-wrap: anywhere;
+  font-size: 0.95rem;
+}
+.practice-launch > span:not(.practice-file-icon) {
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  margin: 0.4rem 0 1rem;
+}
+.practice-file-icon {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 3rem;
+  margin-bottom: 0.8rem;
+  color: var(--accent);
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 0.2rem 0.7rem 0.2rem 0.2rem;
+}
+.practice [data-open],
+.practice .practice-invoke {
+  background: var(--action);
+  color: var(--on-action);
+  border-color: var(--action);
+}
+.practice [data-open] {
+  width: 80%;
+  display: flex;
+  justify-content: space-between;
+}
+.practice .practice-drag {
+  border: 0;
+  background: none;
+  font-size: 0.65rem;
+  margin-top: 0.2rem;
+  cursor: grab;
+  touch-action: none;
+}
+.practice[data-dragging] .practice-stage {
+  cursor: grabbing;
+}
+.practice[data-dragging] .practice-launch {
+  box-shadow: 0 0 0 3px var(--focus);
+}
+.practice-caption {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: 8%;
+  text-align: center;
+  pointer-events: none;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.practice-stage-tag {
+  position: absolute;
+  bottom: 3%;
+  left: 0;
+  width: 100%;
+  text-align: center;
+  font:
+    0.55rem ui-monospace,
+    monospace;
+  color: var(--accent);
+  letter-spacing: 0.08em;
+  pointer-events: none;
+}
+.practice-pointer {
+  margin: 0;
+  padding: 0 1.5rem 1.5rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.7;
+}
+.practice-mobile-note {
+  display: none;
+}
+.practice-panel {
+  padding: 1.5rem;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.practice-context > strong {
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+.practice-context > p:last-child {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  margin-top: 0.6rem;
+  margin-bottom: 1.3rem;
+}
+.practice .eyebrow {
+  font-size: 0.65rem;
+}
+.practice-path {
+  border-block: 1px solid var(--border);
+  padding: 0.6rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+.practice-path p {
+  font-size: 0.65rem;
+  margin: 0;
+  flex: 1;
+}
+.practice-path button {
+  border: 0;
+  padding: 0.4rem;
+  min-width: 44px;
+  font-size: 0.7rem;
+}
+.practice-list-title {
+  font-size: 0.9rem;
+  margin: 1.3rem 0 0.4rem;
+  font-weight: 550;
+}
+.practice-list-help {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  margin-bottom: 0.9rem;
+}
+.practice-action-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.practice-action-list button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.7rem 0.65rem;
+  text-align: left;
+  border-color: var(--border);
+  border-radius: 0.4rem;
+  min-height: 64px;
+}
+.practice-action-number {
+  font:
+    0.65rem ui-monospace,
+    monospace;
+  color: var(--text-muted);
+  min-width: 1rem;
+}
+.practice-action-list button > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.practice-action-list strong {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 550;
+}
+.practice-action-list small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  line-height: 1.4;
+  margin-top: 0.2rem;
+}
+.practice-action-list [aria-disabled="true"] {
+  cursor: default;
+  border-style: dashed;
+}
+.practice-action-list .is-current {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 var(--accent);
+  background: var(--surface-muted);
+}
+.practice-outcome {
+  margin-top: auto;
+  padding: 1rem;
+  border-left: 2px solid var(--accent);
+  background: var(--surface-muted);
+}
+.practice-outcome > p:last-child {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.7;
+}
+.practice[data-phase="result"] .practice-outcome {
+  animation: practice-result 320ms var(--ease-out);
+}
+.practice[data-phase="cancelled"] .practice-stage-tag {
+  animation: practice-result 200ms var(--ease-out);
+}
+.practice-invoke {
+  margin-top: 1rem;
+  width: 100%;
+}
+.practice-footnotes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3rem;
+  margin-top: 1.3rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+.practice-footnotes > p {
+  margin: 0;
+}
+.practice-settings summary {
+  min-height: 44px;
+  cursor: pointer;
+  color: var(--text);
+}
+.practice-settings p {
+  margin-top: 1rem;
+}
+.practice-settings select {
+  width: 100%;
+}
+@keyframes practice-emerge {
+  from {
+    opacity: 0.35;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes practice-result {
+  from {
+    opacity: 0.5;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.practice[data-visible="false"] * {
+  animation-play-state: paused !important;
+}
+@media (max-width: 68rem) {
+  .practice-workspace {
+    grid-template-columns: minmax(0, 1fr) 18rem;
+  }
+  .practice-panel {
+    padding: 1.1rem;
+  }
+  .practice-toolbar {
+    gap: 1rem;
+  }
+}
+@media (max-width: 52rem) {
+  .practice-intro {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+  .practice-intro-copy {
+    max-width: 55ch;
+  }
+  .practice-workspace {
+    grid-template-columns: 1fr;
+  }
+  .practice-panel {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    padding: 1.25rem;
+  }
+  .practice-toolbar {
+    padding: 1rem;
+    gap: 1rem;
+  }
+  .practice-toolbar > label {
+    flex: 1;
+    min-width: 100%;
+  }
+  .practice-toolbar select {
+    width: 100%;
+  }
+  .practice-layout > div {
+    flex-wrap: wrap;
+  }
+  .practice-toolbar .practice-reset {
+    margin-left: 0;
+  }
+  .practice-stage {
+    max-width: 40rem;
+    margin-inline: auto;
+  }
+  .practice-stage svg {
+    pointer-events: none;
+  }
+  .practice-stage-heading {
+    padding: 1rem 1rem 0;
+  }
+  .practice-stage-heading > span:last-child {
+    display: none;
+  }
+  .practice-pointer,
+  .practice-drag {
+    display: none;
+  }
+  .practice-mobile-note {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    padding: 0 1.25rem 1.25rem;
+    margin: 0;
+  }
+  .practice-footnotes {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+  .practice-launch {
+    padding: 0.75rem;
+  }
+  .practice-file-icon {
+    display: none;
+  }
+  .practice-caption {
+    bottom: 6%;
+    font-size: 0.65rem;
+  }
+  .practice-stage-tag {
+    bottom: 1%;
+    font-size: 0.45rem;
+  }
+  .practice-action-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 27rem) {
+  .practice-action-list {
+    grid-template-columns: 1fr;
+  }
+  .practice-layout span {
+    padding: 0.5rem 0.6rem;
+  }
+  .practice-layout small {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .practice *,
+  .practice *::before,
+  .practice *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+.is-retained .practice-sector,
+.is-hovered.is-disabled .practice-sector {
+  fill: var(--surface-muted);
+  stroke: var(--accent);
+  stroke-dasharray: 3 3;
+}
+.practice-stage .is-retained text,
+.practice-stage .is-hovered.is-disabled text {
+  fill: var(--text);
+}
+@media (forced-colors: active) {
+  .practice-sector,
+  .practice-hub {
+    fill: Canvas;
+    stroke: CanvasText;
+  }
+  .practice-stage svg text {
+    fill: CanvasText;
+  }
+  .is-hovered .practice-sector {
+    fill: Highlight;
+    stroke: Highlight;
+  }
+  .practice-stage .is-hovered text {
+    fill: HighlightText;
+  }
+  .practice-stem {
+    stroke: CanvasText;
+  }
+  .practice-layout input:checked + span {
+    outline: 2px solid Highlight;
+  }
+}
+
+.practice [data-key-status] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.practice-wheel-outline {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.practice-wheel.is-retracting {
+  animation: practice-retract 120ms ease-out forwards;
+  pointer-events: none;
+}
+@keyframes practice-retract {
+  to {
+    opacity: 0;
+  }
+}

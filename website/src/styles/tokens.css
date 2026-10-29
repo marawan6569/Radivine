@@ -1,0 +1,53 @@
+@font-face {
+  font-family: Inter;
+  src: url("../assets/inter-latin.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+:root {
+  color-scheme: light;
+  --canvas: #f4fbf8;
+  --surface: #ffffff;
+  --surface-muted: #e8f3ed;
+  --text: #102f26;
+  --text-muted: #48665a;
+  --border: #c8dcd1;
+  --accent: #006b50;
+  --action: #044c3c;
+  --on-action: #ffffff;
+  --focus: #00745a;
+  --page-width: 77.5rem;
+  --space-section: clamp(4rem, 8vw, 7rem);
+  --radius: 1.25rem;
+  --art-lime: #d8ed9a;
+  --art-lime-edge: #819a43;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #0a1a16;
+  --surface: #10251f;
+  --surface-muted: #17342b;
+  --text: #edf7f1;
+  --text-muted: #a6bdb0;
+  --border: #355449;
+  --accent: #65dbaf;
+  --action: #65dbaf;
+  --on-action: #09291e;
+  --focus: #88edc4;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --canvas: #0a1a16;
+    --surface: #10251f;
+    --surface-muted: #17342b;
+    --text: #edf7f1;
+    --text-muted: #a6bdb0;
+    --border: #355449;
+    --accent: #65dbaf;
+    --action: #65dbaf;
+    --on-action: #09291e;
+    --focus: #88edc4;
+  }
+}

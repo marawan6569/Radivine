@@ -1,0 +1,10 @@
+[wheel]
+layout = "concentric"
+
+[appearance]
+theme = "auto"
+scale = "auto"
+reduced_motion = "auto"
+
+[input]
+passthrough = false

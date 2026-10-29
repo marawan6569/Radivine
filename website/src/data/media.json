@@ -1,0 +1,58 @@
+[
+  {
+    "id": "radial-study",
+    "sourcePath": "website/src/components/motion/RadialArt.astro",
+    "sourceHash": "2cb9b8560098165ce060f190bc635f197bf7715b54df80ab7d4f29d1ec1b69f1",
+    "width": 640,
+    "height": 600,
+    "alt": "Conceptual parent wheel branching into a child wheel around the Radivine vine.",
+    "caption": "Radial motion study. Conceptual website illustration, not application UI or a desktop capture.",
+    "kind": "illustration",
+    "productVersion": null,
+    "environment": "Website SVG; no native desktop session",
+    "license": "MIT OR Apache-2.0",
+    "evidenceIds": ["wheel"]
+  },
+  {
+    "id": "text-study",
+    "sourcePath": "website/src/components/product/Features.astro",
+    "sourceHash": "4b1d25743100be47369bdd483587411e8779af8b5ca2dec08274797a06fc5513",
+    "width": 540,
+    "height": 360,
+    "alt": "Decorative text lines passing through a bounded preview window.",
+    "caption": "TEXT / AN ILLUSTRATED STUDY",
+    "kind": "illustration",
+    "productVersion": null,
+    "environment": "Website SVG; decorative, explained by adjacent text; no native desktop session",
+    "license": "MIT OR Apache-2.0",
+    "evidenceIds": ["preview"]
+  },
+  {
+    "id": "conversion-study",
+    "sourcePath": "website/src/components/product/Features.astro",
+    "sourceHash": "4b1d25743100be47369bdd483587411e8779af8b5ca2dec08274797a06fc5513",
+    "width": 540,
+    "height": 360,
+    "alt": "Decorative image-format paths connecting PNG, JPEG and WebP.",
+    "caption": "IMAGE FORMATS / AN ILLUSTRATED STUDY",
+    "kind": "illustration",
+    "productVersion": null,
+    "environment": "Website SVG; decorative, explained by adjacent text; no native desktop session",
+    "license": "MIT OR Apache-2.0",
+    "evidenceIds": ["convert"]
+  },
+  {
+    "id": "configuration-study",
+    "sourcePath": "website/src/components/product/Features.astro",
+    "sourceHash": "4b1d25743100be47369bdd483587411e8779af8b5ca2dec08274797a06fc5513",
+    "width": 400,
+    "height": 260,
+    "alt": "Decorative connected controls representing configurable tools.",
+    "caption": "CONFIGURATION / AN ILLUSTRATED STUDY",
+    "kind": "illustration",
+    "productVersion": null,
+    "environment": "Website SVG; decorative, explained by adjacent text; no native desktop session",
+    "license": "MIT OR Apache-2.0",
+    "evidenceIds": ["config"]
+  }
+]

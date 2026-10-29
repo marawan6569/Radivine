@@ -1,0 +1,45 @@
+{
+  "baseline": "2e82dc763d2bfbcb613611b3e52566866b18e28a",
+  "assets": [
+    {
+      "path": "assets/branding/logo-horizontal.png",
+      "sha256": "5cf511c54f3d9b0fe7efc3decc10d8a897ed751d0b1ac4b209c7f2cab77b3d04",
+      "unchanged": true
+    },
+    {
+      "path": "assets/branding/logo-icon.png",
+      "sha256": "dae9685f8bad7f9c98b1d43510e46e3ac1810793f88a352e517a9ff27ddb64c0",
+      "unchanged": true
+    },
+    {
+      "path": "assets/branding/logo-monochrome.png",
+      "sha256": "1c36274a746ab11170febc822b3d6a9bd8f2ccf2c709601b12edc5e3e8e236ae",
+      "unchanged": true
+    },
+    {
+      "path": "assets/branding/logo-primary.png",
+      "sha256": "5cf511c54f3d9b0fe7efc3decc10d8a897ed751d0b1ac4b209c7f2cab77b3d04",
+      "unchanged": true
+    },
+    {
+      "path": "assets/branding/logo-vertical.png",
+      "sha256": "0afa3ed33b56be871c7dae784df974f91d13c75b86aa734b43041f7bdaed7e16",
+      "unchanged": true
+    },
+    {
+      "path": "assets/icons/app-icon-monochrome.png",
+      "sha256": "19970d468dcf6b5a9881ad635f2d49e5a1e2d8255d5c2f60abcbf7fdacca30e3",
+      "unchanged": true
+    },
+    {
+      "path": "assets/icons/app-icon-white.png",
+      "sha256": "789c7e50aa0ed110681b05347a21976fa93b30c600149706ccd0692b3d759afd",
+      "unchanged": true
+    },
+    {
+      "path": "assets/icons/app-icon.png",
+      "sha256": "dae9685f8bad7f9c98b1d43510e46e3ac1810793f88a352e517a9ff27ddb64c0",
+      "unchanged": true
+    }
+  ]
+}

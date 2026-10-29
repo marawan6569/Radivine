@@ -1,0 +1,281 @@
+---
+import Button from "../ui/Button.astro";
+import RadialArt from "../motion/RadialArt.astro";
+import { site } from "../../data/site";
+import { withBase } from "../../lib/urls";
+---
+
+<section class="hero container" aria-labelledby="hero-title">
+  <div class="hero-copy">
+    <a class="release-label" href={site.release}>
+      <span class="release-dot" aria-hidden="true"></span>v{site.version}
+      <span class="muted"> / A new direction for your files</span>
+      <span aria-hidden="true">↗</span>
+    </a>
+    <h1 id="hero-title">
+      <span class="headline-line">
+        <span>Branch into</span>
+      </span>
+      <span class="headline-line" style="--delay:180ms">
+        <span>
+          <em>action.</em>
+        </span>
+      </span>
+    </h1>
+    <p class="descriptor">
+      A context-aware radial action wheel
+      <br class="desktop-break" /> for Linux files.
+    </p>
+    <p class="hero-description muted">
+      Your next action, right at your cursor. Preview text, convert images, and
+      follow a workflow that branches with you.
+    </p>
+    <div class="actions" style="--delay:380ms">
+      <Button href={withBase("download/")}>Get Radivine</Button>
+      <Button href={withBase("#try")} variant="secondary">
+        Try the wheel
+      </Button>
+    </div>
+    <p class="requirements muted" style="--delay:440ms">
+      Linux .deb <span aria-hidden="true">·</span> amd64{" "}
+      <span aria-hidden="true">·</span> X11 required
+    </p>
+  </div>
+  <figure class="hero-stage">
+    <div class="stage-note">
+      <span>LESS DISTANCE.</span>
+      <span>MORE POSSIBILITY. ↗</span>
+    </div>
+    <div class="hero-art" data-pointer-art>
+      <RadialArt />
+    </div>
+    <figcaption>
+      <span class="art-caption-dot" aria-hidden="true"></span>Radial motion
+      study <span>Illustration · not application UI</span>
+    </figcaption>
+  </figure>
+  <div class="hero-bottom">
+    <span>ROOTED IN YOUR WORKFLOW.</span>
+    <a href={withBase("#product")}>
+      Discover a different direction <span aria-hidden="true">↓</span>
+    </a>
+  </div>
+</section>
+<div class="compatibility-strip container">
+  <span class="strip-label">THE PRIMARY TESTED SETUP</span>
+  <p>
+    Linux Mint 22.3 <span aria-hidden="true">/</span> Cinnamon X11{" "}
+    <span aria-hidden="true">/</span> Nemo
+  </p>
+  <a href={withBase("#compatibility")}>
+    Check your setup <span aria-hidden="true">↘</span>
+  </a>
+</div>
+<script>
+  import "../../scripts/motion";
+</script>
+<style>
+  .hero {
+    position: relative;
+    padding-block: clamp(3rem, 6vw, 5.5rem) 1.5rem;
+    display: grid;
+    grid-template-columns: 1.05fr 1fr;
+    gap: 1rem;
+    align-items: center;
+  }
+  .hero-copy {
+    position: relative;
+    z-index: 1;
+  }
+  .release-label {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+    font-family: ui-monospace, monospace;
+    font-size: 0.65rem;
+    text-decoration: none;
+    margin-bottom: 2rem;
+  }
+  .release-label:hover {
+    text-decoration: underline;
+  }
+  .release-dot,
+  .art-caption-dot {
+    width: 6px;
+    height: 6px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  h1 {
+    font-size: clamp(3.6rem, 7.7vw, 7rem);
+    margin-bottom: 1.75rem;
+    font-weight: 540;
+    line-height: 0.98;
+  }
+  .headline-line {
+    display: block;
+  }
+  h1 em {
+    color: var(--accent);
+    font-style: normal;
+  }
+  .descriptor {
+    font-size: clamp(1.1rem, 1.6vw, 1.35rem);
+    line-height: 1.45;
+    font-weight: 500;
+    letter-spacing: -0.03em;
+    margin-bottom: 0.85rem;
+  }
+  .hero-description {
+    font-size: 0.9rem;
+    max-width: 41ch;
+    margin-bottom: 2rem;
+  }
+  .requirements {
+    font-size: 0.68rem;
+    margin: 1rem 0 0;
+  }
+  .requirements span {
+    padding-inline: 0.5rem;
+  }
+  .hero-stage {
+    margin: 0;
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+  }
+  .stage-note {
+    display: flex;
+    justify-content: space-between;
+    font:
+      0.55rem ui-monospace,
+      monospace;
+    letter-spacing: 0.12em;
+    color: var(--text-muted);
+    padding-inline: 1rem;
+  }
+  .hero-art {
+    transform: translate(var(--pointer-x, 0px), var(--pointer-y, 0px));
+    transition: transform var(--duration-travel) var(--ease-out);
+  }
+  figcaption {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.6rem;
+    padding: 0.75rem 1rem;
+  }
+  figcaption > span:last-child {
+    margin-left: auto;
+  }
+  .hero-bottom {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: var(--text-muted);
+    padding-top: 2.75rem;
+    font:
+      0.6rem ui-monospace,
+      monospace;
+    letter-spacing: 0.08em;
+  }
+  .hero-bottom a {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    gap: 2rem;
+    text-decoration: none;
+  }
+  .hero-bottom a:hover {
+    color: var(--accent);
+  }
+  .hero-bottom a span {
+    font-size: 1rem;
+  }
+  .compatibility-strip {
+    padding-block: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    border-block: 1px solid var(--border);
+  }
+  .strip-label {
+    font:
+      0.6rem ui-monospace,
+      monospace;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+  }
+  .compatibility-strip p {
+    margin: 0;
+    font-size: 0.8rem;
+  }
+  .compatibility-strip p span {
+    margin-inline: 0.6rem;
+    color: var(--text-muted);
+  }
+  .compatibility-strip a {
+    font-size: 0.75rem;
+    color: var(--accent);
+  }
+  @media (max-width: 52rem) {
+    .hero {
+      grid-template-columns: 1fr;
+      padding-top: 3rem;
+      gap: 2rem;
+    }
+    h1 {
+      font-size: clamp(3.4rem, 12vw, 6rem);
+    }
+    .hero-description {
+      max-width: 48ch;
+    }
+    .hero-stage {
+      width: 100%;
+      max-width: 34rem;
+      justify-self: center;
+    }
+    .hero-bottom {
+      padding-top: 0;
+    }
+    .hero-bottom > span {
+      display: none;
+    }
+    .hero-bottom a {
+      width: 100%;
+      justify-content: space-between;
+    }
+    .compatibility-strip {
+      flex-wrap: wrap;
+      justify-content: start;
+      gap: 0.75rem 1.5rem;
+    }
+    .strip-label {
+      width: 100%;
+    }
+  }
+  @media (max-width: 24rem) {
+    .desktop-break {
+      display: none;
+    }
+    .hero .actions {
+      align-items: stretch;
+      flex-direction: column;
+    }
+    .compatibility-strip p span {
+      margin-inline: 0.2rem;
+    }
+    figcaption > span:last-child {
+      margin-left: 0;
+      width: 100%;
+    }
+  }
+</style>

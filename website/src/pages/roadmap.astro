@@ -1,0 +1,39 @@
+---
+import ContentLayout from "../layouts/ContentLayout.astro";
+import RoadmapList from "../components/data/RoadmapList.astro";
+import { withBase } from "../lib/urls";
+---
+
+<ContentLayout
+  title="What grew. What could grow."
+  eyebrow="Roadmap / Reviewed 27 October 2026"
+  description="A record of published releases, followed by ideas from the project’s design notes. Shipped features and future possibilities stay separate."
+>
+  <section class="content-section" aria-labelledby="shipped">
+    <p class="eyebrow">01 / Available today</p>
+    <h2 id="shipped">Shipped.</h2>
+    <RoadmapList status="shipped" />
+  </section>
+  <aside class="callout">
+    <h3>No dates. No implied promises.</h3>
+    <p>
+      Exploring and Deferred items are not approved implementation milestones,
+      scheduled releases, or delivery commitments. Historical design documents
+      may mention versions that no longer represent a plan.
+    </p>
+  </aside>
+  <section class="content-section" aria-labelledby="exploring">
+    <p class="eyebrow">02 / Questions worth investigating</p>
+    <h2 id="exploring">Exploring.</h2>
+    <RoadmapList status="exploring" />
+  </section>
+  <section class="content-section" aria-labelledby="deferred">
+    <p class="eyebrow">03 / Deliberately set aside</p>
+    <h2 id="deferred">Deferred.</h2>
+    <RoadmapList status="deferred" />
+  </section>
+  <nav class="page-links" aria-label="Related pages">
+    <a href={withBase("guide/#capabilities")}>Explore current capabilities →</a>
+    <a href={withBase("contribute/")}>Contribute evidence or ideas →</a>
+  </nav>
+</ContentLayout>

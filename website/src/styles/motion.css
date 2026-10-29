@@ -1,0 +1,170 @@
+/* Shared choreography: quick response, measured travel, one purposeful entrance. */
+:root {
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-smooth: cubic-bezier(0.65, 0, 0.35, 1);
+  --duration-fast: 180ms;
+  --duration-travel: 700ms;
+  --duration-draw: 1100ms;
+}
+@keyframes type-arrive {
+  from {
+    transform: translateY(108%) rotate(3deg);
+  }
+  to {
+    transform: translateY(0) rotate(0);
+  }
+}
+@keyframes assemble {
+  from {
+    opacity: 0;
+    transform: rotate(-24deg) scale(0.82);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(0) scale(1);
+  }
+}
+@keyframes trace {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes settle {
+  from {
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .headline-line {
+    display: block;
+    overflow: clip;
+    padding-bottom: 0.08em;
+    margin-bottom: -0.08em;
+  }
+  .headline-line > span {
+    display: block;
+    animation: type-arrive var(--duration-travel) var(--ease-out) both;
+    animation-delay: var(--delay, 80ms);
+  }
+  .hero-copy > .release-label,
+  .hero-copy > .descriptor,
+  .hero-copy > .hero-description,
+  .hero-copy > .actions,
+  .hero-copy > .requirements {
+    animation: settle var(--duration-travel) var(--ease-out) both;
+    animation-delay: var(--delay, 250ms);
+  }
+  .site-header .brand {
+    animation: settle var(--duration-travel) var(--ease-out) both;
+  }
+  .radial-hero .radial-sector {
+    animation: assemble 1100ms var(--ease-out) both;
+    animation-delay: calc(100ms + var(--i) * 45ms);
+    transform-origin: 270px 340px;
+  }
+  .radial-hero .child-wheel {
+    animation: assemble 1000ms var(--ease-out) 450ms both;
+    transform-origin: 455px 155px;
+  }
+  .radial-hero .branch-path {
+    animation: trace var(--duration-draw) var(--ease-smooth) 250ms both;
+  }
+  .draw-path {
+    stroke-dasharray: 1;
+  }
+  [data-reveal].is-visible .draw-path {
+    animation: trace var(--duration-draw) var(--ease-smooth) both;
+  }
+  [data-reveal].is-visible .visual-layer {
+    animation: assemble 900ms var(--ease-out) both;
+    animation-delay: calc(var(--i, 0) * 90ms);
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+}
+.radial-art {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+.art-guides {
+  stroke: var(--border);
+  stroke-width: 0.8;
+}
+.radial-sector {
+  fill: var(--surface-muted);
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.radial-sector.sector-selected {
+  fill: var(--action);
+  stroke: var(--action);
+}
+.art-core {
+  /* A pale mount preserves the original green symbol in both themes. */
+  fill: #f4fbf8;
+  stroke: var(--border);
+}
+.sector-marks {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+.branch-path {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.child-sector {
+  fill: var(--surface);
+  stroke: var(--border);
+}
+.child-sector.child-selected {
+  fill: var(--art-lime);
+  stroke: var(--art-lime-edge);
+}
+.child-core {
+  fill: var(--surface-muted);
+  stroke: var(--border);
+}
+.direction-arrow {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.art-labels {
+  fill: var(--text-muted);
+  font:
+    9px ui-monospace,
+    monospace;
+  letter-spacing: 1.2px;
+}
+.art-labels path {
+  fill: none;
+  stroke: var(--border);
+}
+/* Text-bearing surfaces switch atomically for contrast. Only decorative
+   geometry interpolates between palettes; initial theme resolution stays early. */
+@media (prefers-reduced-motion: no-preference) {
+  .radial-sector,
+  .child-sector,
+  .art-guides,
+  .branch-path {
+    transition:
+      fill var(--duration-fast) ease,
+      stroke var(--duration-fast) ease;
+  }
+  .button span {
+    transition: transform var(--duration-fast) var(--ease-out);
+  }
+  .button:hover span {
+    transform: translate(2px, -2px);
+  }
+}

@@ -1,0 +1,50 @@
+---
+import { evidenceFor } from "../../data/catalog";
+interface Props {
+  ids: string[];
+}
+const records = evidenceFor([...new Set(Astro.props.ids)]);
+---
+
+<details class="evidence-links">
+  <summary>Evidence ({records.length})</summary>
+  <ul>
+    {records.map((record) => (
+      <li>
+        <a href={record.url}>{record.scope}</a>
+        <span>
+          {record.kind.replaceAll("-", " ")} · reviewed {record.observedOn}
+        </span>
+      </li>
+    ))}
+  </ul>
+</details>
+<style>
+  .evidence-links {
+    font-size: 0.75rem;
+    margin-block: 0.75rem;
+  }
+  summary {
+    color: var(--accent);
+    min-height: 44px;
+    padding-block: 0.65rem;
+    cursor: pointer;
+  }
+  ul {
+    padding-left: 1.1rem;
+    margin: 0;
+  }
+  li {
+    margin-block: 0.6rem;
+    overflow-wrap: anywhere;
+  }
+  li span {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.65rem;
+    margin-top: 0.25rem;
+  }
+  a {
+    color: var(--accent);
+  }
+</style>

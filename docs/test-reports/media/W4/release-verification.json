@@ -1,0 +1,15 @@
+{
+  "verifiedOn": "2026-10-28T11:39:40.826Z",
+  "pinned": "v0.3.0",
+  "latestObserved": "v0.3.0",
+  "sourceRevision": "1aa009a08bab66646898016f1ba953051eac46f3",
+  "assets": [
+    {
+      "name": "radivine_0.3.0_amd64.deb",
+      "bytes": 16149118,
+      "sha256": "4c0b8cc719963dec2f2457588a500a3530dd4aa88b01d0b3954eeb57edb37156",
+      "metadataChecksumAndDownloadedBytesAgree": true
+    }
+  ],
+  "note": "Read-only verification; no manifest update, installation, publication or deployment."
+}

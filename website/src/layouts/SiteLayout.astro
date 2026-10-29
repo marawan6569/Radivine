@@ -1,0 +1,92 @@
+---
+import "../styles/global.css";
+import { getImage } from "astro:assets";
+import logo from "../../../assets/branding/logo-icon.png";
+import Header from "../components/layout/Header.astro";
+import Footer from "../components/layout/Footer.astro";
+import { site } from "../data/site";
+interface Props {
+  title?: string;
+  description?: string;
+  noindex?: boolean;
+}
+const {
+  title = "Radivine — Branch into action.",
+  description = site.description,
+  noindex = false,
+} = Astro.props;
+const canonical = new URL(
+  Astro.url.pathname.replace(/\/404\/?$/, "/404.html"),
+  Astro.site,
+);
+const favicon = await getImage({
+  src: logo,
+  width: 48,
+  height: 48,
+  format: "png",
+});
+const socialImage = await getImage({
+  src: logo,
+  width: 600,
+  height: 600,
+  format: "png",
+});
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script is:inline>
+      (() => {
+        let preference = "system";
+        try {
+          const saved = localStorage.getItem("radivine:theme");
+          if (saved === "light" || saved === "dark") preference = saved;
+        } catch {}
+        const root = document.documentElement;
+        root.dataset.preference = preference;
+        root.dataset.theme =
+          preference === "system"
+            ? matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light"
+            : preference;
+        root.style.colorScheme = root.dataset.theme;
+      })();
+    </script>
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex" />}
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" type="image/png" href={favicon.src} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Radivine" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={new URL(socialImage.src, Astro.site)} />
+    <meta property="og:image:width" content="600" />
+    <meta property="og:image:height" content="600" />
+    <meta
+      property="og:image:alt"
+      content="The original green Radivine vine symbol"
+    />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={new URL(socialImage.src, Astro.site)} />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">
+      Skip to content
+    </a>
+    <Header />
+    <main id="main" tabindex="-1">
+      <slot />
+    </main>
+    <Footer />
+  </body>
+</html>

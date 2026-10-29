@@ -1,0 +1,305 @@
+{
+  "note": "Local unthrottled Chromium production preview. Full-page PNGs use reduced motion for complete static overviews. These are website captures, not native Linux application tests or field performance data.",
+  "runs": [
+    {
+      "device": "desktop",
+      "theme": "light",
+      "route": "/",
+      "viewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "screenshot": "desktop-light-home.png",
+      "cls": 0.0009405693713529609,
+      "documentWidth": 1440,
+      "viewportWidth": 1440,
+      "resourceRequests": 5,
+      "errors": []
+    },
+    {
+      "device": "desktop",
+      "theme": "light",
+      "route": "download/",
+      "viewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "screenshot": "desktop-light-download.png",
+      "cls": 0.00044270833333333337,
+      "documentWidth": 1440,
+      "viewportWidth": 1440,
+      "resourceRequests": 3,
+      "errors": []
+    },
+    {
+      "device": "desktop",
+      "theme": "light",
+      "route": "compatibility/",
+      "viewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "screenshot": "desktop-light-compatibility.png",
+      "cls": 0.020223162615740743,
+      "documentWidth": 1440,
+      "viewportWidth": 1440,
+      "resourceRequests": 3,
+      "errors": []
+    },
+    {
+      "device": "desktop",
+      "theme": "light",
+      "route": "guide/configuration/",
+      "viewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "screenshot": "desktop-light-guide-configuration.png",
+      "cls": 0,
+      "documentWidth": 1440,
+      "viewportWidth": 1440,
+      "resourceRequests": 3,
+      "errors": []
+    },
+    {
+      "device": "desktop",
+      "theme": "light",
+      "route": "roadmap/",
+      "viewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "screenshot": "desktop-light-roadmap.png",
+      "cls": 0,
+      "documentWidth": 1440,
+      "viewportWidth": 1440,
+      "resourceRequests": 3,
+      "errors": []
+    },
+    {
+      "device": "desktop",
+      "theme": "dark",
+      "route": "/",
+      "viewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "screenshot": "desktop-dark-home.png",
+      "cls": 6.93238811728395e-7,
+      "documentWidth": 1440,
+      "viewportWidth": 1440,
+      "resourceRequests": 5,
+      "errors": []
+    },
+    {
+      "device": "desktop",
+      "theme": "dark",
+      "route": "download/",
+      "viewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "screenshot": "desktop-dark-download.png",
+      "cls": 0.00044270833333333337,
+      "documentWidth": 1440,
+      "viewportWidth": 1440,
+      "resourceRequests": 3,
+      "errors": []
+    },
+    {
+      "device": "desktop",
+      "theme": "dark",
+      "route": "compatibility/",
+      "viewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "screenshot": "desktop-dark-compatibility.png",
+      "cls": 0.020223162615740743,
+      "documentWidth": 1440,
+      "viewportWidth": 1440,
+      "resourceRequests": 3,
+      "errors": []
+    },
+    {
+      "device": "desktop",
+      "theme": "dark",
+      "route": "guide/configuration/",
+      "viewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "screenshot": "desktop-dark-guide-configuration.png",
+      "cls": 0,
+      "documentWidth": 1440,
+      "viewportWidth": 1440,
+      "resourceRequests": 3,
+      "errors": []
+    },
+    {
+      "device": "desktop",
+      "theme": "dark",
+      "route": "roadmap/",
+      "viewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "screenshot": "desktop-dark-roadmap.png",
+      "cls": 0,
+      "documentWidth": 1440,
+      "viewportWidth": 1440,
+      "resourceRequests": 3,
+      "errors": []
+    },
+    {
+      "device": "mobile",
+      "theme": "light",
+      "route": "/",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "mobile-light-home.png",
+      "cls": 0,
+      "documentWidth": 390,
+      "viewportWidth": 390,
+      "resourceRequests": 5,
+      "errors": []
+    },
+    {
+      "device": "mobile",
+      "theme": "light",
+      "route": "download/",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "mobile-light-download.png",
+      "cls": 0,
+      "documentWidth": 390,
+      "viewportWidth": 390,
+      "resourceRequests": 3,
+      "errors": []
+    },
+    {
+      "device": "mobile",
+      "theme": "light",
+      "route": "compatibility/",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "mobile-light-compatibility.png",
+      "cls": 0.001128853626551342,
+      "documentWidth": 390,
+      "viewportWidth": 390,
+      "resourceRequests": 3,
+      "errors": []
+    },
+    {
+      "device": "mobile",
+      "theme": "light",
+      "route": "guide/configuration/",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "mobile-light-guide-configuration.png",
+      "cls": 0,
+      "documentWidth": 390,
+      "viewportWidth": 390,
+      "resourceRequests": 3,
+      "errors": []
+    },
+    {
+      "device": "mobile",
+      "theme": "light",
+      "route": "roadmap/",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "mobile-light-roadmap.png",
+      "cls": 0,
+      "documentWidth": 390,
+      "viewportWidth": 390,
+      "resourceRequests": 3,
+      "errors": []
+    },
+    {
+      "device": "mobile",
+      "theme": "dark",
+      "route": "/",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "mobile-dark-home.png",
+      "cls": 0,
+      "documentWidth": 390,
+      "viewportWidth": 390,
+      "resourceRequests": 5,
+      "errors": []
+    },
+    {
+      "device": "mobile",
+      "theme": "dark",
+      "route": "download/",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "mobile-dark-download.png",
+      "cls": 0,
+      "documentWidth": 390,
+      "viewportWidth": 390,
+      "resourceRequests": 3,
+      "errors": []
+    },
+    {
+      "device": "mobile",
+      "theme": "dark",
+      "route": "compatibility/",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "mobile-dark-compatibility.png",
+      "cls": 0.001128853626551342,
+      "documentWidth": 390,
+      "viewportWidth": 390,
+      "resourceRequests": 3,
+      "errors": []
+    },
+    {
+      "device": "mobile",
+      "theme": "dark",
+      "route": "guide/configuration/",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "mobile-dark-guide-configuration.png",
+      "cls": 0,
+      "documentWidth": 390,
+      "viewportWidth": 390,
+      "resourceRequests": 3,
+      "errors": []
+    },
+    {
+      "device": "mobile",
+      "theme": "dark",
+      "route": "roadmap/",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "mobile-dark-roadmap.png",
+      "cls": 0,
+      "documentWidth": 390,
+      "viewportWidth": 390,
+      "resourceRequests": 3,
+      "errors": []
+    }
+  ]
+}
