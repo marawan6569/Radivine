@@ -1,0 +1,267 @@
+{
+  "workflow": {
+    "conclusion": "success",
+    "databaseId": 40813833546,
+    "headSha": "dbc8efc2191e1a945886d3af95dad982f9c3c4db",
+    "jobs": [
+      {
+        "name": "Website checks (project)",
+        "conclusion": "success",
+        "url": "https://github.com/marawan6569/Radivine/actions/runs/40813833546/job/123250160385",
+        "steps": [
+          {
+            "name": "Set up job",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm ci",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm run format:check",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm run check",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm run test:content && npm run test:demo",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm run build",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm run check:links && npm run check:artifact",
+            "conclusion": "success"
+          },
+          {
+            "name": "Install browsers in the disposable CI runner",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm test -- --workers=2",
+            "conclusion": "success"
+          },
+          {
+            "name": "Preserve browser reports",
+            "conclusion": "success"
+          },
+          {
+            "name": "Upload approved static Pages artifact only",
+            "conclusion": "success"
+          },
+          {
+            "name": "Post Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+            "conclusion": "success"
+          },
+          {
+            "name": "Post Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "conclusion": "success"
+          },
+          {
+            "name": "Complete job",
+            "conclusion": "success"
+          }
+        ]
+      },
+      {
+        "name": "Website checks (root)",
+        "conclusion": "success",
+        "url": "https://github.com/marawan6569/Radivine/actions/runs/40813833546/job/123250160652",
+        "steps": [
+          {
+            "name": "Set up job",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm ci",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm run format:check",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm run check",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm run test:content && npm run test:demo",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm run build",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm run check:links && npm run check:artifact",
+            "conclusion": "success"
+          },
+          {
+            "name": "Install browsers in the disposable CI runner",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm test -- --workers=2",
+            "conclusion": "success"
+          },
+          {
+            "name": "Preserve browser reports",
+            "conclusion": "success"
+          },
+          {
+            "name": "Upload approved static Pages artifact only",
+            "conclusion": "skipped"
+          },
+          {
+            "name": "Post Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+            "conclusion": "success"
+          },
+          {
+            "name": "Post Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "conclusion": "success"
+          },
+          {
+            "name": "Complete job",
+            "conclusion": "success"
+          }
+        ]
+      },
+      {
+        "name": "Publish approved website",
+        "conclusion": "success",
+        "url": "https://github.com/marawan6569/Radivine/actions/runs/40813833546/job/123252037748",
+        "steps": [
+          {
+            "name": "Set up job",
+            "conclusion": "success"
+          },
+          {
+            "name": "Verify project hosting settings",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b",
+            "conclusion": "success"
+          },
+          {
+            "name": "Deploy verified static artifact",
+            "conclusion": "success"
+          },
+          {
+            "name": "Complete job",
+            "conclusion": "success"
+          }
+        ]
+      }
+    ],
+    "url": "https://github.com/marawan6569/Radivine/actions/runs/40813833546"
+  },
+  "deployment": {
+    "id": 7403574097,
+    "sha": "dbc8efc2191e1a945886d3af95dad982f9c3c4db",
+    "ref": "main",
+    "environment": "github-pages",
+    "created_at": "2026-10-29T03:50:49Z"
+  },
+  "statuses": [
+    {
+      "state": "success",
+      "environment_url": "https://marawan6569.github.io/Radivine/",
+      "log_url": "https://github.com/marawan6569/Radivine/actions/runs/40813833546/job/123252037748",
+      "created_at": "2026-10-29T03:51:05Z"
+    },
+    {
+      "state": "in_progress",
+      "environment_url": "",
+      "log_url": "https://github.com/marawan6569/Radivine/actions/runs/40813833546/job/123252037748",
+      "created_at": "2026-10-29T03:50:53Z"
+    },
+    {
+      "state": "queued",
+      "environment_url": "",
+      "log_url": "https://github.com/marawan6569/Radivine/actions/runs/40813833546/job/123252037748",
+      "created_at": "2026-10-29T03:50:50Z"
+    },
+    {
+      "state": "queued",
+      "environment_url": "",
+      "log_url": "https://github.com/marawan6569/Radivine/actions/runs/40813833546/job/123252037748",
+      "created_at": "2026-10-29T03:50:50Z"
+    },
+    {
+      "state": "waiting",
+      "environment_url": "",
+      "log_url": "https://github.com/marawan6569/Radivine/actions/runs/40813833546/job/123252037748",
+      "created_at": "2026-10-29T03:50:49Z"
+    }
+  ],
+  "pages": {
+    "url": "https://api.github.com/repos/marawan6569/Radivine/pages",
+    "status": null,
+    "cname": null,
+    "custom_404": false,
+    "html_url": "https://marawan6569.github.io/Radivine/",
+    "build_type": "workflow",
+    "source": {
+      "branch": "main",
+      "path": "/"
+    },
+    "public": true,
+    "protected_domain_state": null,
+    "pending_domain_unverified_at": null,
+    "https_enforced": true
+  },
+  "environment": {
+    "id": 25627919982,
+    "node_id": "EN_kwDOVURpcs8AAAAF94sGbg",
+    "name": "github-pages",
+    "url": "https://api.github.com/repos/marawan6569/Radivine/environments/github-pages",
+    "html_url": "https://github.com/marawan6569/Radivine/deployments/activity_log?environments_filter=github-pages",
+    "created_at": "2026-10-28T22:42:55Z",
+    "updated_at": "2026-10-28T22:42:55Z",
+    "can_admins_bypass": true,
+    "protection_rules": [
+      {
+        "id": 70478908,
+        "node_id": "GA_kwDOVURpcs4EM2w8",
+        "type": "branch_policy"
+      }
+    ],
+    "deployment_branch_policy": {
+      "protected_branches": false,
+      "custom_branch_policies": true
+    }
+  },
+  "branchPolicy": {
+    "total_count": 1,
+    "branch_policies": [
+      {
+        "id": 64722582,
+        "node_id": "MDE2OkdhdGVCcmFuY2hQb2xpY3k2NDcyMjU4Mg==",
+        "name": "main",
+        "type": "branch"
+      }
+    ]
+  },
+  "applicationReleaseUnchanged": true
+}

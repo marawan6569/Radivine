@@ -1,0 +1,145 @@
+{
+  "artifactId": 12871208519,
+  "runId": 40813833546,
+  "commit": "dbc8efc2191e1a945886d3af95dad982f9c3c4db",
+  "archiveSha256": "4b77b1e081c9823cd483bec7e70f906a4d24e16e3691f6a7e3d62ae4eeca6948",
+  "files": [
+    {
+      "path": "notices/LICENSE-MIT.txt",
+      "bytes": 1068,
+      "sha256": "99ad6a59aa4f99e5bae49a7362e9b35d165a30e71e68ff615a5096b102347db7"
+    },
+    {
+      "path": "notices/LICENSE-Tailwind.txt",
+      "bytes": 1071,
+      "sha256": "60e0b68c0f35c078eef3a5d29419d0b03ff84ec1df9c3f9d6e39a519a5ae7985"
+    },
+    {
+      "path": "notices/LICENSE-APACHE.txt",
+      "bytes": 11341,
+      "sha256": "c6638b86b6857d87e884b1445900206e8decdb319f5b7487a605442e3f020578"
+    },
+    {
+      "path": "notices/OFL-Inter.txt",
+      "bytes": 4376,
+      "sha256": "5dd548d31a85f756e01d63e00d7faf1e324103ed3e9102fcbbabf2cc2db6dd39"
+    },
+    {
+      "path": "notices/LICENSE-Astro.txt",
+      "bytes": 3628,
+      "sha256": "4aa72be797aad0e5e21827eaae6a1df9e122d7a401f07d2c308a6b9a5f0e1278"
+    },
+    {
+      "path": "sitemap.xml",
+      "bytes": 755,
+      "sha256": "630473446fee63b48c1a38b5f4c5d345b3a694df883d10e104464f484abdc0dd"
+    },
+    {
+      "path": "guide/configuration/index.html",
+      "bytes": 22829,
+      "sha256": "fc600d32812128c6a8f25b14d37a36b8fae3a90f8310dcc403deb6960622cc6b"
+    },
+    {
+      "path": "guide/troubleshooting/index.html",
+      "bytes": 23673,
+      "sha256": "d555f484abdc56144cb33b058dc26f8ce6e69f2e113cea11b428bc576c1b7140"
+    },
+    {
+      "path": "guide/index.html",
+      "bytes": 46128,
+      "sha256": "ef8ff0725a3a61ca7f9137710649af1a8a44d3377ebf0a49eda3e118f43f3e1b"
+    },
+    {
+      "path": "download/index.html",
+      "bytes": 27416,
+      "sha256": "afca17f9aa4a600c5bc8e3b4e5986016076f5b3af26a93a0b3e1ee28bd7c6f05"
+    },
+    {
+      "path": "licenses/index.html",
+      "bytes": 13775,
+      "sha256": "e5dcc002e5e1e1301e2e5513679e875eea9397378e50efa0243a026c62abd179"
+    },
+    {
+      "path": "roadmap/index.html",
+      "bytes": 22656,
+      "sha256": "3d2e533cc00577ddb9753c876b1940c3aeed4c6749241c75e9a4d47fa0fcd4c2"
+    },
+    {
+      "path": "index.html",
+      "bytes": 42461,
+      "sha256": "573839068b030d177d35cc372f9cf8bea7a9db4a2f960fdc3fb84a3dfab64a0a"
+    },
+    {
+      "path": "contribute/index.html",
+      "bytes": 17242,
+      "sha256": "57132a476b158dc03e2c5c0ec035794cef3e4562eb7f50f41ea38e8ca257e999"
+    },
+    {
+      "path": "compatibility/index.html",
+      "bytes": 41422,
+      "sha256": "251208b8b7cfb75f59a1ba660b2d88b87aeebc8e50b43859d7f85c87c297c831"
+    },
+    {
+      "path": "_astro/logo-icon.B9PE8Z7G_1HA9KM.webp",
+      "bytes": 9736,
+      "sha256": "affda8c04d5ed58922761f132d3b37ada5d2f8151c865300c29ef3f1e67196ce"
+    },
+    {
+      "path": "_astro/WheelDemo.astro_astro_type_script_index_0_lang.B3jlENmI.js",
+      "bytes": 2344,
+      "sha256": "76a3a39f30b34f55692050cb77ebafadfe4e463e8025e55837b7be2dc37fb3e9"
+    },
+    {
+      "path": "_astro/logo-icon.B9PE8Z7G_ZTwtg2.png",
+      "bytes": 154238,
+      "sha256": "cb1ba6a0c59dc8c48eddc470b1918c27b3815901f6340e1f8907b30edee2dbd2"
+    },
+    {
+      "path": "_astro/SiteLayout.fuVO0zUJ.css",
+      "bytes": 18610,
+      "sha256": "be90d64e7d13a4a5d35276c433a0cade8bc67b554e9aae772d58976f1c2509bb"
+    },
+    {
+      "path": "_astro/logo-icon.B9PE8Z7G_2ocAWn.webp",
+      "bytes": 6792,
+      "sha256": "3c940b8dc98c8427a8a2695cd5b1eab3168702ee03eb3a94e496355b9495c8f9"
+    },
+    {
+      "path": "_astro/index.DKT7_LE5.css",
+      "bytes": 28440,
+      "sha256": "cad3f5501b93b9f0d523f7c7887972d1de97ec17024fda302f4edde64d37e892"
+    },
+    {
+      "path": "_astro/logo-icon.B9PE8Z7G_Z25TYUV.webp",
+      "bytes": 4148,
+      "sha256": "3dec92a01e30a244b0355dfbb2ff56751282823bbf489e00520c8d3f30cca6de"
+    },
+    {
+      "path": "_astro/controller.B72zarev.js",
+      "bytes": 24847,
+      "sha256": "e8ef3914e1a891cb414a52d24fa2a22d705796fba8d43372b7d5f0472fd188dd"
+    },
+    {
+      "path": "_astro/logo-icon.B9PE8Z7G_zwiko.webp",
+      "bytes": 1692,
+      "sha256": "540ad7d86bd42dc0bc8db4b952eca3bbed7d707d8e06bf163e95065a857db863"
+    },
+    {
+      "path": "_astro/logo-icon.B9PE8Z7G_1UGDBz.png",
+      "bytes": 3253,
+      "sha256": "8c70cfba530ea430cc280d0bdcdd4e34be827a28b3b535a406b1dc199d7aa792"
+    },
+    {
+      "path": "_astro/inter-latin.DWSxN9ft.woff2",
+      "bytes": 99780,
+      "sha256": "1fad881334fdef56d483d1f1fd71c9b3b31eb66a9a5dc1eec285ee08fb0184f7"
+    },
+    {
+      "path": "404.html",
+      "bytes": 8155,
+      "sha256": "b690544ba3f8a3c35f6df31e6ed76db621332fec3e702aa1ed76257147250c01"
+    }
+  ],
+  "matchesLocalBuild": true,
+  "links": false
+}

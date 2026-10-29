@@ -1,0 +1,378 @@
+[
+  {
+    "conclusion": "success",
+    "databaseId": 40783114164,
+    "headSha": "3ae5d9fbcf6b1632873a9bef5d72fc9adc580297",
+    "jobs": [
+      {
+        "name": "Format, Clippy, Tests & Debian Package",
+        "conclusion": "success",
+        "url": "https://github.com/marawan6569/Radivine/actions/runs/40783114164/job/123149500697",
+        "steps": [
+          {
+            "name": "Set up job",
+            "conclusion": "success"
+          },
+          {
+            "name": "Checkout repository",
+            "conclusion": "success"
+          },
+          {
+            "name": "Install Rust toolchain",
+            "conclusion": "success"
+          },
+          {
+            "name": "Cache Cargo registry and target",
+            "conclusion": "success"
+          },
+          {
+            "name": "Install packaging, C toolchain & desktop validation tools",
+            "conclusion": "success"
+          },
+          {
+            "name": "Check formatting (cargo fmt)",
+            "conclusion": "success"
+          },
+          {
+            "name": "Verify architecture dependency-graph boundaries",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run Clippy lints (cargo clippy -D warnings)",
+            "conclusion": "success"
+          },
+          {
+            "name": "Build workspace binaries before integration tests",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run workspace unit & integration tests (headless DISPLAY=\"\")",
+            "conclusion": "success"
+          },
+          {
+            "name": "Verify headless screenshot export",
+            "conclusion": "success"
+          },
+          {
+            "name": "Build and verify Debian package (radivine_0.3.0_amd64.deb)",
+            "conclusion": "success"
+          },
+          {
+            "name": "Report release binary and Debian package sizes",
+            "conclusion": "success"
+          },
+          {
+            "name": "Post Cache Cargo registry and target",
+            "conclusion": "success"
+          },
+          {
+            "name": "Post Checkout repository",
+            "conclusion": "success"
+          },
+          {
+            "name": "Complete job",
+            "conclusion": "success"
+          }
+        ]
+      },
+      {
+        "name": "Supply-Chain & License Audit (cargo-deny)",
+        "conclusion": "success",
+        "url": "https://github.com/marawan6569/Radivine/actions/runs/40783114164/job/123149501237",
+        "steps": [
+          {
+            "name": "Set up job",
+            "conclusion": "success"
+          },
+          {
+            "name": "Build EmbarkStudios/cargo-deny-action@v2",
+            "conclusion": "success"
+          },
+          {
+            "name": "Checkout repository",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run cargo-deny check (advisories, licenses, bans, sources)",
+            "conclusion": "success"
+          },
+          {
+            "name": "Post Checkout repository",
+            "conclusion": "success"
+          },
+          {
+            "name": "Complete job",
+            "conclusion": "success"
+          }
+        ]
+      }
+    ],
+    "url": "https://github.com/marawan6569/Radivine/actions/runs/40783114164"
+  },
+  {
+    "conclusion": "failure",
+    "databaseId": 40783123061,
+    "headSha": "3ae5d9fbcf6b1632873a9bef5d72fc9adc580297",
+    "jobs": [
+      {
+        "name": "Format, Clippy, Tests & Debian Package",
+        "conclusion": "failure",
+        "url": "https://github.com/marawan6569/Radivine/actions/runs/40783123061/job/123152428609",
+        "steps": [
+          {
+            "name": "Set up job",
+            "conclusion": "success"
+          },
+          {
+            "name": "Checkout repository",
+            "conclusion": "success"
+          },
+          {
+            "name": "Install Rust toolchain",
+            "conclusion": "success"
+          },
+          {
+            "name": "Cache Cargo registry and target",
+            "conclusion": "success"
+          },
+          {
+            "name": "Install packaging, C toolchain & desktop validation tools",
+            "conclusion": "success"
+          },
+          {
+            "name": "Check formatting (cargo fmt)",
+            "conclusion": "success"
+          },
+          {
+            "name": "Verify architecture dependency-graph boundaries",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run Clippy lints (cargo clippy -D warnings)",
+            "conclusion": "success"
+          },
+          {
+            "name": "Build workspace binaries before integration tests",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run workspace unit & integration tests (headless DISPLAY=\"\")",
+            "conclusion": "failure"
+          },
+          {
+            "name": "Verify headless screenshot export",
+            "conclusion": "skipped"
+          },
+          {
+            "name": "Build and verify Debian package (radivine_0.3.0_amd64.deb)",
+            "conclusion": "skipped"
+          },
+          {
+            "name": "Report release binary and Debian package sizes",
+            "conclusion": "skipped"
+          },
+          {
+            "name": "Post Cache Cargo registry and target",
+            "conclusion": "skipped"
+          },
+          {
+            "name": "Post Checkout repository",
+            "conclusion": "success"
+          },
+          {
+            "name": "Complete job",
+            "conclusion": "success"
+          }
+        ]
+      },
+      {
+        "name": "Supply-Chain & License Audit (cargo-deny)",
+        "conclusion": "success",
+        "url": "https://github.com/marawan6569/Radivine/actions/runs/40783123061/job/123152430535",
+        "steps": [
+          {
+            "name": "Set up job",
+            "conclusion": "success"
+          },
+          {
+            "name": "Build EmbarkStudios/cargo-deny-action@v2",
+            "conclusion": "success"
+          },
+          {
+            "name": "Checkout repository",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run cargo-deny check (advisories, licenses, bans, sources)",
+            "conclusion": "success"
+          },
+          {
+            "name": "Post Checkout repository",
+            "conclusion": "success"
+          },
+          {
+            "name": "Complete job",
+            "conclusion": "success"
+          }
+        ]
+      }
+    ],
+    "url": "https://github.com/marawan6569/Radivine/actions/runs/40783123061"
+  },
+  {
+    "conclusion": "success",
+    "databaseId": 40783123079,
+    "headSha": "3ae5d9fbcf6b1632873a9bef5d72fc9adc580297",
+    "jobs": [
+      {
+        "name": "Website checks (root)",
+        "conclusion": "success",
+        "url": "https://github.com/marawan6569/Radivine/actions/runs/40783123079/job/123149531379",
+        "steps": [
+          {
+            "name": "Set up job",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm ci",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm run format:check",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm run check",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm run test:content && npm run test:demo",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm run build",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm run check:links && npm run check:artifact",
+            "conclusion": "success"
+          },
+          {
+            "name": "Install browsers in the disposable CI runner",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm test -- --workers=2",
+            "conclusion": "success"
+          },
+          {
+            "name": "Preserve browser reports",
+            "conclusion": "success"
+          },
+          {
+            "name": "Upload approved static Pages artifact only",
+            "conclusion": "skipped"
+          },
+          {
+            "name": "Post Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+            "conclusion": "success"
+          },
+          {
+            "name": "Post Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "conclusion": "success"
+          },
+          {
+            "name": "Complete job",
+            "conclusion": "success"
+          }
+        ]
+      },
+      {
+        "name": "Website checks (project)",
+        "conclusion": "success",
+        "url": "https://github.com/marawan6569/Radivine/actions/runs/40783123079/job/123149531544",
+        "steps": [
+          {
+            "name": "Set up job",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm ci",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm run format:check",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm run check",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm run test:content && npm run test:demo",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm run build",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm run check:links && npm run check:artifact",
+            "conclusion": "success"
+          },
+          {
+            "name": "Install browsers in the disposable CI runner",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run npm test -- --workers=2",
+            "conclusion": "success"
+          },
+          {
+            "name": "Preserve browser reports",
+            "conclusion": "success"
+          },
+          {
+            "name": "Upload approved static Pages artifact only",
+            "conclusion": "skipped"
+          },
+          {
+            "name": "Post Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+            "conclusion": "success"
+          },
+          {
+            "name": "Post Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "conclusion": "success"
+          },
+          {
+            "name": "Complete job",
+            "conclusion": "success"
+          }
+        ]
+      },
+      {
+        "name": "Publish approved website",
+        "conclusion": "skipped",
+        "url": "https://github.com/marawan6569/Radivine/actions/runs/40783123079/job/123152163781",
+        "steps": []
+      }
+    ],
+    "url": "https://github.com/marawan6569/Radivine/actions/runs/40783123079"
+  }
+]

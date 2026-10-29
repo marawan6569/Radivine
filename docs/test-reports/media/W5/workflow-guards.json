@@ -1,0 +1,437 @@
+{
+  "combinations": 48,
+  "results": [
+    {
+      "repository": "marawan6569/Radivine",
+      "ref": "refs/heads/main",
+      "event": "push",
+      "approved": true,
+      "hosting": "project",
+      "upload": true,
+      "deploy": true
+    },
+    {
+      "repository": "marawan6569/Radivine",
+      "ref": "refs/heads/main",
+      "event": "push",
+      "approved": true,
+      "hosting": "root",
+      "upload": false,
+      "deploy": true
+    },
+    {
+      "repository": "marawan6569/Radivine",
+      "ref": "refs/heads/main",
+      "event": "push",
+      "approved": false,
+      "hosting": "project",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "marawan6569/Radivine",
+      "ref": "refs/heads/main",
+      "event": "push",
+      "approved": false,
+      "hosting": "root",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "marawan6569/Radivine",
+      "ref": "refs/heads/main",
+      "event": "pull_request",
+      "approved": true,
+      "hosting": "project",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "marawan6569/Radivine",
+      "ref": "refs/heads/main",
+      "event": "pull_request",
+      "approved": true,
+      "hosting": "root",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "marawan6569/Radivine",
+      "ref": "refs/heads/main",
+      "event": "pull_request",
+      "approved": false,
+      "hosting": "project",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "marawan6569/Radivine",
+      "ref": "refs/heads/main",
+      "event": "pull_request",
+      "approved": false,
+      "hosting": "root",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "marawan6569/Radivine",
+      "ref": "refs/heads/main",
+      "event": "workflow_dispatch",
+      "approved": true,
+      "hosting": "project",
+      "upload": true,
+      "deploy": true
+    },
+    {
+      "repository": "marawan6569/Radivine",
+      "ref": "refs/heads/main",
+      "event": "workflow_dispatch",
+      "approved": true,
+      "hosting": "root",
+      "upload": false,
+      "deploy": true
+    },
+    {
+      "repository": "marawan6569/Radivine",
+      "ref": "refs/heads/main",
+      "event": "workflow_dispatch",
+      "approved": false,
+      "hosting": "project",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "marawan6569/Radivine",
+      "ref": "refs/heads/main",
+      "event": "workflow_dispatch",
+      "approved": false,
+      "hosting": "root",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "marawan6569/Radivine",
+      "ref": "refs/heads/feat/website",
+      "event": "push",
+      "approved": true,
+      "hosting": "project",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "marawan6569/Radivine",
+      "ref": "refs/heads/feat/website",
+      "event": "push",
+      "approved": true,
+      "hosting": "root",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "marawan6569/Radivine",
+      "ref": "refs/heads/feat/website",
+      "event": "push",
+      "approved": false,
+      "hosting": "project",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "marawan6569/Radivine",
+      "ref": "refs/heads/feat/website",
+      "event": "push",
+      "approved": false,
+      "hosting": "root",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "marawan6569/Radivine",
+      "ref": "refs/heads/feat/website",
+      "event": "pull_request",
+      "approved": true,
+      "hosting": "project",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "marawan6569/Radivine",
+      "ref": "refs/heads/feat/website",
+      "event": "pull_request",
+      "approved": true,
+      "hosting": "root",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "marawan6569/Radivine",
+      "ref": "refs/heads/feat/website",
+      "event": "pull_request",
+      "approved": false,
+      "hosting": "project",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "marawan6569/Radivine",
+      "ref": "refs/heads/feat/website",
+      "event": "pull_request",
+      "approved": false,
+      "hosting": "root",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "marawan6569/Radivine",
+      "ref": "refs/heads/feat/website",
+      "event": "workflow_dispatch",
+      "approved": true,
+      "hosting": "project",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "marawan6569/Radivine",
+      "ref": "refs/heads/feat/website",
+      "event": "workflow_dispatch",
+      "approved": true,
+      "hosting": "root",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "marawan6569/Radivine",
+      "ref": "refs/heads/feat/website",
+      "event": "workflow_dispatch",
+      "approved": false,
+      "hosting": "project",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "marawan6569/Radivine",
+      "ref": "refs/heads/feat/website",
+      "event": "workflow_dispatch",
+      "approved": false,
+      "hosting": "root",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "fork/Radivine",
+      "ref": "refs/heads/main",
+      "event": "push",
+      "approved": true,
+      "hosting": "project",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "fork/Radivine",
+      "ref": "refs/heads/main",
+      "event": "push",
+      "approved": true,
+      "hosting": "root",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "fork/Radivine",
+      "ref": "refs/heads/main",
+      "event": "push",
+      "approved": false,
+      "hosting": "project",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "fork/Radivine",
+      "ref": "refs/heads/main",
+      "event": "push",
+      "approved": false,
+      "hosting": "root",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "fork/Radivine",
+      "ref": "refs/heads/main",
+      "event": "pull_request",
+      "approved": true,
+      "hosting": "project",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "fork/Radivine",
+      "ref": "refs/heads/main",
+      "event": "pull_request",
+      "approved": true,
+      "hosting": "root",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "fork/Radivine",
+      "ref": "refs/heads/main",
+      "event": "pull_request",
+      "approved": false,
+      "hosting": "project",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "fork/Radivine",
+      "ref": "refs/heads/main",
+      "event": "pull_request",
+      "approved": false,
+      "hosting": "root",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "fork/Radivine",
+      "ref": "refs/heads/main",
+      "event": "workflow_dispatch",
+      "approved": true,
+      "hosting": "project",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "fork/Radivine",
+      "ref": "refs/heads/main",
+      "event": "workflow_dispatch",
+      "approved": true,
+      "hosting": "root",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "fork/Radivine",
+      "ref": "refs/heads/main",
+      "event": "workflow_dispatch",
+      "approved": false,
+      "hosting": "project",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "fork/Radivine",
+      "ref": "refs/heads/main",
+      "event": "workflow_dispatch",
+      "approved": false,
+      "hosting": "root",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "fork/Radivine",
+      "ref": "refs/heads/feat/website",
+      "event": "push",
+      "approved": true,
+      "hosting": "project",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "fork/Radivine",
+      "ref": "refs/heads/feat/website",
+      "event": "push",
+      "approved": true,
+      "hosting": "root",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "fork/Radivine",
+      "ref": "refs/heads/feat/website",
+      "event": "push",
+      "approved": false,
+      "hosting": "project",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "fork/Radivine",
+      "ref": "refs/heads/feat/website",
+      "event": "push",
+      "approved": false,
+      "hosting": "root",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "fork/Radivine",
+      "ref": "refs/heads/feat/website",
+      "event": "pull_request",
+      "approved": true,
+      "hosting": "project",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "fork/Radivine",
+      "ref": "refs/heads/feat/website",
+      "event": "pull_request",
+      "approved": true,
+      "hosting": "root",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "fork/Radivine",
+      "ref": "refs/heads/feat/website",
+      "event": "pull_request",
+      "approved": false,
+      "hosting": "project",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "fork/Radivine",
+      "ref": "refs/heads/feat/website",
+      "event": "pull_request",
+      "approved": false,
+      "hosting": "root",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "fork/Radivine",
+      "ref": "refs/heads/feat/website",
+      "event": "workflow_dispatch",
+      "approved": true,
+      "hosting": "project",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "fork/Radivine",
+      "ref": "refs/heads/feat/website",
+      "event": "workflow_dispatch",
+      "approved": true,
+      "hosting": "root",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "fork/Radivine",
+      "ref": "refs/heads/feat/website",
+      "event": "workflow_dispatch",
+      "approved": false,
+      "hosting": "project",
+      "upload": false,
+      "deploy": false
+    },
+    {
+      "repository": "fork/Radivine",
+      "ref": "refs/heads/feat/website",
+      "event": "workflow_dispatch",
+      "approved": false,
+      "hosting": "root",
+      "upload": false,
+      "deploy": false
+    }
+  ]
+}
