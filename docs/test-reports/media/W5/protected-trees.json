@@ -1,0 +1,56 @@
+[
+  {
+    "path": "apps",
+    "mainBaselineObject": "54816811327e1839650fd513a98a5319d8b969df",
+    "launchObject": "54816811327e1839650fd513a98a5319d8b969df",
+    "unchanged": true
+  },
+  {
+    "path": "crates",
+    "mainBaselineObject": "3170b9dae4ed223fcd45013cb7e1e371f78a488c",
+    "launchObject": "3170b9dae4ed223fcd45013cb7e1e371f78a488c",
+    "unchanged": true
+  },
+  {
+    "path": "assets/branding",
+    "mainBaselineObject": "dc62f8f793dd668a6dc9745627c7df63ff2d9c6e",
+    "launchObject": "dc62f8f793dd668a6dc9745627c7df63ff2d9c6e",
+    "unchanged": true
+  },
+  {
+    "path": "assets/icons",
+    "mainBaselineObject": "c83047e6df6e981334c3450aa69fdc62591e5a95",
+    "launchObject": "c83047e6df6e981334c3450aa69fdc62591e5a95",
+    "unchanged": true
+  },
+  {
+    "path": "packaging",
+    "mainBaselineObject": "ea7f8ea73ebfd1f849901ff186f2e9e33ff046bf",
+    "launchObject": "ea7f8ea73ebfd1f849901ff186f2e9e33ff046bf",
+    "unchanged": true
+  },
+  {
+    "path": "scripts",
+    "mainBaselineObject": "c81749e323fb3e1fa2d73f938bc0d665a64a5d22",
+    "launchObject": "c81749e323fb3e1fa2d73f938bc0d665a64a5d22",
+    "unchanged": true
+  },
+  {
+    "path": "Cargo.toml",
+    "mainBaselineObject": "9dd342a7afa8a3ced314a7915bc99353ac29269d",
+    "launchObject": "9dd342a7afa8a3ced314a7915bc99353ac29269d",
+    "unchanged": true
+  },
+  {
+    "path": "Cargo.lock",
+    "mainBaselineObject": "a1ac20867f0c093a8b6aef4d9c28afc52b493a27",
+    "launchObject": "a1ac20867f0c093a8b6aef4d9c28afc52b493a27",
+    "unchanged": true
+  },
+  {
+    "path": ".github/workflows/ci.yml",
+    "mainBaselineObject": "1c784f5337d5a900f3c8c10fb6a88457c8ae79e6",
+    "launchObject": "1c784f5337d5a900f3c8c10fb6a88457c8ae79e6",
+    "unchanged": true
+  }
+]

@@ -1,0 +1,42 @@
+HTTP/1.1 301 Moved Permanently
+Connection: keep-alive
+Content-Length: 162
+Server: GitHub.com
+Content-Type: text/html
+Location: https://marawan6569.github.io/Radivine/
+X-GitHub-Request-Id: 5A48:11CAB2:164E571:1C454CC:6AE2C2CE
+x-github-edge-region: iad
+Accept-Ranges: bytes
+Age: 0
+Date: Thu, 29 Oct 2026 03:51:42 GMT
+Via: 1.1 varnish
+X-Served-By: cache-chi-kigq8000031-CHI
+X-Cache: MISS
+X-Cache-Hits: 0
+X-Timer: S1793245902.250428,VS0,VE40
+Vary: Accept-Encoding
+X-Fastly-Request-ID: 2f40a58b39103e90fd2a3da64a6d5d148c836978
+
+HTTP/2 200
+server: GitHub.com
+content-type: text/html; charset=utf-8
+last-modified: Thu, 29 Oct 2026 03:50:58 GMT
+access-control-allow-origin: *
+strict-transport-security: max-age=31556952
+etag: "6ae2c2a2-a5dd"
+expires: Thu, 29 Oct 2026 04:01:42 GMT
+cache-control: max-age=600
+x-proxy-cache: MISS
+x-github-request-id: 18C4:2C53BC:14E5E29:1ADD8A2:6AE2C2CC
+x-github-edge-region: iad
+accept-ranges: bytes
+age: 0
+date: Thu, 29 Oct 2026 03:51:42 GMT
+via: 1.1 varnish
+x-served-by: cache-chi-klot8100176-CHI
+x-cache: MISS
+x-cache-hits: 0
+x-timer: S1793245902.340731,VS0,VE66
+vary: Accept-Encoding
+x-fastly-request-id: d989c09f3e17bdd29af65ccf81c7d00ad64afa21
+content-length: 42461
